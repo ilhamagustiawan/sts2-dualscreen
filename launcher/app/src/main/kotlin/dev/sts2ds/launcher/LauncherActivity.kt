@@ -178,7 +178,8 @@ class LauncherActivity : Activity() {
 
     private fun stage(): Stage = when {
         DownloadState.isActive -> Stage.DOWNLOADING
-        DepotLocation.present(this) -> Stage.READY
+        // Another branch chosen in settings: download it before playing.
+        DepotLocation.present(this) && !DepotLocation.branchMismatch(this) -> Stage.READY
         creds == null -> Stage.SIGN_IN
         else -> Stage.DOWNLOAD
     }
@@ -187,14 +188,17 @@ class LauncherActivity : Activity() {
         val c = creds
         val stage = stage()
         val hasGame = DepotLocation.present(this)
+        val switchTo = switchTarget()
         val cloudBusy = cloudJob?.isActive == true
         val busy = cloudBusy || launching
 
         btnPrimary.text = when (stage) {
             Stage.SIGN_IN -> getString(R.string.action_log_in)
-            Stage.DOWNLOAD -> getString(
-                if (DepotLocation.interrupted(this)) R.string.action_resume_download else R.string.action_download,
-            )
+            Stage.DOWNLOAD -> when {
+                switchTo != null -> getString(R.string.action_switch_branch, switchTo)
+                DepotLocation.interrupted(this) -> getString(R.string.action_resume_download)
+                else -> getString(R.string.action_download)
+            }
             Stage.DOWNLOADING -> getString(R.string.action_cancel_download)
             Stage.READY -> getString(R.string.action_launch)
         }
@@ -214,7 +218,8 @@ class LauncherActivity : Activity() {
             cloudBusy -> getString(R.string.launcher_status_syncing)
             waitingForGame -> getString(R.string.launcher_status_waiting_game)
             notice != null -> notice
-            hasGame -> GamePrep.version(this).let {
+            switchTo != null -> getString(R.string.launcher_status_switch_branch, switchTo)
+            hasGame -> installedVersion().let {
                 if (it.isEmpty()) getString(R.string.launcher_status_ready_unknown)
                 else getString(R.string.launcher_status_ready, it)
             }
@@ -264,16 +269,18 @@ class LauncherActivity : Activity() {
             done = c != null, current = stage == Stage.SIGN_IN,
         )
         val hasGame = DepotLocation.present(this)
+        val switchTo = switchTarget()
         showStep(
             stepGame, 2, getString(R.string.step_game_title),
             when {
-                hasGame -> GamePrep.version(this).let {
+                hasGame && switchTo != null -> getString(R.string.step_game_switch, switchTo)
+                hasGame -> installedVersion().let {
                     if (it.isEmpty()) getString(R.string.step_game_done_unknown) else getString(R.string.step_game_done, it)
                 }
                 DepotLocation.interrupted(this) -> getString(R.string.step_game_interrupted)
                 else -> getString(R.string.step_game_todo)
             },
-            done = hasGame && stage != Stage.DOWNLOADING,
+            done = hasGame && switchTo == null && stage != Stage.DOWNLOADING,
             current = stage == Stage.DOWNLOAD || stage == Stage.DOWNLOADING,
         )
         showStep(
@@ -281,6 +288,17 @@ class LauncherActivity : Activity() {
             getString(if (stage == Stage.READY) R.string.step_play_done else R.string.step_play_todo),
             done = false, current = stage == Stage.READY,
         )
+    }
+
+    /** "Beta" or "Stable" when settings name another branch than the installed one. */
+    private fun switchTarget(): String? =
+        if (DepotLocation.branchMismatch(this)) SettingsStore.branchName(this, settings.gameBranch) else null
+
+    /** The installed version, marked as the beta when it is one. */
+    private fun installedVersion(): String {
+        val version = GamePrep.version(this)
+        if (version.isEmpty() || DepotLocation.installedBranch(this) != SettingsStore.BRANCH_BETA) return version
+        return "$version ${getString(R.string.branch_beta)}"
     }
 
     private fun showStep(row: View, number: Int, title: String, detail: String, done: Boolean, current: Boolean) {

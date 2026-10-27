@@ -64,17 +64,41 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_DUAL_SCREEN_HINT, true)
         set(value) { prefs.edit().putBoolean(KEY_DUAL_SCREEN_HINT, value).apply() }
 
+    /**
+     * The Steam branch the game is downloaded from: [BRANCH_STABLE] or
+     * [BRANCH_BETA]. A change takes effect with the next download, which only
+     * fetches the files that differ.
+     */
+    var gameBranch: String
+        get() = prefs.getString(KEY_GAME_BRANCH, BRANCH_STABLE) ?: BRANCH_STABLE
+        set(value) { prefs.edit().putString(KEY_GAME_BRANCH, value).apply() }
+
+    /**
+     * Percent of each particle emitter's particles the game draws: 100, 50 or
+     * 25. Half by default; the effects still read and cost half the fill.
+     */
+    var particleAmount: Int
+        get() = prefs.getInt(KEY_PARTICLE_AMOUNT, 50)
+        set(value) { prefs.edit().putInt(KEY_PARTICLE_AMOUNT, value).apply() }
+
     /** "vulkan", or "opengl" for the engine's Compatibility renderer. */
     var renderer: String
         get() = prefs.getString(KEY_RENDERER, RENDERER_VULKAN) ?: RENDERER_VULKAN
         set(value) { prefs.edit().putString(KEY_RENDERER, value).apply() }
 
-    /** Top-screen refresh rate while the game runs: "system", "60hz" or "high". */
+    /**
+     * Top-screen refresh rate while the game runs: "system", "60hz" or "high".
+     * 60 Hz by default: the game is capped at 60, and a 120 Hz panel showing
+     * 60 fps without vsync paces frames unevenly.
+     */
     var refreshRate: String
-        get() = prefs.getString(KEY_REFRESH_RATE, REFRESH_SYSTEM) ?: REFRESH_SYSTEM
+        get() = prefs.getString(KEY_REFRESH_RATE, REFRESH_60HZ) ?: REFRESH_60HZ
         set(value) { prefs.edit().putString(KEY_REFRESH_RATE, value).apply() }
 
-    /** The one-time performance defaults have gone into settings.save. */
+    /**
+     * The one-time performance defaults have gone into settings.save. The key
+     * is versioned: a new preset gets a new key and so applies once more.
+     */
     var perfDefaultsApplied: Boolean
         get() = prefs.getBoolean(KEY_PERF_DEFAULTS, false)
         set(value) { prefs.edit().putBoolean(KEY_PERF_DEFAULTS, value).commit() }
@@ -89,11 +113,19 @@ class SettingsStore(context: Context) {
         const val REFRESH_SYSTEM = "system"
         const val REFRESH_60HZ = "60hz"
         const val REFRESH_HIGH = "high"
+        const val BRANCH_STABLE = "public"
+        const val BRANCH_BETA = "public-beta"
+
+        /** "Stable" or "Beta", for [gameBranch]. */
+        fun branchName(context: Context, branch: String): String =
+            context.getString(if (branch == BRANCH_BETA) dev.sts2ds.R.string.branch_beta else dev.sts2ds.R.string.branch_stable)
 
         private const val PREFS_NAME = "sts2ds_launcher_settings_v1"
         private const val KEY_RENDERER = "renderer"
+        private const val KEY_GAME_BRANCH = "game_branch"
+        private const val KEY_PARTICLE_AMOUNT = "particle_amount"
         private const val KEY_REFRESH_RATE = "refresh_rate"
-        private const val KEY_PERF_DEFAULTS = "perf_defaults_v1"
+        private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

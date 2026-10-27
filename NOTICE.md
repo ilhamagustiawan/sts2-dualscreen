@@ -27,7 +27,7 @@ Copied with the package renamed to `dev.sts2ds.launcher`, then adapted:
 | `tools/runtime/FMOD.java` | `tools/android/fmod-shim/org/fmod/FMOD.java`, unchanged |
 | `launcher/.../PckPatcher.java` | `android/src/com/godot/game/PckPatcher.java`, package and log tag changed |
 | `launcher/gradlew`, `gradle/wrapper/*` | `android/gradlew`, `android/gradle/wrapper/*` |
-| `GamePrep.kt` | staging rules of `GameLaunchPreparationManager.java` and the launch context of `LaunchProfileManager.java`, reimplemented |
+| `GamePrep.kt` | staging rules and texture-cache invalidation of `GameLaunchPreparationManager.java` and the launch context of `LaunchProfileManager.java`, reimplemented |
 | `GodotApp.java` | library load order and bridge method names of `GodotApp.java`, reimplemented |
 | `GameSettingsFile.kt` | `settings.save` performance keys, their defaults, the Recommended graphics preset and the vector format of `ExtraSettingsRepository.java`; the warmup set is the `--preload aggressive` profile of `tools/debug/sts2-adb-debug.sh` (commit `11025d4`) |
 | `RefreshRate.java` | mode choice of `HighRefreshRateController.java` (commit `11025d4`), trimmed to one window request and a surface vote |

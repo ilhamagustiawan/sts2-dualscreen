@@ -92,6 +92,34 @@
         <item name="android:textSize">12sp</item>
     </style>
 
+    <!-- A label on the left, a dropdown of choices on the right. -->
+    <style name="SettingsChoiceRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">4dp</item>
+        <item name="android:layout_marginBottom">2dp</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:orientation">horizontal</item>
+    </style>
+
+    <style name="SettingsChoiceLabel">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="SettingsChoice">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">160dp</item>
+        <item name="android:spinnerMode">dropdown</item>
+        <item name="android:popupBackground">@color/surface_panel</item>
+        <item name="android:backgroundTint">@color/gold</item>
+        <item name="android:foreground">@drawable/focus_on_dark</item>
+    </style>
+
     <style name="SettingsButton">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>

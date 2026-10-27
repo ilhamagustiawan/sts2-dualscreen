@@ -9,10 +9,13 @@ import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.Window;
 import android.view.WindowManager;
+
+import com.godot.game.RefreshRate;
 
 /**
  * The window on the bottom screen: one SurfaceView, filled by the game through
@@ -23,9 +26,54 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
 
     private SurfaceView surface;
     private boolean discardGesture;
+    private String refreshMode;
 
-    DsPresentation(Context outerContext, Display display) {
+    DsPresentation(Context outerContext, Display display, String refreshMode) {
         super(outerContext, display);
+        this.refreshMode = refreshMode;
+    }
+
+    /**
+     * Asks this screen for the same rate as the top one (see RefreshRate).
+     * Left without a preference, it ran at the system's 120 Hz while the top
+     * was held at 60, and the system kept trying to reconcile the two: the
+     * top screen dropped to 120 and back, a visible flicker, every touch or
+     * two down here.
+     */
+    void applyRefreshRate(String mode) {
+        refreshMode = mode;
+        Window window = getWindow();
+        Display display = getDisplay();
+        if (window == null || display == null) return;
+        Display.Mode current = display.getMode();
+        Display.Mode[] modes = display.getSupportedModes();
+        int[] widths = new int[modes.length];
+        int[] heights = new int[modes.length];
+        float[] rates = new float[modes.length];
+        for (int i = 0; i < modes.length; i++) {
+            widths[i] = modes[i].getPhysicalWidth();
+            heights[i] = modes[i].getPhysicalHeight();
+            rates[i] = modes[i].getRefreshRate();
+        }
+        int chosen = RefreshRate.choose(widths, heights, rates, current.getPhysicalWidth(), current.getPhysicalHeight(), mode);
+        int modeId = chosen >= 0 ? modes[chosen].getModeId() : 0;
+        float hz = chosen >= 0 ? modes[chosen].getRefreshRate() : 0f;
+        WindowManager.LayoutParams lp = window.getAttributes();
+        if (lp.preferredDisplayModeId != modeId || lp.preferredRefreshRate != hz) {
+            lp.preferredDisplayModeId = modeId;
+            lp.preferredRefreshRate = hz;
+            window.setAttributes(lp);
+        }
+        Surface target = surface == null ? null : surface.getHolder().getSurface();
+        if (android.os.Build.VERSION.SDK_INT >= 30 && target != null && target.isValid()) {
+            try {
+                // 0 withdraws the vote.
+                target.setFrameRate(hz, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "bottom setFrameRate failed", e);
+            }
+        }
+        Log.i(TAG, "Bottom screen refresh " + mode + ": mode " + modeId + " (" + hz + " Hz)");
     }
 
     @Override
@@ -53,6 +101,7 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
         surface.setOnGenericMotionListener((view, event) ->
             (event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0);
         setContentView(surface);
+        applyRefreshRate(refreshMode);
     }
 
     @Override
@@ -67,6 +116,7 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
     @Override
     public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
         DsNative.nativeSetSurface(holder.getSurface(), width, height);
+        applyRefreshRate(refreshMode);
     }
 
     @Override

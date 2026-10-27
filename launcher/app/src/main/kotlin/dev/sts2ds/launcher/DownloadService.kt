@@ -101,7 +101,8 @@ class DownloadService : Service() {
         job = scope.launch {
             try {
                 var status: String? = null
-                DepotFetcher.download(creds, target, DepotLocation.stagingDir(this@DownloadService)).collect { event ->
+                val branch = SettingsStore(this@DownloadService).gameBranch
+                DepotFetcher.download(creds, target, DepotLocation.stagingDir(this@DownloadService), branch).collect { event ->
                     when (event) {
                         is DepotFetcher.Event.Progress -> {
                             val fraction = event.fraction.coerceIn(0f, 1f)

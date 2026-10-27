@@ -45,9 +45,12 @@ static int32_t g_touch_count;
 static int32_t g_touch_overflow;
 static int64_t g_frames_posted, g_frames_skipped;
 
+// The generation tells the game to set the bottom screen up again (a new
+// surface, or a gesture cut off mid-way). Dropping queued touches alone must
+// not bump it: visibility is re-announced on every display change, and each
+// bump had the game rebuild the whole bottom screen.
 static void reset_touches_locked(void) {
     g_touch_count = 0;
-    g_generation++;
 }
 
 // ── Java side (dev.sts2ds.dualscreen.DsNative) ─────────────────────────────
@@ -65,6 +68,7 @@ Java_dev_sts2ds_dualscreen_DsNative_nativeSetSurface(JNIEnv *env, jclass cls, jo
     g_buffer_w = g_buffer_h = 0;
     g_last_hash = 0;
     reset_touches_locked();
+    g_generation++;
     pthread_mutex_unlock(&g_lock);
     LOGI("surface %s %dx%d", next ? "attached" : "detached", width, height);
 }
@@ -73,9 +77,11 @@ JNIEXPORT void JNICALL
 Java_dev_sts2ds_dualscreen_DsNative_nativeSetVisible(JNIEnv *env, jclass cls, jboolean visible) {
     (void)env; (void)cls;
     pthread_mutex_lock(&g_lock);
-    g_visible = visible ? 1 : 0;
-    g_last_hash = 0; // repaint on return, the surface may have been cleared
-    reset_touches_locked();
+    if (g_visible != (visible ? 1 : 0)) {
+        g_visible = visible ? 1 : 0;
+        g_last_hash = 0; // repaint on return, the surface may have been cleared
+        reset_touches_locked();
+    }
     pthread_mutex_unlock(&g_lock);
 }
 
@@ -90,6 +96,7 @@ Java_dev_sts2ds_dualscreen_DsNative_nativeTouch(JNIEnv *env, jclass cls, jint id
             // The game stopped draining (paused, loading). Drop the gesture
             // rather than deliver half of it later.
             reset_touches_locked();
+            g_generation++; // the game holds half a gesture; let it start over
             g_touch_overflow++;
             ok = JNI_FALSE;
         } else {

@@ -17,6 +17,8 @@ public static class DsEntry
             return;
         _started = true;
         Config = DsConfig.Load();
+        // Particles are thinned on one screen too; Attach skips the rest.
+        Callable.From(Attach).CallDeferred();
         if (!Config.Enabled)
         {
             DsLog.Info("disabled in settings");
@@ -26,7 +28,6 @@ public static class DsEntry
         // Patches go in now, before the game creates its UI; the bottom-screen
         // host is created once there is a SceneTree to attach it to.
         DsGameHooks.Apply(Harmony);
-        Callable.From(Attach).CallDeferred();
         DsLog.Info($"started (fps={Config.Fps}, tab={Config.DefaultTab})");
     }
 
@@ -37,6 +38,9 @@ public static class DsEntry
             Callable.From(Attach).CallDeferred();
             return;
         }
+        DsParticles.Attach(tree, Config.ParticleAmount);
+        if (!Config.Enabled)
+            return;
         try
         {
             DsBottomScreen.Create(tree, Config);

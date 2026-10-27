@@ -1,9 +1,10 @@
 // SettingsActivity — the launcher's settings screen.
 //
 // Laid out like SilksongAndroid's (MIT): every toggle commits as it is
-// flipped, with a note under each saying what it does. Dual-screen settings
-// reach the game through GamePrep, which writes dualscreen.json right before
-// each launch, so changes apply on the next launch.
+// flipped, with a note under each saying what it does. The page opens on the
+// few settings most people want; graphics and tuning wait under Advanced.
+// Dual-screen settings reach the game through GamePrep, which writes
+// dualscreen.json right before each launch, so changes apply on the next launch.
 
 package dev.sts2ds.launcher
 
@@ -12,7 +13,10 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -31,6 +35,7 @@ class SettingsActivity : Activity() {
             settings.dualScreen = it
             LauncherLog.log("Settings: dual screen → $it")
         }
+        bindBranch()
         bind(R.id.sw_dual_screen_60, settings.dualScreenFps >= 60) {
             settings.dualScreenFps = if (it) 60 else 30
             LauncherLog.log("Settings: lower screen ${settings.dualScreenFps} FPS")
@@ -38,34 +43,49 @@ class SettingsActivity : Activity() {
         bind(R.id.sw_top_hint, settings.dualScreenTopHint) {
             settings.dualScreenTopHint = it
         }
-        bind(R.id.sw_auto_pull, settings.autoPull) {
+        // One switch for both directions; they were rarely wanted apart.
+        bind(R.id.sw_cloud_sync, settings.autoPull && settings.autoPush) {
             settings.autoPull = it
-            LauncherLog.log("Settings: auto-pull → $it")
-        }
-        bind(R.id.sw_auto_push, settings.autoPush) {
             settings.autoPush = it
-            LauncherLog.log("Settings: auto-push → $it")
+            LauncherLog.log("Settings: cloud sync → $it")
         }
-
-        val tabButton: Button = findViewById(R.id.btn_default_tab)
-        fun showTab() {
-            tabButton.text = getString(R.string.settings_default_tab, TAB_NAMES[settings.dualScreenDefaultTab] ?: "Map")
-        }
-        showTab()
-        tabButton.setOnClickListener {
-            val keys = TAB_NAMES.keys.toList()
-            val next = keys[(keys.indexOf(settings.dualScreenDefaultTab) + 1).mod(keys.size)]
-            settings.dualScreenDefaultTab = next
-            showTab()
-        }
+        choose(
+            R.id.sp_default_tab, TAB_NAMES.keys.toList(), settings.dualScreenDefaultTab,
+            { TAB_NAMES[it] ?: it },
+        ) { settings.dualScreenDefaultTab = it }
 
         bindPerformance()
+
+        val advanced: View = findViewById(R.id.advanced_rows)
+        val advancedButton: Button = findViewById(R.id.btn_advanced)
+        fun showAdvanced(open: Boolean) {
+            advanced.visibility = if (open) View.VISIBLE else View.GONE
+            advancedButton.setText(if (open) R.string.settings_advanced_hide else R.string.settings_advanced_show)
+        }
+        showAdvanced(false)
+        advancedButton.setOnClickListener { showAdvanced(advanced.visibility != View.VISIBLE) }
 
         findViewById<Button>(R.id.btn_reset).setOnClickListener { confirmReset() }
         findViewById<Button>(R.id.btn_settings_logs).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
         }
         findViewById<Button>(R.id.btn_settings_back).setOnClickListener { finish() }
+    }
+
+    // The download reads the branch; the launcher offers it as the next
+    // download once it differs from the installed one. Not while a download
+    // runs, which has already picked its branch.
+    private fun bindBranch() {
+        val busy = DownloadState.isActive
+        findViewById<Spinner>(R.id.sp_game_branch).isEnabled = !busy
+        if (busy) findViewById<TextView>(R.id.txt_branch_note).setText(R.string.settings_game_branch_busy)
+        choose(
+            R.id.sp_game_branch, listOf(SettingsStore.BRANCH_STABLE, SettingsStore.BRANCH_BETA), settings.gameBranch,
+            { SettingsStore.branchName(this, it) },
+        ) {
+            settings.gameBranch = it
+            LauncherLog.log("Settings: game branch → $it")
+        }
     }
 
     // Most of these are the compat pack's keys in the game's settings.save
@@ -100,25 +120,22 @@ class SettingsActivity : Activity() {
             edit("performance overlay → $on") { it.put(GameSettingsFile.KEY_OVERLAY, on) }
         }
 
-        cycle(
-            R.id.btn_render_size, R.string.settings_render_size, GameSettingsFile.RENDER_SIZES,
-            GameSettingsFile.renderSize(settingsJson),
+        choose(
+            R.id.sp_render_size, GameSettingsFile.RENDER_SIZES, GameSettingsFile.renderSize(settingsJson),
             { (w, h) -> if (w > 0) "$w × $h" else getString(R.string.settings_render_size_native) },
         ) { (w, h) -> edit("render size → ${w}x$h") { GameSettingsFile.putRenderSize(it, w, h) } }
-        cycle(
-            R.id.btn_msaa, R.string.settings_msaa, GameSettingsFile.MSAA_LEVELS,
-            settingsJson.optInt(GameSettingsFile.KEY_MSAA, 0),
+        choose(
+            R.id.sp_msaa, GameSettingsFile.MSAA_LEVELS, settingsJson.optInt(GameSettingsFile.KEY_MSAA, 0),
             { if (it > 0) "${it}×" else getString(R.string.settings_msaa_off) },
         ) { level -> edit("msaa → $level") { it.put(GameSettingsFile.KEY_MSAA, level) } }
-        cycle(
-            R.id.btn_vsync, R.string.settings_vsync, GameSettingsFile.VSYNC_MODES,
-            settingsJson.optString(GameSettingsFile.KEY_VSYNC, "off"),
+        choose(
+            R.id.sp_vsync, GameSettingsFile.VSYNC_MODES, settingsJson.optString(GameSettingsFile.KEY_VSYNC, "on"),
             { it.replaceFirstChar(Char::uppercase) },
         ) { mode -> edit("vsync → $mode") { it.put(GameSettingsFile.KEY_VSYNC, mode) } }
 
-        cycle(
-            R.id.btn_refresh_rate, R.string.settings_refresh_rate, REFRESH_NAMES.keys.toList(),
-            settings.refreshRate, { getString(REFRESH_NAMES.getValue(it)) },
+        choose(
+            R.id.sp_refresh_rate, REFRESH_NAMES.keys.toList(), settings.refreshRate,
+            { getString(REFRESH_NAMES.getValue(it)) },
         ) { mode ->
             settings.refreshRate = mode
             LauncherLog.log("Settings: refresh rate → $mode")
@@ -128,22 +145,39 @@ class SettingsActivity : Activity() {
                 it.put(GameSettingsFile.KEY_HIGH_REFRESH, mode == SettingsStore.REFRESH_HIGH)
             }
         }
+        // Not a settings.save key: the dual-screen layer thins the emitters.
+        choose(
+            R.id.sp_particles, PARTICLE_AMOUNTS.keys.toList(), settings.particleAmount,
+            { PARTICLE_AMOUNTS[it]?.let(::getString) ?: "$it%" },
+        ) { percent ->
+            settings.particleAmount = percent
+            LauncherLog.log("Settings: particles → $percent%")
+        }
         bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
             settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
             LauncherLog.log("Settings: renderer → ${settings.renderer}")
         }
     }
 
-    /** A button that steps through [values], showing the current one in [label]. */
-    private fun <T> cycle(id: Int, label: Int, values: List<T>, initial: T, name: (T) -> String, onChange: (T) -> Unit) {
-        val button: Button = findViewById(id)
-        // An unlisted value (set in-game) shows as itself; a tap moves to the first.
-        var index = values.indexOf(initial)
-        button.text = getString(label, name(initial))
-        button.setOnClickListener {
-            index = (index + 1).mod(values.size)
-            button.text = getString(label, name(values[index]))
-            onChange(values[index])
+    /** A dropdown of [values], named by [name], starting on [initial]. */
+    private fun <T> choose(id: Int, values: List<T>, initial: T, name: (T) -> String, onChange: (T) -> Unit) {
+        val spinner: Spinner = findViewById(id)
+        // An unlisted value (set in-game) is offered as itself, first.
+        val options = if (initial in values) values else listOf(initial) + values
+        spinner.adapter = ArrayAdapter(this, R.layout.item_choice, options.map(name)).apply {
+            setDropDownViewResource(R.layout.item_choice_dropdown)
+        }
+        var current = options.indexOf(initial)
+        spinner.setSelection(current, false)
+        // A spinner reports its first layout as a selection: only real changes count.
+        spinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (position == current) return
+                current = position
+                onChange(options[position])
+            }
+
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
         }
     }
 
@@ -169,12 +203,17 @@ class SettingsActivity : Activity() {
     private companion object {
         val GAME_FILE_CONTROLS = intArrayOf(
             R.id.sw_warmups, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
-            R.id.btn_render_size, R.id.btn_msaa, R.id.btn_vsync,
+            R.id.sp_render_size, R.id.sp_msaa, R.id.sp_vsync,
         )
         val REFRESH_NAMES = linkedMapOf(
             SettingsStore.REFRESH_SYSTEM to R.string.settings_refresh_system,
             SettingsStore.REFRESH_60HZ to R.string.settings_refresh_60,
             SettingsStore.REFRESH_HIGH to R.string.settings_refresh_high,
+        )
+        val PARTICLE_AMOUNTS = linkedMapOf(
+            100 to R.string.settings_particles_full,
+            50 to R.string.settings_particles_half,
+            25 to R.string.settings_particles_low,
         )
         val TAB_NAMES = linkedMapOf(
             "map" to "Map",

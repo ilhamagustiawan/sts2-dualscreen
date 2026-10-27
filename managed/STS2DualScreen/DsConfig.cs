@@ -16,6 +16,9 @@ internal sealed class DsConfig
     /// 1080p-designed UI keeps a readable scale on the 3.9" panel.</summary>
     public float CanvasScale = 1.3f;
 
+    /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
+    public float ParticleAmount = 1f;
+
     public static DsConfig Load()
     {
         var config = new DsConfig();
@@ -34,6 +37,8 @@ internal sealed class DsConfig
                 config.DefaultTab = t.GetString();
             if (root.TryGetProperty("show_top_hint", out var h))
                 config.ShowTopHint = h.GetBoolean();
+            if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))
+                config.ParticleAmount = Math.Clamp(amount, 0.1f, 1f);
             if (root.TryGetProperty("canvas_scale", out var s) && s.TryGetSingle(out var scale))
                 config.CanvasScale = Math.Clamp(scale, 1f, 2f);
         }

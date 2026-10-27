@@ -27,10 +27,20 @@ public final class DualScreenController implements DisplayManager.DisplayListene
     private DsPresentation presentation;
     private boolean started;
     private boolean destroyed;
+    private float lastTopHz;
+    private int topRateChanges;
+    private String refreshMode;
 
-    public DualScreenController(Activity activity) {
+    /** [refreshMode] is the top screen's (see RefreshRate); the bottom one follows it. */
+    public DualScreenController(Activity activity, String refreshMode) {
         this.activity = activity;
         this.displays = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
+        this.refreshMode = refreshMode;
+    }
+
+    public void setRefreshMode(String mode) {
+        refreshMode = mode;
+        if (presentation != null) presentation.applyRefreshRate(mode);
     }
 
     /** Loads libsts2ds. Must happen before the game's C# side looks for it. */
@@ -71,7 +81,23 @@ public final class DualScreenController implements DisplayManager.DisplayListene
 
     @Override public void onDisplayAdded(int displayId) { refresh(); }
     @Override public void onDisplayRemoved(int displayId) { refresh(); }
-    @Override public void onDisplayChanged(int displayId) { refresh(); }
+    @Override public void onDisplayChanged(int displayId) {
+        logTopRefreshRate(displayId);
+        refresh();
+    }
+
+    // A panel switching refresh rate blanks for a moment; log each switch of
+    // the top screen (the first 20) to tell that apart from other flicker.
+    private void logTopRefreshRate(int displayId) {
+        Display main = activity.getWindowManager().getDefaultDisplay();
+        if (displayId != main.getDisplayId()) return;
+        float hz = main.getRefreshRate();
+        if (Math.abs(hz - lastTopHz) < 0.5f) return;
+        if (lastTopHz > 0 && topRateChanges++ < 20) {
+            Log.i(TAG, "Top screen refresh " + Math.round(lastTopHz) + " -> " + Math.round(hz) + " Hz");
+        }
+        lastTopHz = hz;
+    }
 
     private Display findSecondDisplay() {
         int main = activity.getWindowManager().getDefaultDisplay().getDisplayId();
@@ -96,7 +122,7 @@ public final class DualScreenController implements DisplayManager.DisplayListene
         }
         if (target == null) return;
         try {
-            presentation = new DsPresentation(activity, target);
+            presentation = new DsPresentation(activity, target, refreshMode);
             presentation.setOnDismissListener(dialog -> {
                 if (presentation == dialog) presentation = null;
                 DsNative.nativeSetVisible(false);

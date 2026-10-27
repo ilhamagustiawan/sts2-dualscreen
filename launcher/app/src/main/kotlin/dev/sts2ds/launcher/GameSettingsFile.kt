@@ -4,8 +4,9 @@
 // Android options from the account's settings.save next to the game's own
 // settings: asset preloading, combat warmups, cheaper shaders, render size.
 // Its patches that need no option (VFX pooling, the asset-loading frame
-// budget) run regardless. Key names, defaults and the Recommended preset are
-// Sts2MobileLauncher's ExtraSettingsRepository (MIT); see NOTICE.md.
+// budget) run regardless. Key names and defaults are Sts2MobileLauncher's
+// ExtraSettingsRepository (MIT); see NOTICE.md. The Balanced preset is ours,
+// built from those keys and two of the game's own (fps_limit, skip_intro_logo).
 //
 // The game writes the file on its first run. It is never created here: a file
 // the game did not write could be refused as corrupt. Until it exists the
@@ -58,6 +59,10 @@ class GameSettingsFile(val file: File) {
         const val KEY_OVERLAY = "android_performance_overlay_enabled"
         const val KEY_HIGH_REFRESH = "android_high_refresh_rate_enabled"
 
+        /** The game's own: Engine.MaxFps, and whether the MegaCrit logo plays at start. */
+        const val KEY_FPS_LIMIT = "fps_limit"
+        const val KEY_SKIP_INTRO = "skip_intro_logo"
+
         /**
          * The compat pack's combat animation warmup steps each creature's
          * Spine clips as a fight loads; on game v0.107.1 it aborts the process
@@ -85,11 +90,13 @@ class GameSettingsFile(val file: File) {
         )
 
         /**
-         * Sts2MobileLauncher's "aggressive" preload profile: every room warms
-         * its hit effects and VFX behind a mask as it loads, so the first
+         * Most of Sts2MobileLauncher's "aggressive" preload profile: every room
+         * warms its hit effects and VFX behind a mask as it loads, so the first
          * attack of a fight does not hitch. Off there by default; on here,
-         * where the device has the memory for it. Its Spine animation warmup
-         * stays off (see [KEY_ANIMATION_WARMUP]).
+         * where the device has the memory for it. Two parts stay off: its
+         * Spine animation warmup (see [KEY_ANIMATION_WARMUP]) and the bulk
+         * gameplay warm cache, which loads every gameplay asset while the
+         * game starts; the per-room warmups already cover the first fight.
          */
         val WARMUPS_ON: Map<String, Any> = linkedMapOf(
             KEY_ANIMATION_WARMUP to "off",
@@ -97,7 +104,7 @@ class GameSettingsFile(val file: File) {
             "preload_vfx_tree_warmup_enabled" to true,
             "preload_vfx_mode" to "hot",
             "preload_vfx_retain_cache_enabled" to true,
-            "preload_gameplay_assets_enabled" to true,
+            "preload_gameplay_assets_enabled" to false,
         )
 
         val WARMUPS_OFF: Map<String, Any> = linkedMapOf(
@@ -109,11 +116,19 @@ class GameSettingsFile(val file: File) {
             "preload_gameplay_assets_enabled" to false,
         )
 
-        /** Sts2MobileLauncher's Recommended graphics preset, applied once. */
-        private val RECOMMENDED_GRAPHICS: Map<String, Any> = linkedMapOf(
+        /**
+         * Balanced, applied once: native resolution at a steady 60 (vsync on,
+         * with the launcher locking the panel to 60 Hz) rather than racing an
+         * uncapped swapchain, and straight to the main menu. Even pacing was
+         * what fights needed; a lower render size only blurred the art.
+         */
+        private val BALANCED_PRESET: Map<String, Any> = linkedMapOf(
             KEY_MSAA to 0,
-            KEY_VSYNC to "off",
+            KEY_VSYNC to "on",
+            KEY_FPS_LIMIT to 60,
+            KEY_SKIP_INTRO to true,
         )
+        val BALANCED_RENDER_SIZE = 0 to 0
 
         val RENDER_SIZES = listOf(0 to 0, 1600 to 900, 1280 to 720)
         val MSAA_LEVELS = listOf(0, 2, 4, 8)
@@ -121,8 +136,8 @@ class GameSettingsFile(val file: File) {
 
         /**
          * Fills in missing performance keys. [firstTime] also applies the
-         * Recommended graphics preset and turns the warmups on over whatever
-         * is there. Returns whether anything changed.
+         * Balanced preset and turns the warmups on over whatever is there.
+         * Returns whether anything changed.
          */
         fun ensurePerformanceDefaults(json: JSONObject, firstTime: Boolean): Boolean {
             var changed = false
@@ -132,8 +147,12 @@ class GameSettingsFile(val file: File) {
                 changed = true
             }
             if (firstTime) {
-                changed = putAll(json, RECOMMENDED_GRAPHICS) || changed
+                changed = putAll(json, BALANCED_PRESET) || changed
                 changed = putAll(json, WARMUPS_ON) || changed
+                if (renderSize(json) != BALANCED_RENDER_SIZE) {
+                    putRenderSize(json, BALANCED_RENDER_SIZE.first, BALANCED_RENDER_SIZE.second)
+                    changed = true
+                }
             } else {
                 for ((key, value) in WARMUPS_ON) changed = putIfMissing(json, key, value) || changed
             }

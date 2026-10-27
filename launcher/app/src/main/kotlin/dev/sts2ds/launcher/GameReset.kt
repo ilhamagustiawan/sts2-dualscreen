@@ -13,7 +13,7 @@ import java.io.File
 object GameReset {
     fun clear(context: Context) {
         val files = context.filesDir
-        for (name in listOf(".godot", "compat", "port_compat.pck", "launcher", "dualscreen.json", "tmp")) {
+        for (name in listOf(".godot", "compat", "port_compat.pck", "launcher", "dualscreen.json", "tmp") + GamePrep.BUILD_CACHE_DIRS) {
             File(files, name).deleteRecursively()
         }
         context.getSharedPreferences("game_prep", Context.MODE_PRIVATE).edit().clear().apply()

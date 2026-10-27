@@ -22,6 +22,14 @@ object DepotLocation {
     /** True when a complete download is on the device. */
     fun present(context: Context): Boolean = DepotFetcher.isPresent(gameDir(context))
 
+    /** The Steam branch of the installed game, or null when none is installed. */
+    fun installedBranch(context: Context): String? =
+        if (present(context)) DepotFetcher.installedBranch(gameDir(context)) else null
+
+    /** A game is installed, but from another branch than the one chosen in settings. */
+    fun branchMismatch(context: Context): Boolean =
+        installedBranch(context).let { it != null && it != SettingsStore(context).gameBranch }
+
     /** True when a download was started and never finished. */
     fun interrupted(context: Context): Boolean = DepotFetcher.isInterrupted(gameDir(context))
 }

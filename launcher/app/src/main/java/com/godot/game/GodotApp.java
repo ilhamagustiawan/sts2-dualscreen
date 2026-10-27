@@ -84,7 +84,7 @@ public class GodotApp extends GodotActivity {
         current = this;
         refreshRate = prepared.getRefreshRate();
         if (prepared.getDualScreen()) {
-            dualScreen = new DualScreenController(this);
+            dualScreen = new DualScreenController(this, refreshRate);
             dualScreen.onCreate();
         }
     }
@@ -176,6 +176,7 @@ public class GodotApp extends GodotActivity {
         activity.runOnUiThread(() -> {
             activity.refreshRate = mode;
             activity.requestRefreshRate();
+            if (activity.dualScreen != null) activity.dualScreen.setRefreshMode(mode);
         });
     }
 

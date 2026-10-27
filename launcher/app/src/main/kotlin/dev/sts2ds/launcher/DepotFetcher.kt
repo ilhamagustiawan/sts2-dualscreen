@@ -49,8 +49,6 @@ object DepotFetcher {
     /** The depot's own layout, and what GamePrep looks for. */
     const val DATA_DIR = GamePrep.ASSEMBLY_DIR
 
-    private const val BRANCH = "public"
-
     /**
      * Writes were what was starved, not connections: with one file written at
      * a time, chunks arriving for every other file in a 2068-file depot have
@@ -101,7 +99,15 @@ object DepotFetcher {
     private fun isPresentOnDisk(installDir: File): Boolean =
         File(installDir, GamePrep.PCK_NAME).isFile && File(installDir, "$DATA_DIR/sts2.dll").isFile
 
+    /** Holds "depot:branch"; one from before branches were chosen holds the depot alone. */
     private fun completeMarker(installDir: File) = File(installDir, ".download-complete")
+
+    /** The branch the finished download came from, or null when there is none. */
+    fun installedBranch(installDir: File): String? = try {
+        completeMarker(installDir).readText().trim().substringAfter(':', SettingsStore.BRANCH_STABLE)
+    } catch (_: java.io.IOException) {
+        null
+    }
 
     fun isInterrupted(installDir: File): Boolean =
         startedMarker(installDir).isFile && !completeMarker(installDir).isFile
@@ -145,7 +151,7 @@ object DepotFetcher {
     }
 
     /**
-     * Signs in and downloads the depot into [installDir].
+     * Signs in and downloads the depot from Steam [branch] into [installDir].
      *
      * Resumable: re-running skips whatever already matches the manifest, which
      * matters for a multi-gigabyte download on a connection that may well drop.
@@ -154,6 +160,7 @@ object DepotFetcher {
         credentials: TokenStore.Credentials,
         installDir: File,
         stagingDir: File,
+        branch: String,
     ): Flow<Event> = channelFlow {
         // Held because the nested use-blocks below shadow this scope, and the
         // wait loop still needs to know whether the collector is still there.
@@ -174,7 +181,7 @@ object DepotFetcher {
         // discarded. It is the only view into what the downloader is doing.
         LogManager.addListener(logForwarder)
 
-        LauncherLog.log("Downloading depot $DEPOT_ID to ${installDir.absolutePath}")
+        LauncherLog.log("Downloading depot $DEPOT_ID ($branch) to ${installDir.absolutePath}")
         try {
             SteamSession().use { session ->
                 session.logOn(credentials)
@@ -233,7 +240,7 @@ object DepotFetcher {
                         AppItem(
                             appId = APP_ID,
                             installDirectory = installDir.absolutePath,
-                            branch = BRANCH,
+                            branch = branch,
                             // Without this the downloader picks the depots for
                             // the platform it is running on, which here is
                             // Android and is not a platform this game ships.
@@ -257,7 +264,7 @@ object DepotFetcher {
 
                 // Only now, and only here: everything above has to have run
                 // without throwing for the depot to be worth trusting later.
-                completeMarker(installDir).writeText(DEPOT_ID.toString())
+                completeMarker(installDir).writeText("$DEPOT_ID:$branch")
                 startedMarker(installDir).delete()
                 LauncherLog.log("Depot download complete")
                 send(Event.Done)

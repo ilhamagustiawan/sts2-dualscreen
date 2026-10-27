@@ -46,6 +46,7 @@ internal static class DsGameHooks
     private const string RunType = "MegaCrit.Sts2.Core.Nodes.NRun";
     private const string PlatformUtilType = "MegaCrit.Sts2.Core.Platform.PlatformUtil";
     private const string HoverTipSetType = "MegaCrit.Sts2.Core.Nodes.HoverTips.NHoverTipSet";
+    private const string MainMenuType = "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu";
 
     // The game's UI is sized for 1080p; on the small lower panel its cards
     // and map tools read small. These scale them up there only.
@@ -77,6 +78,12 @@ internal static class DsGameHooks
     private static Control _map;
     private static object _player;
     private static bool _inCombat;
+
+    /// <summary>A fight is on: its card piles exist.</summary>
+    public static bool InCombat => _inCombat;
+
+    /// <summary>The game has finished booting to its main menu at least once.</summary>
+    public static bool MainMenuReady { get; private set; }
     private static readonly Dictionary<string, Node> PileScreens = new();
     private static readonly Dictionary<string, object> PileBindings = new();
     private static readonly HashSet<string> ResizeHooked = new();
@@ -155,6 +162,15 @@ internal static class DsGameHooks
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
         Patch(harmony, _pileScreenType, "OnPileContentsChanged", prefix: nameof(PileContentsChangedPrefix));
         Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
+        Patch(harmony, FindType(MainMenuType), "_Ready", postfix: nameof(MainMenuReadyPostfix));
+    }
+
+    private static void MainMenuReadyPostfix()
+    {
+        if (MainMenuReady)
+            return;
+        MainMenuReady = true;
+        DsLog.Info("main menu ready; lower screen wakes");
     }
 
     private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null)
@@ -332,6 +348,44 @@ internal static class DsGameHooks
         return manager != null && AccessTools.Property(_controllerManagerType, "IsUsingController")?.GetValue(manager) is true;
     }
 
+    // Whether the press being handled came from a controller. The game's own
+    // IsUsingController flips to mouse on any mouse event at all, and one
+    // turns up now and then while a controller is in hand, after which every
+    // A press went down the touch path. So a press is judged by the last
+    // press the window saw, controller (pad, key, action) or pointer (touch,
+    // click); the game's mode only decides before either has happened.
+    private static ulong _lastPadPressUsec, _lastPointerPressUsec, _lastTouchUsec;
+    private static int _strayMouseLogged;
+
+    /// <summary>Every event the top window receives, before anything handles it.</summary>
+    public static void NoteInput(InputEvent e)
+    {
+        var now = Time.GetTicksUsec();
+        switch (e)
+        {
+            case InputEventScreenTouch { Pressed: true }:
+                _lastPointerPressUsec = _lastTouchUsec = now;
+                break;
+            case InputEventMouseButton { Pressed: true } mouse:
+                _lastPointerPressUsec = now;
+                // A click no touch made: the kind that throws the game out of
+                // controller mode. Godot's own click for a touch (device -1)
+                // arrives just before that touch, so it is not one.
+                if (mouse.Device != -1 && now - _lastTouchUsec > 200_000 && _strayMouseLogged++ < 5)
+                    DsLog.Info($"mouse press without a touch: {mouse.AsText()} device={mouse.Device} at {mouse.Position}");
+                break;
+            case InputEventJoypadButton { Pressed: true }:
+            case InputEventAction { Pressed: true }:
+            case InputEventKey { Pressed: true, Echo: false }:
+            case InputEventJoypadMotion motion when Math.Abs(motion.AxisValue) > 0.5f:
+                _lastPadPressUsec = now;
+                break;
+        }
+    }
+
+    private static bool PressFromController() =>
+        _lastPadPressUsec == 0 && _lastPointerPressUsec == 0 ? IsUsingController() : _lastPadPressUsec > _lastPointerPressUsec;
+
     // The compat pack makes some card presses touch-friendly, and doesn't
     // check where the press came from, so on a controller A never finishes:
     // - hand: "tap to preview" turns the first press into a pinned preview
@@ -391,17 +445,43 @@ internal static class DsGameHooks
 
     private static bool MerchantConfirmPrefix(ref bool __result)
     {
-        if (!IsUsingController())
+        if (!PressFromController())
             return true;
         __result = false;
         return false;
     }
 
+    // The first presses of each kind are logged, to tell a press that never
+    // arrives from one the compat pack or the game turns away.
+    private static readonly Dictionary<string, int> PressesLogged = new();
+
     private static bool RunUnlessController(MethodInfo compatPrefix, object instance, object holder)
     {
-        if (compatPrefix == null || IsUsingController())
+        if (compatPrefix == null)
             return true;
-        return compatPrefix.Invoke(null, new[] { instance, holder }) is not false;
+        var controller = PressFromController();
+        bool runOriginal;
+        try
+        {
+            runOriginal = controller || compatPrefix.Invoke(null, new[] { instance, holder }) is not false;
+        }
+        catch (Exception e)
+        {
+            // Better the game's own handling than a press that does nothing.
+            DsLog.Info($"{compatPrefix.Name} failed, using the game's handling: {e.InnerException?.Message ?? e.Message}");
+            runOriginal = true;
+        }
+        var key = compatPrefix.Name;
+        var count = PressesLogged.GetValueOrDefault(key);
+        if (count < 5)
+        {
+            PressesLogged[key] = count + 1;
+            var game = IsUsingController();
+            DsLog.Info($"{instance?.GetType().Name} press: {(controller ? "controller" : "touch")}"
+                + (game != controller ? $" (game is in {(game ? "controller" : "mouse")} mode)" : "") + ", "
+                + (controller ? "game handles it" : runOriginal ? "compat passed it on" : "compat kept it (mark, then Confirm)"));
+        }
+        return runOriginal;
     }
 
     // ── map ────────────────────────────────────────────────────────────────
@@ -478,7 +558,7 @@ internal static class DsGameHooks
             screen.Show("draw");
         // Opening the map let go of top-screen focus; the screen under it
         // (rewards, say) does not take it back by itself.
-        if (IsUsingController())
+        if (PressFromController())
             RestoreTopFocus("map closed");
     }
 
@@ -545,10 +625,12 @@ internal static class DsGameHooks
 
     // The drawing tools, larger, growing toward the middle of the map from
     // whichever edge or corner they sit at. The legend keeps the game's size
-    // and is tucked into the bottom-right corner (above the tools if they are
-    // there), where it covers the least of the map. The open/close tweens
-    // fade both and slide the legend along x to MapLegendX, which points at
-    // that corner too; they never touch y or scale.
+    // and is tucked into the bottom-right corner, where it covers the least
+    // of the map, and lifted above anything it would sit on: the tools, and
+    // any button of the screen's own there (the beta's share button, for
+    // one), found by kind rather than by name. The open/close tweens fade
+    // both and slide the legend along x to MapLegendX, which points at that
+    // corner too; they never touch y or scale.
     private static bool _mapToolsLogged;
 
     private static void ScaleMapTools(Control map)
@@ -568,16 +650,72 @@ internal static class DsGameHooks
         if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is not Control legend || legend.Size == Vector2.Zero)
             return;
         legend.Scale = Vector2.One;
+        var obstacles = MapButtons(map, legend, toLocal);
+        if (toolsRect is { } toolsArea)
+            obstacles.Add(("tools", toolsArea));
         var x = LegendX(map, legend);
         var bottom = map.Size.Y - LegendMargin;
-        if (toolsRect is { } t && t.Position.X < x + legend.Size.X && t.End.X > x && t.End.Y > bottom - legend.Size.Y)
-            bottom = Math.Min(bottom, t.Position.Y - LegendMargin);
-        legend.Position = new Vector2(x, bottom - legend.Size.Y);
+        // Each lift can land it on another obstacle; one pass per obstacle settles it.
+        for (var pass = 0; pass <= obstacles.Count; pass++)
+        {
+            var rect = new Rect2(x, bottom - legend.Size.Y, legend.Size);
+            var hit = obstacles.Where(o => o.Rect.Intersects(rect)).Select(o => o.Rect.Position.Y).DefaultIfEmpty(float.NaN).Min();
+            if (float.IsNaN(hit))
+                break;
+            bottom = hit - LegendMargin;
+        }
+        legend.Position = new Vector2(x, Math.Max(LegendMargin, bottom - legend.Size.Y));
         if (!_mapToolsLogged)
         {
             _mapToolsLogged = true;
-            DsLog.Info($"map {map.Size}: legend size {legend.Size} now bottom-right at y={legend.Position.Y:F0}, tools {toolsRect?.ToString() ?? "none"}");
+            DsLog.Info($"map {map.Size}: legend size {legend.Size} now bottom-right at y={legend.Position.Y:F0}, avoiding "
+                + (obstacles.Count == 0 ? "nothing" : string.Join(", ", obstacles.Select(o => $"{o.Name} {o.Rect}"))));
         }
+    }
+
+    // The game's buttons are its own NClickableControl, not Godot's BaseButton.
+    private static Type _clickableType;
+    private static bool _clickableLooked;
+
+    private static bool IsButton(Control control)
+    {
+        if (!_clickableLooked)
+        {
+            _clickableLooked = true;
+            _clickableType = FindType("MegaCrit.Sts2.Core.Nodes.GodotExtensions.NClickableControl");
+        }
+        return control is BaseButton || _clickableType?.IsInstanceOfType(control) == true;
+    }
+
+    /// <summary>
+    /// The map screen's own visible buttons, in its local space: everything
+    /// but the map itself, the legend and the drawing tools (measured scaled,
+    /// by the caller).
+    /// </summary>
+    private static List<(string Name, Rect2 Rect)> MapButtons(Control map, Control legend, Transform2D toLocal)
+    {
+        var skip = new HashSet<Node> { legend };
+        foreach (var field in new[] { "_mapContainer", "_drawingTools", "_backstop", "_mapBgContainer" })
+            if (AccessTools.Field(_mapType, field)?.GetValue(map) is Node node)
+                skip.Add(node);
+        var found = new List<(string, Rect2)>();
+        void Walk(Node node)
+        {
+            foreach (var child in node.GetChildren())
+            {
+                if (skip.Contains(child) || child is CanvasItem { Visible: false })
+                    continue;
+                if (child is Control button && button.Size != Vector2.Zero && IsButton(button))
+                {
+                    var global = button.GetGlobalRect();
+                    found.Add((button.Name, new Rect2(toLocal * global.Position, toLocal.BasisXform(global.Size))));
+                    continue;
+                }
+                Walk(child);
+            }
+        }
+        Walk(map);
+        return found;
     }
 
     private static float LegendX(Control map, Control legend) => map.Size.X - LegendMargin - legend.Size.X;

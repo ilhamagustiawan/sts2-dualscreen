@@ -19,11 +19,14 @@
 //
 // The staging order and rules follow Sts2MobileLauncher's
 // GameLaunchPreparationManager; every step is idempotent and cheap when
-// nothing changed, so it runs on every launch.
+// nothing changed, so it runs on every launch: in the launcher, and again in
+// the game's process before the engine starts, where it must stay fast (the
+// sts2.dll hash and the compat pack choice are cached on disk for that).
 
 package dev.sts2ds.launcher
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.system.Os
 import dev.sts2ds.BuildConfig
 import org.json.JSONArray
@@ -75,6 +78,7 @@ object GamePrep {
         if (!pck.isFile || !gameDll.isFile) {
             throw NotReady("Slay the Spire 2 is not downloaded yet")
         }
+        val started = System.nanoTime()
         configureEnvironment(files)
 
         val state = context.getSharedPreferences("game_prep", Context.MODE_PRIVATE)
@@ -85,12 +89,21 @@ object GamePrep {
         if (force || state.getString("pck_stamp", "") != pckStamp) {
             val result = PckPatcher.patchSentry(pck)
             LauncherLog.log("PCK: ${result.toJson()}")
-            state.edit().putString("pck_stamp", "${pck.length()}:${pck.lastModified()}").apply()
+            state.edit().putString("pck_stamp", "${pck.length()}:${pck.lastModified()}").commit()
         }
 
         progress("Choosing compatibility pack…")
-        val dllSha = sha256(gameDll)
-        val compat = selectCompat(context, dllSha, version)
+        val dllSha = gameDllSha(state, gameDll, force)
+        clearBuildCaches(files, state, "$dllSha:${state.getString("pck_stamp", "")}")
+        val compatStamp = "${apkStamp(context)}:$dllSha:$version"
+        val cachedCompat = if (force) null else cachedCompat(context, state, compatStamp)
+        val compat = cachedCompat ?: selectCompat(context, dllSha, version).also {
+            state.edit()
+                .putString("compat_stamp", compatStamp)
+                .putString("compat_pack", it.packId)
+                .putString("compat_target", it.targetId)
+                .commit()
+        }
         LauncherLog.log("Game $version (sts2.dll ${dllSha.take(12)}) → compat ${compat.packId}/${compat.targetId}")
 
         progress("Staging assemblies…")
@@ -107,20 +120,20 @@ object GamePrep {
             for (name in context.assets.list("dualscreen").orEmpty()) {
                 copyAsset(context, "dualscreen/$name", File(publish, name))
             }
-            state.edit().putString("bcl_stamp", bclStamp).apply()
+            state.edit().putString("bcl_stamp", bclStamp).commit()
         }
-        copyIfDifferent(compat.dll, File(publish, COMPAT_DLL_NAME))
+        stageCompatFile(compat.dll, File(publish, COMPAT_DLL_NAME), cachedCompat == null)
 
         val gameStamp = "${gameDir.absolutePath}:$dllSha:$bclStamp"
         if (force || state.getString("game_stamp", "") != gameStamp) {
             val runtimeNames = context.assets.list("dotnet_bcl").orEmpty().toSet() +
                 context.assets.list("dualscreen").orEmpty() + COMPAT_DLL_NAME
             copyGameAssemblies(assemblies, publish, runtimeNames)
-            state.edit().putString("game_stamp", gameStamp).apply()
+            state.edit().putString("game_stamp", gameStamp).commit()
         }
 
         progress("Writing launch context…")
-        copyIfDifferent(compat.overlay, File(files, "port_compat.pck"))
+        stageCompatFile(compat.overlay, File(files, "port_compat.pck"), cachedCompat == null)
         val accountRoot = File(files, "default/1").apply { mkdirs() }
         val modsDir = File(files, "mods").apply { mkdirs() }
         val logsDir = File(files, "logs").apply { mkdirs() }
@@ -134,10 +147,15 @@ object GamePrep {
                 .put("fps", settings.dualScreenFps)
                 .put("default_tab", settings.dualScreenDefaultTab)
                 .put("show_top_hint", settings.dualScreenTopHint)
+                .put("particle_amount", settings.particleAmount / 100.0)
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
 
+        LauncherLog.log(
+            "Prepared in ${(System.nanoTime() - started) / 1_000_000} ms" +
+                if (cachedCompat != null) " (cached)" else " (full)"
+        )
         return Prepared(
             gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen,
             settings.renderer, settings.refreshRate,
@@ -156,12 +174,14 @@ object GamePrep {
             if (json == null) {
                 LauncherLog.log("settings.save not created yet; performance defaults apply next launch")
             } else {
-                val refresh = GameSettingsFile.refreshAfterGame(
+                val firstTime = !settings.perfDefaultsApplied
+                // The Balanced preset locks the panel to 60 Hz, over the
+                // compat pack's in-game toggle too.
+                val refresh = if (firstTime) SettingsStore.REFRESH_60HZ else GameSettingsFile.refreshAfterGame(
                     settings.refreshRate,
                     if (json.has(GameSettingsFile.KEY_HIGH_REFRESH)) json.optBoolean(GameSettingsFile.KEY_HIGH_REFRESH) else null,
                 )
                 if (refresh != settings.refreshRate) settings.refreshRate = refresh
-                val firstTime = !settings.perfDefaultsApplied
                 var changed = GameSettingsFile.ensurePerformanceDefaults(json, firstTime)
                 val high = refresh == SettingsStore.REFRESH_HIGH
                 if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
@@ -174,7 +194,8 @@ object GamePrep {
                 LauncherLog.log(
                     "Performance: renderer ${settings.renderer}, refresh $refresh, " +
                         "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
-                        "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, warmups ${GameSettingsFile.warmupsEnabled(json)}" +
+                        "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, fps_limit ${json.opt(GameSettingsFile.KEY_FPS_LIMIT)}, " +
+                        "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}" +
                         if (firstTime) " (defaults applied)" else ""
                 )
             }
@@ -189,7 +210,59 @@ object GamePrep {
     /** Where the game keeps its saves on this device, as the compat pack maps them. */
     fun saveRoot(context: Context): File = File(context.filesDir, "default/1")
 
+    /** Texture caches under the files dir; see [clearBuildCaches]. */
+    val BUILD_CACHE_DIRS = listOf("etc2_cache/.godot/imported", ".godot/imported")
+
     // ── compat pack selection ──────────────────────────────────────────────
+
+    /**
+     * sts2.dll's SHA-256, cached by path, size and time: hashing it on every
+     * launch, twice, holds up the engine's start. Stamps are written with
+     * commit(): the game's process reads them a second later.
+     */
+    private fun gameDllSha(state: SharedPreferences, dll: File, force: Boolean): String {
+        val stamp = "${dll.absolutePath}:${dll.length()}:${dll.lastModified()}"
+        val cached = state.getString("dll_sha", null)
+        if (!force && cached != null && state.getString("dll_sha_stamp", "") == stamp) return cached
+        val sha = sha256(dll)
+        state.edit().putString("dll_sha_stamp", stamp).putString("dll_sha", sha).commit()
+        return sha
+    }
+
+    /**
+     * The engine's converted copies of the game's textures (ETC2, and Godot's
+     * own import cache) are named by resource path, not content, so they
+     * outlive an update or a switch between stable and beta and keep serving
+     * the old build's card art and relic icons. Dropped whenever the game
+     * build changes, as Sts2MobileLauncher's GameLaunchPreparationManager does
+     * on a PCK change; the first launch after that converts them again.
+     * Shader caches stay: Godot keys those by shader source. So does the
+     * compat pack's learned preload list, which checks the build itself.
+     */
+    private fun clearBuildCaches(files: File, state: SharedPreferences, build: String) {
+        // MonoMod leaves a dump of every patched method in TMPDIR, each launch.
+        files.resolve("tmp").listFiles { f -> f.name.startsWith("MonoMod_DMD_") }?.forEach { it.delete() }
+        if (state.getString("cache_build", "") == build) return
+        var bytes = 0L
+        for (cache in BUILD_CACHE_DIRS.map { File(files, it) }) {
+            if (!cache.exists()) continue
+            bytes += cache.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+            cache.deleteRecursively()
+        }
+        state.edit().putString("cache_build", build).commit()
+        LauncherLog.log("Game build changed: cleared the texture cache (${bytes / (1 shl 20)} MB)")
+    }
+
+    /** The compat target chosen last time for this APK and game, if its files are still there. */
+    private fun cachedCompat(context: Context, state: SharedPreferences, stamp: String): Compat? {
+        if (state.getString("compat_stamp", "") != stamp) return null
+        val packId = state.getString("compat_pack", null) ?: return null
+        val targetId = state.getString("compat_target", null) ?: return null
+        val dir = File(context.filesDir, "compat/$packId/$targetId")
+        val dll = File(dir, "STS2Mobile.dll")
+        val overlay = File(dir, "port_compat.pck")
+        return if (dll.isFile && overlay.isFile) Compat(packId, targetId, dll, overlay) else null
+    }
 
     private class Compat(val packId: String, val targetId: String, val dll: File, val overlay: File)
 
@@ -352,8 +425,22 @@ object GamePrep {
         context.assets.open(asset).use { input -> writeAtomically(dest) { input.copyTo(it) } }
     }
 
+    /**
+     * A freshly extracted compat file is compared byte for byte; a cached one
+     * was staged by an earlier launch, so only a missing or resized copy is
+     * redone.
+     */
+    private fun stageCompatFile(src: File, dest: File, fresh: Boolean) {
+        if (fresh) copyIfDifferent(src, dest)
+        else if (!dest.isFile || dest.length() != src.length()) copyFile(src, dest)
+    }
+
     private fun copyIfDifferent(src: File, dest: File) {
         if (dest.isFile && dest.length() == src.length() && sameContent(src, dest)) return
+        copyFile(src, dest)
+    }
+
+    private fun copyFile(src: File, dest: File) {
         FileInputStream(src).use { input -> writeAtomically(dest) { input.copyTo(it) } }
     }
 

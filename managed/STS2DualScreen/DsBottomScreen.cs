@@ -72,6 +72,9 @@ internal sealed class DsBottomScreen
     private ulong _idleArtShownUsec;
     private bool _idleArtFrozen;
     private const int PileFps = 30;
+    // In a fight every card move redraws a pile grid while the top screen is
+    // busiest; half the rate there is still smooth enough for cards moving.
+    private const int CombatFps = 15;
     private Control _idle;
     private Control _idleArt;
     private bool _idleArtLoading;
@@ -90,6 +93,22 @@ internal sealed class DsBottomScreen
     // animation). Each capture is a full render and readback, so idle checks
     // are rare; piles announce their own changes (see DsGameHooks).
     private const ulong IdleIntervalUsec = 1_000_000;
+
+    // A capture renders on the game's GPU in the game's frame. After a slow
+    // game frame (over SlowFrameUsec), one that is due waits for a faster
+    // frame, but never longer than MaxDeferUsec. A touch never waits.
+    private const ulong SlowFrameUsec = 20_000;
+    private const ulong MaxDeferUsec = 250_000;
+    private ulong _deferredSinceUsec;
+
+    // While the game boots there is nothing to show below, and the menu art
+    // load and its captures would compete with the boot: one black frame,
+    // then nothing until the main menu is up (or BootTimeoutUsec, should
+    // that hook never fire).
+    private const ulong BootTimeoutUsec = 30_000_000;
+    private readonly ulong _createdUsec;
+    private bool _booted;
+    private bool _bootFrameShown;
     private const ulong ActiveWindowUsec = 1_000_000;
     private const int MaxInFlight = 3;
     private ulong _activeUntilUsec;
@@ -105,10 +124,12 @@ internal sealed class DsBottomScreen
 
     // Game frame pacing, for the stats line.
     private ulong _lastFrameUsec;
+    private ulong _lastFrameDtUsec;
     private ulong _frameUsecTotal;
     private ulong _frameUsecMax;
     private int _frameCount;
     private int _hitches;
+    private int _deferred;
     private int _gcMinor;
     private int _gcMajor;
 
@@ -233,6 +254,7 @@ internal sealed class DsBottomScreen
         _topHint.AddThemeConstantOverride("outline_size", 10);
         _topHintLayer.AddChild(_topHint);
 
+        _createdUsec = Time.GetTicksUsec();
         _rd = RenderingServer.GetRenderingDevice();
         // Variant, not byte[]: the frame arrives as Godot's own refcounted
         // PackedByteArray and is read in place. A byte[] would be a fresh
@@ -486,6 +508,7 @@ internal sealed class DsBottomScreen
     // buttons with Input.ParseInputEvent.
     private void OnRootInput(InputEvent e)
     {
+        DsGameHooks.NoteInput(e);
         if (!_surfaceReady || !_inRun || e is InputEventMouse or InputEventScreenTouch or InputEventScreenDrag or InputEventGesture)
             return;
         try
@@ -544,13 +567,15 @@ internal sealed class DsBottomScreen
                 _pointerId = -1;
                 _fingers.Clear();
                 _twoFinger = false;
+                _bootFrameShown = false;
                 MarkChanged();
                 DsLog.Info($"bottom surface {state.Width}x{state.Height}, canvas {_viewport.Size2DOverride}");
                 DsGameHooks.OnSurfaceReady();
             }
 
             UpdateRunState();
-            if (!_inRun)
+            var booting = IsBooting();
+            if (!_inRun && !booting)
             {
                 UpdateIdleArt();
                 FreezeIdleArt();
@@ -571,19 +596,21 @@ internal sealed class DsBottomScreen
                 _inFlight = 0;
             }
             // The frozen menu art never changes by itself: no idle checks.
-            var still = !_inRun && _idleArtFrozen && now >= _activeUntilUsec;
-            if (now >= _nextFrameUsec && _inFlight < MaxInFlight && !still)
+            var still = booting ? _bootFrameShown : !_inRun && _idleArtFrozen && now >= _activeUntilUsec;
+            if (now >= _nextFrameUsec && _inFlight < MaxInFlight && !still && !DeferCapture(now))
             {
                 // The menu art animates without pause; it needn't be smooth.
                 // A pile grid is many cards, each costly to draw, and mostly
                 // still; only the map gets the full rate.
                 var fps = !_inRun ? Math.Min(_config.Fps, IdleArtFps)
                     : _active == "map" || TouchRecent || _fling != 0 ? _config.Fps
-                    : Math.Min(_config.Fps, PileFps);
+                    : Math.Min(_config.Fps, DsGameHooks.InCombat ? CombatFps : PileFps);
                 var interval = now < _activeUntilUsec ? (ulong)(1_000_000 / Math.Max(1, fps)) : IdleIntervalUsec;
                 _nextFrameUsec = now + interval;
                 RenderingServer.ViewportSetUpdateMode(_viewport.GetViewportRid(), RenderingServer.ViewportUpdateMode.Once);
                 _readbackDue = true;
+                if (booting)
+                    _bootFrameShown = true;
             }
             if (now - _lastStatsUsec > 10_000_000)
             {
@@ -596,6 +623,38 @@ internal sealed class DsBottomScreen
             DsLog.Info($"frame failed, bottom screen stopped: {e}");
             _tree.ProcessFrame -= OnProcessFrame;
         }
+    }
+
+    private bool IsBooting()
+    {
+        if (_booted)
+            return false;
+        var mainMenu = DsGameHooks.MainMenuReady;
+        if (!_inRun && !mainMenu && Time.GetTicksUsec() - _createdUsec < BootTimeoutUsec)
+            return true;
+        _booted = true;
+        if (!_inRun && !mainMenu)
+            DsLog.Info("no main menu after 30 s; lower screen wakes anyway");
+        MarkChanged();
+        return false;
+    }
+
+    private bool DeferCapture(ulong now)
+    {
+        if (_lastFrameDtUsec <= SlowFrameUsec || TouchRecent)
+        {
+            _deferredSinceUsec = 0;
+            return false;
+        }
+        if (_deferredSinceUsec == 0)
+            _deferredSinceUsec = now;
+        if (now - _deferredSinceUsec >= MaxDeferUsec)
+        {
+            _deferredSinceUsec = 0;
+            return false;
+        }
+        _deferred++;
+        return true;
     }
 
     private void UpdateRunState()
@@ -636,6 +695,7 @@ internal sealed class DsBottomScreen
         if (_lastFrameUsec != 0)
         {
             var dt = now - _lastFrameUsec;
+            _lastFrameDtUsec = dt;
             _frameUsecTotal += dt;
             _frameUsecMax = Math.Max(_frameUsecMax, dt);
             _frameCount++;
@@ -653,12 +713,12 @@ internal sealed class DsBottomScreen
         var frame = _frameCount > 0 ? _frameUsecTotal / 1000.0 / _frameCount : 0;
         var gcMinor = GC.CollectionCount(0);
         var gcMajor = GC.CollectionCount(GC.MaxGeneration);
-        DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} readback_avg={readback:F1}ms submit_avg={submit:F1}ms captures={_readbackCount} tab={_active}"
+        DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} readback_avg={readback:F1}ms submit_avg={submit:F1}ms captures={_readbackCount} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred}"
             + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}");
         _readbackMsTotal = _submitMsTotal = 0;
         _readbackCount = _submitCount = 0;
         _frameUsecTotal = _frameUsecMax = 0;
-        _frameCount = _hitches = 0;
+        _frameCount = _hitches = _deferred = 0;
         _gcMinor = gcMinor;
         _gcMajor = gcMajor;
     }
