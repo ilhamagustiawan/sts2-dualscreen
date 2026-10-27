@@ -7,11 +7,17 @@ namespace STS2DualScreen;
 // The bottom screen.
 //
 // A SubViewport sized to the bottom panel holds a tab bar and one page per
-// tab. Pages host the game's own nodes (its map screen, its card pile screens),
-// moved or instantiated here by DsGameHooks, so they look and behave as they
-// do on PC. Every frame (capped at Config.Fps) the viewport is read back and
-// handed to libsts2ds, which posts it to the Presentation on the other display;
-// touches queued there come back as mouse events pushed into this viewport.
+// tab, docked along the bottom edge. Pages host the game's own nodes (its map
+// screen, its card pile screens), moved or instantiated here by DsGameHooks, so
+// they look and behave as they do on PC. Every frame (capped at Config.Fps) the
+// viewport is read back and handed to libsts2ds, which posts it to the
+// Presentation on the other display; touches queued there come back as mouse
+// events pushed into this viewport.
+//
+// Controller and keyboard input reaches only the root window. While the open
+// map is the game's current screen, every non-pointer event the root receives
+// is pushed in here too, so the map's focus, A to travel and the drawing
+// cursor work as they would on one screen.
 //
 // Nothing here subclasses a Godot type: this assembly is built without the
 // Godot source generators, so virtual callbacks like _Process would never
@@ -41,6 +47,7 @@ internal sealed class DsBottomScreen
     private readonly Dictionary<string, Label> _placeholders = new();
     private readonly CanvasLayer _topHintLayer;
     private readonly Label _topHint;
+    private bool _styled;
     private string _active;
     private int _generation = -1;
     private bool _surfaceReady;
@@ -53,8 +60,16 @@ internal sealed class DsBottomScreen
     private int _pointerId = -1;
     private Vector2 _pointerPos;
     private float _wheelAccumulator;
+    private ulong _lastTouchUsec;
+    private readonly Dictionary<int, Vector2> _fingers = new();
+    private bool _twoFinger;
+    private Vector2 _scrollMid;
 
     public bool Ready => _surfaceReady;
+
+    /// <summary>A touch on the lower screen is down or ended in the last moment,
+    /// so whatever it pressed was pressed by touch, not the controller.</summary>
+    public bool TouchRecent => _pointerId >= 0 || Time.GetTicksUsec() - _lastTouchUsec < 300_000;
     public Vector2 CanvasSize => _viewport.Size2DOverride;
 
     private DsBottomScreen(SceneTree tree, DsConfig config)
@@ -85,7 +100,7 @@ internal sealed class DsBottomScreen
 
         _content = new Control { Name = "Content", ClipContents = true };
         _content.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _content.OffsetTop = TabBarHeight;
+        _content.OffsetBottom = -TabBarHeight;
         _content.MouseFilter = Control.MouseFilterEnum.Pass;
         _root.AddChild(_content);
 
@@ -110,13 +125,11 @@ internal sealed class DsBottomScreen
             page.AddChild(placeholder);
             _placeholders[tab] = placeholder;
         }
-        SetPlaceholder("map", "The map opens here.\n\nTap to view it.");
+        SetPlaceholder("map", "The map shows here once a run starts.");
         SetPlaceholder("draw", "Your draw pile shows here during combat.");
         SetPlaceholder("discard", "Your discard pile shows here during combat.");
         SetPlaceholder("exhaust", "Exhausted cards show here during combat.");
         SetPlaceholder("deck", "Your deck shows here once a run starts.");
-        _placeholders["map"].MouseFilter = Control.MouseFilterEnum.Stop;
-        _placeholders["map"].GuiInput += OnMapPlaceholderInput;
 
         BuildTabBar();
 
@@ -139,6 +152,7 @@ internal sealed class DsBottomScreen
         _tree.Root.AddChild(_viewport);
         _tree.Root.AddChild(_topHintLayer);
         _tree.ProcessFrame += OnProcessFrame;
+        _tree.Root.WindowInput += OnRootInput;
         Show(Array.IndexOf(Tabs, config.DefaultTab) >= 0 ? config.DefaultTab : "map");
     }
 
@@ -176,13 +190,57 @@ internal sealed class DsBottomScreen
 
     public void SetTopHint(bool visible) => _topHintLayer.Visible = visible && _config.ShowTopHint && _surfaceReady;
 
+    /// <summary>The map took the controller: nothing on the top screen keeps focus.</summary>
+    public void ReleaseTopFocus() => _tree.Root.GuiReleaseFocus();
+
+    /// <summary>The map gave the controller back.</summary>
+    public void ReleaseBottomFocus() => _viewport.GuiReleaseFocus();
+
+    /// <summary>
+    /// Restyles our text after a live game label: the font, colours, outline
+    /// and shadow of the hint, and the font of the tabs and placeholders. Taken
+    /// from the running game rather than a resource path so it follows the
+    /// game's per-language font swap.
+    /// </summary>
+    public void ApplyGameTextStyle(Label reference)
+    {
+        if (_styled || reference == null || !GodotObject.IsInstanceValid(reference))
+            return;
+        _styled = true;
+        var font = reference.GetThemeFont("font");
+        if (reference.LabelSettings is { } settings)
+        {
+            var copy = (LabelSettings)settings.Duplicate();
+            copy.FontSize = Math.Max(copy.FontSize, 36);
+            _topHint.LabelSettings = copy;
+            font = settings.Font ?? font;
+        }
+        else
+        {
+            _topHint.AddThemeFontOverride("font", font);
+            _topHint.AddThemeColorOverride("font_color", reference.GetThemeColor("font_color"));
+            _topHint.AddThemeColorOverride("font_outline_color", reference.GetThemeColor("font_outline_color"));
+            _topHint.AddThemeConstantOverride("outline_size", reference.GetThemeConstant("outline_size"));
+            _topHint.AddThemeColorOverride("font_shadow_color", reference.GetThemeColor("font_shadow_color"));
+            _topHint.AddThemeConstantOverride("shadow_offset_x", reference.GetThemeConstant("shadow_offset_x"));
+            _topHint.AddThemeConstantOverride("shadow_offset_y", reference.GetThemeConstant("shadow_offset_y"));
+            _topHint.AddThemeConstantOverride("shadow_outline_size", reference.GetThemeConstant("shadow_outline_size"));
+        }
+        if (font == null)
+            return;
+        foreach (var button in _buttons.Values)
+            button.AddThemeFontOverride("font", font);
+        foreach (var label in _placeholders.Values)
+            label.AddThemeFontOverride("font", font);
+    }
+
     private void BuildTabBar()
     {
         var bar = new PanelContainer { Name = "TabBar" };
-        bar.SetAnchorsPreset(Control.LayoutPreset.TopWide);
-        bar.OffsetBottom = TabBarHeight;
+        bar.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+        bar.OffsetTop = -TabBarHeight;
         var barStyle = new StyleBoxFlat { BgColor = new Color(0.12f, 0.1f, 0.08f) };
-        barStyle.BorderWidthBottom = 3;
+        barStyle.BorderWidthTop = 3;
         barStyle.BorderColor = new Color(0.55f, 0.42f, 0.24f);
         bar.AddThemeStyleboxOverride("panel", barStyle);
         _root.AddChild(bar);
@@ -225,12 +283,6 @@ internal sealed class DsBottomScreen
         return style;
     }
 
-    private void OnMapPlaceholderInput(InputEvent e)
-    {
-        if (e is InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: false })
-            DsGameHooks.OpenMapFromBottom();
-    }
-
     private void ApplySize(int width, int height)
     {
         _viewport.Size = new Vector2I(width, height);
@@ -239,6 +291,31 @@ internal sealed class DsBottomScreen
             (int)MathF.Round(width * scale),
             (int)MathF.Round(height * scale)
         );
+    }
+
+    // ── controller ─────────────────────────────────────────────────────────
+
+    // Emitted for every event the root window gets, before the root handles
+    // it; that includes the ui_* actions the game makes from controller
+    // buttons with Input.ParseInputEvent.
+    private void OnRootInput(InputEvent e)
+    {
+        if (!_surfaceReady || e is InputEventMouse or InputEventScreenTouch or InputEventScreenDrag or InputEventGesture)
+            return;
+        try
+        {
+            if (DsGameHooks.MapOwnsInput())
+            {
+                _viewport.PushInput(e, false);
+                return;
+            }
+            if (e is InputEventAction { Pressed: true } action && action.Action == "ui_select" && _tree.Root.GuiGetFocusOwner() == null)
+                DsLog.Info($"select pressed with nothing focused on the top screen (screen={DsGameHooks.CurrentScreenName()})");
+        }
+        catch (Exception ex)
+        {
+            DsLog.Info($"controller forwarding failed: {ex.Message}");
+        }
     }
 
     // ── per frame ──────────────────────────────────────────────────────────
@@ -266,11 +343,13 @@ internal sealed class DsBottomScreen
                 ApplySize(state.Width, state.Height);
                 _viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
                 _pointerId = -1;
+                _fingers.Clear();
+                _twoFinger = false;
                 DsLog.Info($"bottom surface {state.Width}x{state.Height}, canvas {_viewport.Size2DOverride}");
                 DsGameHooks.OnSurfaceReady();
             }
 
-            PumpTouches(state.Width, state.Height);
+            PumpTouches();
 
             var now = Time.GetTicksUsec();
             if (now >= _nextFrameUsec)
@@ -314,7 +393,7 @@ internal sealed class DsBottomScreen
         }
     }
 
-    private unsafe void PumpTouches(int width, int height)
+    private unsafe void PumpTouches()
     {
         const int Max = 64;
         var touches = stackalloc DsNative.Touch[Max];
@@ -322,19 +401,48 @@ internal sealed class DsBottomScreen
         for (var i = 0; i < count; i++)
         {
             var t = touches[i];
-            // Physical surface pixels; PushInput maps them through the
-            // viewport's stretch transform onto the canvas.
-            var pos = new Vector2(t.X * width, t.Y * height);
+            // Canvas coordinates, pushed as local: PushInput would map
+            // Position through the stretch but leave GlobalPosition in surface
+            // pixels, and the map draws lines at GlobalPosition.
+            var pos = new Vector2(t.X, t.Y) * CanvasSize;
+            _lastTouchUsec = Time.GetTicksUsec();
             switch (t.Phase)
             {
-                case DsNative.PhaseDown when _pointerId < 0:
-                    _pointerId = t.Id;
-                    _pointerPos = pos;
-                    _wheelAccumulator = 0;
-                    Push(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
-                    Push(MouseButtonEvent(pos, pressed: true));
+                case DsNative.PhaseDown:
+                    _fingers[t.Id] = pos;
+                    if (_fingers.Count == 1 && !_twoFinger)
+                    {
+                        _pointerId = t.Id;
+                        _pointerPos = pos;
+                        _wheelAccumulator = 0;
+                        Push(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
+                        Push(MouseButtonEvent(pos, pressed: true));
+                    }
+                    else if (_fingers.Count == 2)
+                    {
+                        // A second finger turns the gesture into a scroll: let go
+                        // of the first finger's press (ending a drawn line or a
+                        // drag) and follow the midpoint from here.
+                        if (_pointerId >= 0)
+                            Push(MouseButtonEvent(_pointerPos, pressed: false));
+                        _pointerId = -1;
+                        _twoFinger = true;
+                        _wheelAccumulator = 0;
+                        _scrollMid = Midpoint();
+                    }
                     break;
-                case DsNative.PhaseMove when t.Id == _pointerId:
+                case DsNative.PhaseMove:
+                    if (!_fingers.ContainsKey(t.Id))
+                        break;
+                    _fingers[t.Id] = pos;
+                    if (_twoFinger)
+                    {
+                        if (_fingers.Count >= 2)
+                            TwoFingerScroll();
+                        break;
+                    }
+                    if (t.Id != _pointerId)
+                        break;
                     var relative = pos - _pointerPos;
                     _pointerPos = pos;
                     Push(new InputEventMouseMotion
@@ -347,13 +455,50 @@ internal sealed class DsBottomScreen
                     if (_active != "map")
                         EmulateWheel(pos, relative.Y);
                     break;
-                case DsNative.PhaseUp when t.Id == _pointerId:
-                case DsNative.PhaseCancel when t.Id == _pointerId:
-                    Push(MouseButtonEvent(pos, pressed: false));
-                    _pointerId = -1;
+                case DsNative.PhaseUp:
+                case DsNative.PhaseCancel:
+                    _fingers.Remove(t.Id);
+                    if (t.Id == _pointerId)
+                    {
+                        Push(MouseButtonEvent(pos, pressed: false));
+                        _pointerId = -1;
+                    }
+                    // The rest of a two-finger gesture never becomes a press.
+                    if (_fingers.Count == 0)
+                        _twoFinger = false;
+                    else if (_twoFinger)
+                        _scrollMid = Midpoint();
                     break;
             }
         }
+    }
+
+    private Vector2 Midpoint()
+    {
+        var sum = Vector2.Zero;
+        var n = 0;
+        foreach (var p in _fingers.Values)
+        {
+            sum += p;
+            if (++n == 2)
+                break;
+        }
+        return n == 0 ? Vector2.Zero : sum / n;
+    }
+
+    // The map scrolls on trackpad pan gestures (drag = -Delta.Y * 50) and the
+    // card grids on the wheel, so a two-finger drag becomes one or the other.
+    private void TwoFingerScroll()
+    {
+        var mid = Midpoint();
+        var dy = mid.Y - _scrollMid.Y;
+        _scrollMid = mid;
+        if (dy == 0f)
+            return;
+        if (_active == "map")
+            Push(new InputEventPanGesture { Position = mid, Delta = new Vector2(0f, -dy / 50f) });
+        else
+            EmulateWheel(mid, dy);
     }
 
     // Card grids scroll with the wheel on PC; turn a vertical drag into wheel steps.
@@ -381,5 +526,5 @@ internal sealed class DsBottomScreen
             ButtonMask = pressed ? MouseButtonMask.Left : 0,
         };
 
-    private void Push(InputEvent e) => _viewport.PushInput(e, false);
+    private void Push(InputEvent e) => _viewport.PushInput(e, true);
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Godot;
 using HarmonyLib;
@@ -11,8 +12,10 @@ namespace STS2DualScreen;
 // Map: the game's NMapScreen is moved into the bottom screen's Map page as
 // soon as it exists. It keeps all of its own behaviour (opening at the end of
 // a room, travel, drawing, the back button); it simply renders and takes
-// input down there. When it opens, the bottom screen switches to the Map tab
-// and the top screen shows a one-line hint.
+// input down there. When it opens, the bottom screen switches to the Map tab,
+// the top screen shows a one-line hint, and the controller drives the map.
+// It no longer covers the top screen, so closing it skips the fade-out: the
+// Map tab always shows it, closed (look and scroll only) or open.
 //
 // Piles: each pile tab hosts a fresh instance of the game's NCardPileScreen
 // bound to the live CardPile, so it updates as cards move. The pile buttons
@@ -29,6 +32,13 @@ internal static class DsGameHooks
     private const string TopBarDeckButtonType = "MegaCrit.sts2.Core.Nodes.TopBar.NTopBarDeckButton";
     private const string PileTypeType = "MegaCrit.Sts2.Core.Entities.Cards.PileType";
     private const string PileTypeExtensionsType = "MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions";
+    private const string MapPointType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapPoint";
+    private const string MapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapDrawingInput";
+    private const string ControllerMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NControllerMapDrawingInput";
+    private const string ControllerManagerType = "MegaCrit.Sts2.Core.Nodes.CommonUi.NControllerManager";
+    private const string ActiveScreenContextType = "MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext.ActiveScreenContext";
+    private const string MouseModeMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMouseModeMapDrawingInput";
+    private const string PlayerHandType = "MegaCrit.Sts2.Core.Nodes.Combat.NPlayerHand";
 
     private static readonly Dictionary<string, string> TabToPileType = new()
     {
@@ -42,6 +52,9 @@ internal static class DsGameHooks
     private static Type _pileScreenType;
     private static MethodInfo _getPile;
     private static Type _pileTypeEnum;
+    private static Type _controllerManagerType;
+    private static Type _screenContextType;
+    private static MethodInfo _tapPreviewPrefix;
     private static Control _pendingMap;
     private static Control _map;
     private static object _player;
@@ -94,6 +107,17 @@ internal static class DsGameHooks
         Patch(harmony, _mapType, "_Ready", postfix: nameof(MapReadyPostfix));
         Patch(harmony, _mapType, "Open", postfix: nameof(MapOpenPostfix));
         Patch(harmony, _mapType, "Close", postfix: nameof(MapClosePostfix));
+        Patch(harmony, _mapType, "AnimClose", prefix: nameof(MapAnimClosePrefix));
+        Patch(harmony, FindType(MapPointType), "OnRelease", prefix: nameof(MapPointReleasePrefix));
+        Patch(harmony, FindType(MapDrawingInputType), "Create", prefix: nameof(DrawingInputCreatePrefix), postfix: nameof(DrawingInputCreatePostfix));
+        Patch(harmony, FindType(ControllerMapDrawingInputType), "_Process", prefix: nameof(ControllerDrawingProcessPrefix), postfix: nameof(ControllerDrawingProcessPostfix));
+        _controllerManagerType = FindType(ControllerManagerType);
+        _screenContextType = FindType(ActiveScreenContextType);
+        // The "Controller detected" / "Mouse detected" toast; the mode switch
+        // itself happens before this and is untouched.
+        Patch(harmony, _controllerManagerType, "ControlModeChanged", prefix: nameof(SkipPrefix));
+        Patch(harmony, FindType(MouseModeMapDrawingInputType), "_Input", prefix: nameof(NotQueuedForDeletionPrefix));
+        GuardTapPreview(harmony);
         Patch(harmony, FindType(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
@@ -138,14 +162,90 @@ internal static class DsGameHooks
 
     public static void OnSurfaceReady()
     {
-        if (_map != null && IsMapOpen())
+        if (!MapValid())
+            return;
+        if (IsMapOpen())
             DsBottomScreen.Instance?.Show("map");
+        else
+            RevealMap(_map, scrollToCurrent: false);
     }
 
     public static void OnTabShown(string tab)
     {
         if (TabToPileType.ContainsKey(tab))
             EnsurePileScreen(tab);
+        else if (tab == "map")
+            UpdateMapPlaceholder();
+    }
+
+    /// <summary>The open map is the game's current screen, so the controller is its.</summary>
+    public static bool MapOwnsInput()
+    {
+        if (!IsMapOpen() || _screenContextType == null)
+            return false;
+        var context = AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+        return context != null && ReferenceEquals(AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null), _map);
+    }
+
+    public static string CurrentScreenName()
+    {
+        var context = _screenContextType == null ? null : AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+        var current = context == null ? null : AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null);
+        return current?.GetType().Name ?? "none";
+    }
+
+    private static object ControllerManager() =>
+        _controllerManagerType == null ? null : AccessTools.Property(_controllerManagerType, "Instance")?.GetValue(null);
+
+    private static bool SkipPrefix() => false;
+
+    // A stopped drawing tool is freed at the end of the frame; touches later
+    // in that frame would start a line with no drawing mode and throw.
+    private static bool NotQueuedForDeletionPrefix(object __instance) =>
+        __instance is not Node node || !node.IsQueuedForDeletion();
+
+    private static bool IsUsingController()
+    {
+        var manager = ControllerManager();
+        return manager != null && AccessTools.Property(_controllerManagerType, "IsUsingController")?.GetValue(manager) is true;
+    }
+
+    // The compat pack's touch "tap to preview" turns the first press on a hand
+    // card into a pinned preview and, by default, the second into putting it
+    // back down. It doesn't check where the press came from, so with a
+    // controller A never plays a card. Its prefix is swapped for one that only
+    // runs it when not on a controller.
+    private static void GuardTapPreview(Harmony harmony)
+    {
+        var hand = FindType(PlayerHandType);
+        var target = hand == null ? null : AccessTools.Method(hand, "OnHolderPressed");
+        if (target == null)
+            return;
+        try
+        {
+            var patch = Harmony.GetPatchInfo(target)?.Prefixes
+                .FirstOrDefault(p => p.PatchMethod.Name == "OnHolderPressedPrefix" && p.owner != harmony.Id);
+            if (patch == null)
+            {
+                DsLog.Info("no tap-preview patch on NPlayerHand.OnHolderPressed; nothing to guard");
+                return;
+            }
+            _tapPreviewPrefix = patch.PatchMethod;
+            harmony.Unpatch(target, patch.PatchMethod);
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(DsGameHooks), nameof(HolderPressedPrefix)));
+            DsLog.Info($"tap preview limited to touch ({patch.owner})");
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not guard tap preview: {e.Message}");
+        }
+    }
+
+    private static bool HolderPressedPrefix(object __instance, object holder)
+    {
+        if (_tapPreviewPrefix == null || IsUsingController())
+            return true;
+        return _tapPreviewPrefix.Invoke(null, new[] { __instance, holder }) is not false;
     }
 
     // ── map ────────────────────────────────────────────────────────────────
@@ -179,7 +279,10 @@ internal static class DsGameHooks
                 map.OffsetLeft = map.OffsetTop = map.OffsetRight = map.OffsetBottom = 0;
             }
             _map = map;
+            if (screen.Ready && !IsMapOpen())
+                RevealMap(map, scrollToCurrent: true);
             UpdateMapPlaceholder();
+            StyleText(screen);
             DsLog.Info("map screen moved to the bottom screen");
         }
         catch (Exception e)
@@ -198,36 +301,167 @@ internal static class DsGameHooks
             return;
         screen.Show("map");
         screen.SetTopHint(true);
+        screen.ReleaseTopFocus();
     }
 
     private static void MapClosePostfix(object __instance)
     {
         if (__instance != _map)
             return;
-        UpdateMapPlaceholder();
         var screen = DsBottomScreen.Instance;
         if (screen == null)
             return;
         screen.SetTopHint(false);
+        screen.ReleaseBottomFocus();
+        // Close(animateOut: false) hides it directly.
+        if (screen.Ready)
+            RevealMap(_map, scrollToCurrent: false);
+        UpdateMapPlaceholder();
         if (_inCombat && screen.ActiveTab == "map")
             screen.Show("draw");
     }
 
+    private static bool MapAnimClosePrefix(object __instance, ref System.Threading.Tasks.Task __result)
+    {
+        if (__instance != _map || DsBottomScreen.Instance?.Ready != true)
+            return true;
+        __result = System.Threading.Tasks.Task.CompletedTask;
+        return false;
+    }
+
+    // A travelable point on the closed map opens the map first, so the
+    // journey starts from the open state the game expects.
+    private static void MapPointReleasePrefix(object __instance)
+    {
+        if (!MapValid() || IsMapOpen() || DsBottomScreen.Instance?.Ready != true)
+            return;
+        if (AccessTools.Property(__instance.GetType(), "IsTravelable")?.GetValue(__instance) is true)
+            OpenMap();
+    }
+
+    private static bool MapValid() => _map != null && GodotObject.IsInstanceValid(_map);
+
     private static bool IsMapOpen() =>
-        _map != null && GodotObject.IsInstanceValid(_map) && AccessTools.Property(_mapType, "IsOpen")?.GetValue(_map) is true;
+        MapValid() && AccessTools.Property(_mapType, "IsOpen")?.GetValue(_map) is true;
 
     private static void UpdateMapPlaceholder()
     {
         var screen = DsBottomScreen.Instance;
         if (screen == null)
             return;
-        screen.SetPlaceholder("map", IsMapOpen() ? "" : _map == null ? "The map shows here once a run starts." : "Tap to view the map.");
+        screen.SetPlaceholder("map", MapValid() ? "" : "The map shows here once a run starts.");
     }
 
-    /// <summary>Tapping the closed Map page opens the map, as the top bar's map button does.</summary>
-    public static void OpenMapFromBottom()
+    /// <summary>
+    /// Shows the closed map as it looks open: visible, processing (so it
+    /// scrolls), with the parts the open/close tweens fade at full strength.
+    /// </summary>
+    private static void RevealMap(Control map, bool scrollToCurrent)
     {
-        if (_map == null || !GodotObject.IsInstanceValid(_map) || IsMapOpen())
+        try
+        {
+            if (AccessTools.Field(_mapType, "_tween")?.GetValue(map) is Tween tween && GodotObject.IsInstanceValid(tween))
+                tween.Kill();
+            map.Visible = true;
+            map.ProcessMode = Node.ProcessModeEnum.Inherit;
+            SetModulate(map, "_mapContainer", Colors.White);
+            SetModulate(map, "_mapLegend", Colors.White);
+            SetModulate(map, "_drawingTools", Colors.White);
+            SetModulate(map, "_points", Colors.White);
+            if (AccessTools.Field(_mapType, "_backstop")?.GetValue(map) is CanvasItem backstop)
+                backstop.Modulate = backstop.Modulate with { A = 0.85f };
+            if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is Control legend)
+                legend.Position = legend.Position with { X = map.Size.X * 0.8f };
+            if (scrollToCurrent)
+                ScrollToCurrent(map);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not show the closed map: {e.Message}");
+        }
+    }
+
+    private static void SetModulate(Control map, string field, Color color)
+    {
+        if (AccessTools.Field(_mapType, field)?.GetValue(map) is CanvasItem item)
+            item.Modulate = color;
+    }
+
+    // Where Open() would put it: the current row near the bottom.
+    private static void ScrollToCurrent(Control map)
+    {
+        var runState = AccessTools.Field(_mapType, "_runState")?.GetValue(map);
+        if (runState == null || AccessTools.Field(_mapType, "_mapContainer")?.GetValue(map) is not Control container)
+            return;
+        var coord = AccessTools.Property(runState.GetType(), "CurrentMapCoord")?.GetValue(runState);
+        var row = coord == null ? 0 : Convert.ToInt32(AccessTools.Field(coord.GetType(), "row")?.GetValue(coord) ?? 0);
+        var distY = AccessTools.Field(_mapType, "_distY")?.GetValue(map) is float d ? d : 0f;
+        var target = new Vector2(0f, -600f + row * distY);
+        container.Position = target;
+        AccessTools.Field(_mapType, "_targetDragPos")?.SetValue(map, target);
+    }
+
+    // The game's own on-screen notice (the controller toast) is the closest
+    // match for our top-screen hint.
+    private static void StyleText(DsBottomScreen screen)
+    {
+        if (ControllerManager() is Node manager && manager.GetNodeOrNull("Label") is Label label)
+            screen.ApplyGameTextStyle(label);
+    }
+
+    // ── map drawing ────────────────────────────────────────────────────────
+
+    // The draw button picks a mouse or a controller drawing tool from the
+    // game's input mode. Touches on the lower screen never reach the game's
+    // controller manager, so after any controller use it would hand a finger
+    // the stick-driven cursor. A button just pressed by touch gets the mouse tool.
+    private static void DrawingInputCreatePrefix(bool stopOnMouseRelease, out bool __state)
+    {
+        __state = false;
+        if (stopOnMouseRelease || DsBottomScreen.Instance?.TouchRecent != true)
+            return;
+        var manager = ControllerManager();
+        var usingController = manager == null ? null : AccessTools.Property(_controllerManagerType, "IsUsingController");
+        if (usingController?.GetValue(manager) is not true)
+            return;
+        usingController.SetValue(manager, false);
+        __state = true;
+    }
+
+    private static void DrawingInputCreatePostfix(bool __state)
+    {
+        if (__state)
+            AccessTools.Property(_controllerManagerType, "IsUsingController")?.SetValue(ControllerManager(), true);
+    }
+
+    // The controller drawing cursor clamps itself to the top screen's game
+    // rect. On the lower screen, clamp to the bottom canvas instead.
+    private static void ControllerDrawingProcessPrefix(object __instance, out Vector2? __state)
+    {
+        __state = null;
+        if (__instance is Node node && node.GetViewport() is SubViewport
+            && AccessTools.Field(__instance.GetType(), "_cursor")?.GetValue(__instance) is Control cursor)
+            __state = cursor.GlobalPosition;
+    }
+
+    private static void ControllerDrawingProcessPostfix(object __instance, double delta, Vector2? __state)
+    {
+        if (__state is not { } before || DsBottomScreen.Instance is not { } screen)
+            return;
+        var type = __instance.GetType();
+        if (AccessTools.Field(type, "_direction")?.GetValue(__instance) is not Vector2 direction || direction.Length() <= 0f
+            || AccessTools.Field(type, "_cursor")?.GetValue(__instance) is not Control cursor)
+            return;
+        cursor.GlobalPosition = (before + direction * 700f * (float)delta).Clamp(Vector2.Zero, screen.CanvasSize);
+        var drawings = AccessTools.Field(type, "_drawings")?.GetValue(__instance);
+        if (drawings is CanvasItem item && AccessTools.Method(drawings.GetType(), "IsLocalDrawing")?.Invoke(drawings, null) is true)
+            AccessTools.Method(drawings.GetType(), "UpdateCurrentLinePositionLocal")
+                ?.Invoke(drawings, new object[] { item.GetGlobalTransform().AffineInverse() * cursor.GlobalPosition });
+    }
+
+    private static void OpenMap()
+    {
+        if (!MapValid() || IsMapOpen())
             return;
         try
         {
