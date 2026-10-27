@@ -49,6 +49,8 @@ object GamePrep {
         val version: String,
         val compatTarget: String,
         val dualScreen: Boolean,
+        val renderer: String,
+        val refreshRate: String,
     )
 
     class NotReady(message: String) : IOException(message)
@@ -134,8 +136,54 @@ object GamePrep {
                 .put("show_top_hint", settings.dualScreenTopHint)
                 .toString(2)
         )
+        applyPerformanceSettings(context, files, settings)
 
-        return Prepared(gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen)
+        return Prepared(
+            gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen,
+            settings.renderer, settings.refreshRate,
+        )
+    }
+
+    /**
+     * The compat pack's performance options live in the game's settings.save
+     * (see GameSettingsFile); the overlay is a flag file it looks for. A failure
+     * here only costs the defaults, never the launch.
+     */
+    private fun applyPerformanceSettings(context: Context, files: File, settings: SettingsStore) {
+        val game = GameSettingsFile(context)
+        try {
+            val json = game.read()
+            if (json == null) {
+                LauncherLog.log("settings.save not created yet; performance defaults apply next launch")
+            } else {
+                val refresh = GameSettingsFile.refreshAfterGame(
+                    settings.refreshRate,
+                    if (json.has(GameSettingsFile.KEY_HIGH_REFRESH)) json.optBoolean(GameSettingsFile.KEY_HIGH_REFRESH) else null,
+                )
+                if (refresh != settings.refreshRate) settings.refreshRate = refresh
+                val firstTime = !settings.perfDefaultsApplied
+                var changed = GameSettingsFile.ensurePerformanceDefaults(json, firstTime)
+                val high = refresh == SettingsStore.REFRESH_HIGH
+                if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
+                    json.put(GameSettingsFile.KEY_HIGH_REFRESH, high)
+                    changed = true
+                }
+                if (changed) game.write(json)
+                if (firstTime) settings.perfDefaultsApplied = true
+                val (w, h) = GameSettingsFile.renderSize(json)
+                LauncherLog.log(
+                    "Performance: renderer ${settings.renderer}, refresh $refresh, " +
+                        "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
+                        "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, warmups ${GameSettingsFile.warmupsEnabled(json)}" +
+                        if (firstTime) " (defaults applied)" else ""
+                )
+            }
+            val overlay = json?.optBoolean(GameSettingsFile.KEY_OVERLAY, false) == true
+            val flag = File(files, "launcher/enable_debug_menu.flag")
+            if (overlay) flag.writeText("1") else flag.delete()
+        } catch (e: Exception) {
+            LauncherLog.log("Could not apply performance settings: ${e.message}")
+        }
     }
 
     /** Where the game keeps its saves on this device, as the compat pack maps them. */

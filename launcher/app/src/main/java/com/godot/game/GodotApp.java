@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
 
 import androidx.core.splashscreen.SplashScreen;
 
@@ -14,10 +15,14 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.json.JSONObject;
+
 import dev.sts2ds.dualscreen.DualScreenController;
 import dev.sts2ds.launcher.GamePrep;
+import dev.sts2ds.launcher.GameSettingsFile;
 import dev.sts2ds.launcher.LauncherActivity;
 import dev.sts2ds.launcher.SettingsActivity;
+import dev.sts2ds.launcher.SettingsStore;
 
 /**
  * The activity the game runs in, on the top screen.
@@ -46,6 +51,8 @@ public class GodotApp extends GodotActivity {
 
     private DualScreenController dualScreen;
     private GamePrep.Prepared prepared;
+    private String refreshRate = RefreshRate.SYSTEM;
+    private final Runnable applyRefreshRate = () -> RefreshRate.apply(this, refreshRate);
 
     private static void loadOptional(String name) {
         try {
@@ -75,6 +82,7 @@ public class GodotApp extends GodotActivity {
         }
         super.onCreate(savedInstanceState);
         current = this;
+        refreshRate = prepared.getRefreshRate();
         if (prepared.getDualScreen()) {
             dualScreen = new DualScreenController(this);
             dualScreen.onCreate();
@@ -89,6 +97,12 @@ public class GodotApp extends GodotActivity {
             args.add(prepared.getPck().getAbsolutePath());
             args.add("--log-file");
             args.add(new File(prepared.getLogsDir(), "godot.log").getAbsolutePath());
+            // As Sts2MobileLauncher's renderer setting: the game's pack asks
+            // for Vulkan (Forward Mobile); this switches to OpenGL ES 3.
+            if (SettingsStore.RENDERER_OPENGL.equals(prepared.getRenderer())) {
+                args.add("--rendering-method");
+                args.add("gl_compatibility");
+            }
         }
         // The desktop build would try to start Steamworks; on Android the
         // Steam side is the launcher's job.
@@ -102,6 +116,27 @@ public class GodotApp extends GodotActivity {
     public void onStart() {
         super.onStart();
         if (dualScreen != null) dualScreen.onStart();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        requestRefreshRate();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) requestRefreshRate();
+    }
+
+    // Once now, and again once the game's surface exists to take the vote.
+    private void requestRefreshRate() {
+        if (prepared == null) return;
+        View decor = getWindow().getDecorView();
+        decor.removeCallbacks(applyRefreshRate);
+        applyRefreshRate.run();
+        decor.postDelayed(applyRefreshRate, 500);
     }
 
     @Override
@@ -126,8 +161,23 @@ public class GodotApp extends GodotActivity {
     /** The activity is locked landscape; nothing to apply. */
     public static void applySelectedScreenOrientationFromGame() {}
 
-    /** Refresh rate follows the system on this app. */
-    public static void applySelectedDisplayRefreshRateFromGame() {}
+    /**
+     * The compat pack's in-game "high refresh rate" toggle has just written
+     * settings.save. Applies for this session; GamePrep carries it into the
+     * launcher's setting on the next launch.
+     */
+    public static void applySelectedDisplayRefreshRateFromGame() {
+        GodotApp activity = current;
+        if (activity == null) return;
+        JSONObject json = new GameSettingsFile(activity).read();
+        Boolean high = json != null && json.has(GameSettingsFile.KEY_HIGH_REFRESH)
+            ? json.optBoolean(GameSettingsFile.KEY_HIGH_REFRESH) : null;
+        String mode = GameSettingsFile.Companion.refreshAfterGame(activity.refreshRate, high);
+        activity.runOnUiThread(() -> {
+            activity.refreshRate = mode;
+            activity.requestRefreshRate();
+        });
+    }
 
     public static boolean launchGameSettingsFromGame() {
         Activity activity = current;

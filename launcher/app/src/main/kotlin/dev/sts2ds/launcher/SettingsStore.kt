@@ -64,12 +64,36 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_DUAL_SCREEN_HINT, true)
         set(value) { prefs.edit().putBoolean(KEY_DUAL_SCREEN_HINT, value).apply() }
 
+    /** "vulkan", or "opengl" for the engine's Compatibility renderer. */
+    var renderer: String
+        get() = prefs.getString(KEY_RENDERER, RENDERER_VULKAN) ?: RENDERER_VULKAN
+        set(value) { prefs.edit().putString(KEY_RENDERER, value).apply() }
+
+    /** Top-screen refresh rate while the game runs: "system", "60hz" or "high". */
+    var refreshRate: String
+        get() = prefs.getString(KEY_REFRESH_RATE, REFRESH_SYSTEM) ?: REFRESH_SYSTEM
+        set(value) { prefs.edit().putString(KEY_REFRESH_RATE, value).apply() }
+
+    /** The one-time performance defaults have gone into settings.save. */
+    var perfDefaultsApplied: Boolean
+        get() = prefs.getBoolean(KEY_PERF_DEFAULTS, false)
+        set(value) { prefs.edit().putBoolean(KEY_PERF_DEFAULTS, value).commit() }
+
     fun clear() {
         prefs.edit().clear().apply()
     }
 
     companion object {
+        const val RENDERER_VULKAN = "vulkan"
+        const val RENDERER_OPENGL = "opengl"
+        const val REFRESH_SYSTEM = "system"
+        const val REFRESH_60HZ = "60hz"
+        const val REFRESH_HIGH = "high"
+
         private const val PREFS_NAME = "sts2ds_launcher_settings_v1"
+        private const val KEY_RENDERER = "renderer"
+        private const val KEY_REFRESH_RATE = "refresh_rate"
+        private const val KEY_PERF_DEFAULTS = "perf_defaults_v1"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

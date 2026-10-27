@@ -9,10 +9,11 @@ namespace STS2DualScreen;
 // A SubViewport sized to the bottom panel holds a tab bar and one page per
 // tab, docked along the bottom edge. Pages host the game's own nodes (its map
 // screen, its card pile screens), moved or instantiated here by DsGameHooks, so
-// they look and behave as they do on PC. Every frame (capped at Config.Fps) the
-// viewport is read back and handed to libsts2ds, which posts it to the
-// Presentation on the other display; touches queued there come back as mouse
-// events pushed into this viewport.
+// they look and behave as they do on PC. The viewport renders only when a
+// capture is due (see MarkChanged), is copied back asynchronously and handed to
+// libsts2ds, which posts it to the Presentation on the other display unless it
+// is unchanged; touches queued there come back as mouse events pushed into
+// this viewport.
 //
 // Controller and keyboard input reaches only the root window. While the open
 // map is the game's current screen, every non-pointer event the root receives
@@ -55,6 +56,36 @@ internal sealed class DsBottomScreen
     private ulong _lastStatsUsec;
     private double _readbackMsTotal;
     private int _readbackCount;
+    private double _submitMsTotal;
+    private int _submitCount;
+
+    // Capture pacing. The viewport only renders when a capture is due: at
+    // Config.Fps while the screen is changing (a touch, controller input on
+    // the map, a tab switch, or the last capture differed), and at
+    // IdleIntervalUsec otherwise, to notice changes nobody announced (a pile
+    // updating, a map animation).
+    private const ulong IdleIntervalUsec = 250_000;
+    private const ulong ActiveWindowUsec = 1_000_000;
+    private const int MaxInFlight = 3;
+    private ulong _activeUntilUsec;
+    private bool _readbackDue;
+
+    // Async readback through the RenderingDevice, so the game thread never
+    // waits on the GPU. Null on the Compatibility renderer: read back inline.
+    private readonly RenderingDevice _rd;
+    private readonly Callable _onFrameData;
+    private int _inFlight;
+    private ulong _lastRequestUsec;
+    private int _requestWidth, _requestHeight;
+
+    // Game frame pacing, for the stats line.
+    private ulong _lastFrameUsec;
+    private ulong _frameUsecTotal;
+    private ulong _frameUsecMax;
+    private int _frameCount;
+    private int _hitches;
+    private int _gcMinor;
+    private int _gcMajor;
 
     // Touch → mouse
     private int _pointerId = -1;
@@ -149,6 +180,10 @@ internal sealed class DsBottomScreen
         _topHint.AddThemeConstantOverride("outline_size", 10);
         _topHintLayer.AddChild(_topHint);
 
+        _rd = RenderingServer.GetRenderingDevice();
+        _onFrameData = Callable.From<byte[]>(OnFrameData);
+        DsLog.Info(_rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
+
         _tree.Root.AddChild(_viewport);
         _tree.Root.AddChild(_topHintLayer);
         _tree.ProcessFrame += OnProcessFrame;
@@ -172,12 +207,23 @@ internal sealed class DsBottomScreen
         var label = _placeholders[tab];
         label.Text = text;
         label.Visible = !string.IsNullOrEmpty(text);
+        MarkChanged();
+    }
+
+    /// <summary>Capture at full rate for a while: something on the bottom screen is moving.</summary>
+    public void MarkChanged()
+    {
+        var now = Time.GetTicksUsec();
+        if (now >= _activeUntilUsec)
+            _nextFrameUsec = 0;
+        _activeUntilUsec = now + ActiveWindowUsec;
     }
 
     public void Show(string tab)
     {
         if (!_pages.ContainsKey(tab))
             return;
+        MarkChanged();
         _active = tab;
         foreach (var (key, page) in _pages)
             page.Visible = key == tab;
@@ -307,6 +353,7 @@ internal sealed class DsBottomScreen
             if (DsGameHooks.MapOwnsInput())
             {
                 _viewport.PushInput(e, false);
+                MarkChanged();
                 return;
             }
             if (e is InputEventAction { Pressed: true } action && action.Action == "ui_select" && _tree.Root.GuiGetFocusOwner() == null)
@@ -324,13 +371,14 @@ internal sealed class DsBottomScreen
     {
         try
         {
+            TrackFramePacing();
             var state = DsNative.State();
             if (!state.Ready)
             {
                 if (_surfaceReady)
                 {
                     _surfaceReady = false;
-                    _viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
+                    _readbackDue = false;
                     _topHintLayer.Visible = false;
                     DsLog.Info("bottom surface gone; paused");
                 }
@@ -341,10 +389,10 @@ internal sealed class DsBottomScreen
                 _surfaceReady = true;
                 _generation = state.Generation;
                 ApplySize(state.Width, state.Height);
-                _viewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
                 _pointerId = -1;
                 _fingers.Clear();
                 _twoFinger = false;
+                MarkChanged();
                 DsLog.Info($"bottom surface {state.Width}x{state.Height}, canvas {_viewport.Size2DOverride}");
                 DsGameHooks.OnSurfaceReady();
             }
@@ -352,19 +400,28 @@ internal sealed class DsBottomScreen
             PumpTouches();
 
             var now = Time.GetTicksUsec();
-            if (now >= _nextFrameUsec)
+            // Last frame drew the viewport; its pixels are ready to copy.
+            if (_readbackDue)
             {
-                _nextFrameUsec = now + (ulong)(1_000_000 / Math.Max(1, _config.Fps));
-                SubmitFrame();
+                _readbackDue = false;
+                RequestReadback(now);
+            }
+            if (_inFlight > 0 && now - _lastRequestUsec > 2_000_000)
+            {
+                DsLog.Info($"bottom readback: {_inFlight} request(s) never answered; resetting");
+                _inFlight = 0;
+            }
+            if (now >= _nextFrameUsec && _inFlight < MaxInFlight)
+            {
+                var interval = now < _activeUntilUsec ? (ulong)(1_000_000 / Math.Max(1, _config.Fps)) : IdleIntervalUsec;
+                _nextFrameUsec = now + interval;
+                RenderingServer.ViewportSetUpdateMode(_viewport.GetViewportRid(), RenderingServer.ViewportUpdateMode.Once);
+                _readbackDue = true;
             }
             if (now - _lastStatsUsec > 10_000_000)
             {
                 _lastStatsUsec = now;
-                var stats = DsNative.Stats();
-                var avg = _readbackCount > 0 ? _readbackMsTotal / _readbackCount : 0;
-                DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} readback_avg={avg:F1}ms tab={_active}");
-                _readbackMsTotal = 0;
-                _readbackCount = 0;
+                LogStats();
             }
         }
         catch (Exception e)
@@ -374,7 +431,77 @@ internal sealed class DsBottomScreen
         }
     }
 
-    private unsafe void SubmitFrame()
+    // A hitch is a game frame that took more than 25 ms (a dropped frame at 60 fps).
+    private void TrackFramePacing()
+    {
+        var now = Time.GetTicksUsec();
+        if (_lastFrameUsec != 0)
+        {
+            var dt = now - _lastFrameUsec;
+            _frameUsecTotal += dt;
+            _frameUsecMax = Math.Max(_frameUsecMax, dt);
+            _frameCount++;
+            if (dt > 25_000)
+                _hitches++;
+        }
+        _lastFrameUsec = now;
+    }
+
+    private void LogStats()
+    {
+        var stats = DsNative.Stats();
+        var readback = _readbackCount > 0 ? _readbackMsTotal / _readbackCount : 0;
+        var submit = _submitCount > 0 ? _submitMsTotal / _submitCount : 0;
+        var frame = _frameCount > 0 ? _frameUsecTotal / 1000.0 / _frameCount : 0;
+        var gcMinor = GC.CollectionCount(0);
+        var gcMajor = GC.CollectionCount(GC.MaxGeneration);
+        DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} readback_avg={readback:F1}ms submit_avg={submit:F1}ms captures={_readbackCount} tab={_active}"
+            + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}");
+        _readbackMsTotal = _submitMsTotal = 0;
+        _readbackCount = _submitCount = 0;
+        _frameUsecTotal = _frameUsecMax = 0;
+        _frameCount = _hitches = 0;
+        _gcMinor = gcMinor;
+        _gcMajor = gcMajor;
+    }
+
+    // Queues a GPU copy of what the viewport drew last frame. The copy lands in
+    // OnFrameData a couple of frames later, once the GPU is done with it.
+    private void RequestReadback(ulong now)
+    {
+        if (_rd == null)
+        {
+            ReadbackInline();
+            return;
+        }
+        var texture = RenderingServer.TextureGetRdTexture(_viewport.GetTexture().GetRid());
+        if (!texture.IsValid)
+            return;
+        var size = _viewport.Size;
+        _requestWidth = size.X;
+        _requestHeight = size.Y;
+        if (_rd.TextureGetDataAsync(texture, 0, _onFrameData) != Error.Ok)
+            return;
+        _inFlight++;
+        _lastRequestUsec = now;
+        _readbackMsTotal += (Time.GetTicksUsec() - now) / 1000.0;
+        _readbackCount++;
+    }
+
+    private void OnFrameData(byte[] data)
+    {
+        if (_inFlight > 0)
+            _inFlight--;
+        if (!_surfaceReady)
+            return;
+        var width = _requestWidth;
+        var height = _requestHeight;
+        if (data == null || data.Length != width * height * 4)
+            return; // resized while in flight
+        Submit(data, width, height);
+    }
+
+    private void ReadbackInline()
     {
         var started = Time.GetTicksUsec();
         using var image = _viewport.GetTexture()?.GetImage();
@@ -382,15 +509,25 @@ internal sealed class DsBottomScreen
             return;
         if (image.GetFormat() != Image.Format.Rgba8)
             image.Convert(Image.Format.Rgba8);
-        var width = image.GetWidth();
-        var height = image.GetHeight();
         var data = image.GetData();
         _readbackMsTotal += (Time.GetTicksUsec() - started) / 1000.0;
         _readbackCount++;
+        Submit(data, image.GetWidth(), image.GetHeight());
+    }
+
+    private unsafe void Submit(byte[] data, int width, int height)
+    {
+        var started = Time.GetTicksUsec();
+        int posted;
         fixed (byte* pixels = data)
         {
-            DsNative.SubmitFrame(pixels, width, height, width * 4);
+            posted = DsNative.SubmitFrame(pixels, width, height, width * 4);
         }
+        _submitMsTotal += (Time.GetTicksUsec() - started) / 1000.0;
+        _submitCount++;
+        // It differed from the last frame: the screen is moving, keep up with it.
+        if (posted == 1)
+            MarkChanged();
     }
 
     private unsafe void PumpTouches()
@@ -398,6 +535,8 @@ internal sealed class DsBottomScreen
         const int Max = 64;
         var touches = stackalloc DsNative.Touch[Max];
         var count = DsNative.PollTouches(touches, Max);
+        if (count > 0)
+            MarkChanged();
         for (var i = 0; i < count; i++)
         {
             var t = touches[i];

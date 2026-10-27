@@ -11,8 +11,10 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.Switch
+import android.widget.TextView
 import android.widget.Toast
 import dev.sts2ds.R
 
@@ -57,11 +59,92 @@ class SettingsActivity : Activity() {
             showTab()
         }
 
+        bindPerformance()
+
         findViewById<Button>(R.id.btn_reset).setOnClickListener { confirmReset() }
         findViewById<Button>(R.id.btn_settings_logs).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
         }
         findViewById<Button>(R.id.btn_settings_back).setOnClickListener { finish() }
+    }
+
+    // Most of these are the compat pack's keys in the game's settings.save
+    // (GameSettingsFile), written straight there; the renderer and refresh rate
+    // are the launcher's own and reach the game through GamePrep.
+    private fun bindPerformance() {
+        val game = GameSettingsFile(this)
+        val json = game.read()
+        fun edit(what: String, change: (org.json.JSONObject) -> Unit) {
+            try {
+                game.update { change(it); true }
+                LauncherLog.log("Settings: $what")
+            } catch (e: Exception) {
+                Toast.makeText(this, e.message ?: e.javaClass.simpleName, Toast.LENGTH_LONG).show()
+            }
+        }
+
+        if (json == null) findViewById<TextView>(R.id.txt_perf_note).setText(R.string.settings_perf_note_missing)
+        for (id in GAME_FILE_CONTROLS) findViewById<View>(id).isEnabled = json != null
+        val settingsJson = json ?: org.json.JSONObject()
+
+        bind(R.id.sw_warmups, GameSettingsFile.warmupsEnabled(settingsJson)) { on ->
+            edit("combat warmups → $on") { GameSettingsFile.setWarmups(it, on) }
+        }
+        bind(R.id.sw_preload, settingsJson.optBoolean(GameSettingsFile.KEY_PRELOAD, true)) { on ->
+            edit("preload → $on") { it.put(GameSettingsFile.KEY_PRELOAD, on) }
+        }
+        bind(R.id.sw_shader_compat, settingsJson.optBoolean(GameSettingsFile.KEY_SHADER_COMPAT, false)) { on ->
+            edit("cheaper shaders → $on") { it.put(GameSettingsFile.KEY_SHADER_COMPAT, on) }
+        }
+        bind(R.id.sw_overlay, settingsJson.optBoolean(GameSettingsFile.KEY_OVERLAY, false)) { on ->
+            edit("performance overlay → $on") { it.put(GameSettingsFile.KEY_OVERLAY, on) }
+        }
+
+        cycle(
+            R.id.btn_render_size, R.string.settings_render_size, GameSettingsFile.RENDER_SIZES,
+            GameSettingsFile.renderSize(settingsJson),
+            { (w, h) -> if (w > 0) "$w × $h" else getString(R.string.settings_render_size_native) },
+        ) { (w, h) -> edit("render size → ${w}x$h") { GameSettingsFile.putRenderSize(it, w, h) } }
+        cycle(
+            R.id.btn_msaa, R.string.settings_msaa, GameSettingsFile.MSAA_LEVELS,
+            settingsJson.optInt(GameSettingsFile.KEY_MSAA, 0),
+            { if (it > 0) "${it}×" else getString(R.string.settings_msaa_off) },
+        ) { level -> edit("msaa → $level") { it.put(GameSettingsFile.KEY_MSAA, level) } }
+        cycle(
+            R.id.btn_vsync, R.string.settings_vsync, GameSettingsFile.VSYNC_MODES,
+            settingsJson.optString(GameSettingsFile.KEY_VSYNC, "off"),
+            { it.replaceFirstChar(Char::uppercase) },
+        ) { mode -> edit("vsync → $mode") { it.put(GameSettingsFile.KEY_VSYNC, mode) } }
+
+        cycle(
+            R.id.btn_refresh_rate, R.string.settings_refresh_rate, REFRESH_NAMES.keys.toList(),
+            settings.refreshRate, { getString(REFRESH_NAMES.getValue(it)) },
+        ) { mode ->
+            settings.refreshRate = mode
+            LauncherLog.log("Settings: refresh rate → $mode")
+            // Keep the compat pack's in-game toggle in step, or GamePrep would
+            // read the old value back as an in-game change.
+            if (game.exists) edit("in-game high refresh → ${mode == SettingsStore.REFRESH_HIGH}") {
+                it.put(GameSettingsFile.KEY_HIGH_REFRESH, mode == SettingsStore.REFRESH_HIGH)
+            }
+        }
+        bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
+            settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
+            LauncherLog.log("Settings: renderer → ${settings.renderer}")
+        }
+    }
+
+    /** A button that steps through [values], showing the current one in [label]. */
+    private fun <T> cycle(id: Int, label: Int, values: List<T>, initial: T, name: (T) -> String, onChange: (T) -> Unit) {
+        val button: Button = findViewById(id)
+        // An unlisted value (set in-game) shows as itself; a tap moves to the first.
+        var index = values.indexOf(initial)
+        button.text = getString(label, name(initial))
+        button.setOnClickListener {
+            index = (index + 1).mod(values.size)
+            button.text = getString(label, name(values[index]))
+            onChange(values[index])
+        }
     }
 
     // Listener set after the initial state so seeding it is not a write.
@@ -84,6 +167,15 @@ class SettingsActivity : Activity() {
     }
 
     private companion object {
+        val GAME_FILE_CONTROLS = intArrayOf(
+            R.id.sw_warmups, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
+            R.id.btn_render_size, R.id.btn_msaa, R.id.btn_vsync,
+        )
+        val REFRESH_NAMES = linkedMapOf(
+            SettingsStore.REFRESH_SYSTEM to R.string.settings_refresh_system,
+            SettingsStore.REFRESH_60HZ to R.string.settings_refresh_60,
+            SettingsStore.REFRESH_HIGH to R.string.settings_refresh_high,
+        )
         val TAB_NAMES = linkedMapOf(
             "map" to "Map",
             "draw" to "Draw pile",

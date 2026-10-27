@@ -34,6 +34,27 @@
             style="@style/SettingsButton" />
         <TextView style="@style/SettingsNote" android:text="@string/settings_default_tab_subtitle" />
 
+        <TextView style="@style/SettingsSection" android:text="@string/settings_section_performance" />
+        <TextView android:id="@+id/txt_perf_note" style="@style/SettingsNote" android:text="@string/settings_perf_note" />
+        <Switch android:id="@+id/sw_warmups" style="@style/SettingsSwitch" android:text="@string/settings_warmups" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_warmups_subtitle" />
+        <Switch android:id="@+id/sw_preload" style="@style/SettingsSwitch" android:text="@string/settings_preload" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_preload_subtitle" />
+        <Switch android:id="@+id/sw_shader_compat" style="@style/SettingsSwitch" android:text="@string/settings_shader_compat" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_shader_compat_subtitle" />
+        <Button android:id="@+id/btn_render_size" style="@style/SettingsButton" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_render_size_subtitle" />
+        <Button android:id="@+id/btn_msaa" style="@style/SettingsButton" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_msaa_subtitle" />
+        <Button android:id="@+id/btn_vsync" style="@style/SettingsButton" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_vsync_subtitle" />
+        <Button android:id="@+id/btn_refresh_rate" style="@style/SettingsButton" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_refresh_rate_subtitle" />
+        <Switch android:id="@+id/sw_opengl" style="@style/SettingsSwitch" android:text="@string/settings_opengl" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_opengl_subtitle" />
+        <Switch android:id="@+id/sw_overlay" style="@style/SettingsSwitch" android:text="@string/settings_overlay" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_overlay_subtitle" />
+
         <TextView style="@style/SettingsSection" android:text="@string/settings_section_cloud" />
         <Switch android:id="@+id/sw_auto_pull" style="@style/SettingsSwitch" android:text="@string/settings_auto_pull" />
         <TextView style="@style/SettingsNote" android:text="@string/settings_auto_pull_subtitle" />
