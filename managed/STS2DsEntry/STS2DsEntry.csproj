@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The custom engine calls STS2Mobile.ModEntry in STS2Mobile.dll before the
+    game starts. This assembly takes that name, hands both calls to the
+    Sts2MobileLauncher compat pack (loaded under its own load context), then
+    starts the dual-screen layer.
+  -->
+  <PropertyGroup>
+    <AssemblyName>STS2Mobile</AssemblyName>
+    <RootNamespace>STS2Mobile</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../STS2DualScreen/STS2DualScreen.csproj">
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

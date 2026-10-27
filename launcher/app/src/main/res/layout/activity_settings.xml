@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings, in SilksongAndroid's layout: a control per row, a note under it. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/surface"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:id="@+id/settings_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:text="@string/settings_title"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView style="@style/SettingsSection" android:text="@string/settings_section_dual_screen" />
+        <Switch android:id="@+id/sw_dual_screen" style="@style/SettingsSwitch" android:text="@string/settings_dual_screen" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_dual_screen_subtitle" />
+        <Switch android:id="@+id/sw_dual_screen_60" style="@style/SettingsSwitch" android:text="@string/settings_dual_screen_60" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_dual_screen_60_subtitle" />
+        <Switch android:id="@+id/sw_top_hint" style="@style/SettingsSwitch" android:text="@string/settings_top_hint" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_top_hint_subtitle" />
+        <Button
+            android:id="@+id/btn_default_tab"
+            style="@style/SettingsButton" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_default_tab_subtitle" />
+
+        <TextView style="@style/SettingsSection" android:text="@string/settings_section_cloud" />
+        <Switch android:id="@+id/sw_auto_pull" style="@style/SettingsSwitch" android:text="@string/settings_auto_pull" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_auto_pull_subtitle" />
+        <Switch android:id="@+id/sw_auto_push" style="@style/SettingsSwitch" android:text="@string/settings_auto_push" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_auto_push_subtitle" />
+
+        <TextView style="@style/SettingsSection" android:text="@string/settings_section_game" />
+        <Button
+            android:id="@+id/btn_reset"
+            style="@style/SettingsButton"
+            android:text="@string/settings_reset" />
+        <TextView style="@style/SettingsNote" android:text="@string/settings_reset_subtitle" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btn_settings_logs"
+                style="@style/SettingsButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="@string/action_logs" />
+
+            <Button
+                android:id="@+id/btn_settings_back"
+                style="@style/SettingsButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="@string/settings_back" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>

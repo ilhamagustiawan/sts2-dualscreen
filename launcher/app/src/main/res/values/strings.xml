@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">STS2 Dual Screen</string>
+    <!-- Godot's library looks this one up. -->
+    <string name="godot_project_name_string">Slay the Spire 2</string>
+
+    <string name="launcher_title">Slay the Spire 2</string>
+    <string name="launcher_subtitle">Dual Screen · map and deck on the lower screen</string>
+    <string name="launcher_status_idle">Ready.</string>
+    <string name="launcher_status_need_login">Sign in to Steam to download your copy of the game.</string>
+    <string name="launcher_status_need_download">Signed in as %1$s. Download the game to continue.</string>
+    <string name="launcher_status_ready">Slay the Spire 2 %1$s is ready.</string>
+    <string name="launcher_status_ready_unknown">Slay the Spire 2 is ready.</string>
+    <string name="launcher_status_downloading">Downloading… %1$s</string>
+    <string name="launcher_status_preparing">%1$s</string>
+    <string name="launcher_status_error">Couldn\'t start the game: %1$s</string>
+    <string name="launcher_status_interrupted">The last download did not finish. Download again to resume.</string>
+
+    <string name="action_log_in">Log in to Steam</string>
+    <string name="action_log_in_as">Steam: %1$s · Log out</string>
+    <string name="action_download">Download game</string>
+    <string name="action_update">Update game files</string>
+    <string name="action_cancel_download">Cancel download</string>
+    <string name="action_pull_saves">&#8595;  Download saves</string>
+    <string name="action_push_saves">&#8593;  Upload saves</string>
+    <string name="action_settings">Settings</string>
+    <string name="action_logs">View logs</string>
+    <string name="action_launch">Launch game</string>
+
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_dual_screen">Dual screen</string>
+    <string name="settings_dual_screen">Use the second screen</string>
+    <string name="settings_dual_screen_subtitle">Shows the map and your draw, discard, exhaust and deck piles on the lower screen, with touch. Does nothing on a device with one screen.</string>
+    <string name="settings_dual_screen_60">Smoother lower screen (60 FPS)</string>
+    <string name="settings_dual_screen_60_subtitle">Off: 30 FPS, which saves battery and is plenty for the map and piles.</string>
+    <string name="settings_top_hint">Path hint on the top screen</string>
+    <string name="settings_top_hint_subtitle">While the map is open below, say so on the top screen.</string>
+    <string name="settings_default_tab">Lower screen opens on: %1$s</string>
+    <string name="settings_default_tab_subtitle">Tap to change. Combat switches to your piles and back by itself.</string>
+    <string name="settings_section_cloud">Steam Cloud</string>
+    <string name="settings_auto_pull">Download cloud saves before launching</string>
+    <string name="settings_auto_pull_subtitle">Download newer cloud saves right before the game starts.</string>
+    <string name="settings_auto_push">Upload cloud saves after playing</string>
+    <string name="settings_auto_push_subtitle">Upload changed saves when you return from the game.</string>
+    <string name="settings_section_game">Game</string>
+    <string name="settings_reset">Reset and re-prepare</string>
+    <string name="settings_reset_subtitle">Re-stages the game from the downloaded files on next launch. Saves, the download and your Steam sign-in are kept.</string>
+    <string name="settings_reset_done">Reset. The game is prepared again on next launch.</string>
+    <string name="settings_back">Back</string>
+
+    <string name="login_title">Sign in to Steam</string>
+    <string name="login_subtitle">Scan with the Steam mobile app · Settings → Mobile Authenticator → QR Code</string>
+    <string name="login_password_hint">Or sign in with your account name and password.</string>
+    <string name="login_username">Account name</string>
+    <string name="login_password">Password</string>
+    <string name="login_sign_in">Sign in</string>
+    <string name="login_guard_hint">Steam Guard code</string>
+    <string name="login_guard_submit">OK</string>
+    <string name="login_guard_approve">Waiting for you to approve the sign-in in your Steam mobile app…</string>
+    <string name="login_guard_device">Enter the code from your Steam mobile authenticator.</string>
+    <string name="login_guard_email">Enter the code Steam emailed to %1$s.</string>
+    <string name="login_guard_email_no_address">Enter the code Steam emailed you.</string>
+    <string name="login_guard_retry">That code was not accepted. Try again.</string>
+    <string name="login_status_connecting">Connecting to Steam…</string>
+    <string name="login_status_waiting">Waiting for scan…</string>
+    <string name="login_status_signing_in">Signing in…</string>
+    <string name="login_status_need_credentials">Enter an account name and password.</string>
+    <string name="login_status_polling">Confirmed on phone — finalising…</string>
+    <string name="login_status_done">Signed in as %1$s</string>
+    <string name="login_status_error">Login failed: %1$s</string>
+    <string name="login_cancel">Cancel</string>
+</resources>

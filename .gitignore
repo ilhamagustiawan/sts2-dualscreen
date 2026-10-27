@@ -1,0 +1,30 @@
+# Build output
+/dist/
+/.cache/
+launcher/.gradle/
+launcher/build/
+launcher/app/build/
+launcher/app/.cxx/
+launcher/local.properties
+managed/**/bin/
+managed/**/obj/
+
+# Runtime taken from the Sts2MobileLauncher release APK (tools/runtime/make-runtime.sh)
+launcher/app/libs/
+launcher/app/src/main/jniLibs/
+launcher/app/src/main/assets/dotnet_bcl/
+launcher/app/src/main/assets/compat_packs/
+launcher/app/src/main/assets/bootstrap.pck
+launcher/app/src/main/assets/port_compat.pck
+launcher/app/src/main/assets/runtime_manifest.json
+# Our managed DLLs, staged by `make managed`
+launcher/app/src/main/assets/dualscreen/
+
+# Game files never go in the repo
+*.pck
+sts2.dll
+data_sts2_*/
+
+.DS_Store
+*.iml
+.idea/

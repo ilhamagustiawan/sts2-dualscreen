@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    The bottom-screen layer. Game types are reached by name through Harmony's
+    AccessTools rather than a compile-time reference to sts2.dll, so this builds
+    without game files and fails soft (single screen) if a game update renames
+    something.
+  -->
+  <PropertyGroup>
+    <AssemblyName>STS2DualScreen</AssemblyName>
+    <RootNamespace>STS2DualScreen</RootNamespace>
+  </PropertyGroup>
+</Project>
