@@ -166,6 +166,7 @@ class SteamSession : Closeable {
                 return
             } catch (t: LogOnRejected) {
                 lastResult = t.result
+                if (t.result in TOKEN_REJECTED) throw SteamAuthException(t.result)
                 if (t.result != EResult.TryAnotherCM || attempt == maxAttempts) {
                     throw RuntimeException("LogOn failed: ${t.result}")
                 }
@@ -183,6 +184,14 @@ class SteamSession : Closeable {
     }
 
     private class LogOnRejected(val result: EResult) : RuntimeException("LogOn rejected: $result")
+
+    private companion object {
+        /** What Steam answers when the saved refresh token is no good any more. */
+        val TOKEN_REJECTED = setOf(
+            EResult.AccessDenied, EResult.Expired, EResult.InvalidPassword,
+            EResult.Revoked, EResult.InvalidSignature,
+        )
+    }
 
     private fun logOnOnce(
         credentials: TokenStore.Credentials,
@@ -245,3 +254,13 @@ class SteamSession : Closeable {
         }
     }
 }
+
+/**
+ * Steam turned the saved refresh token down: the user has to sign in again.
+ * Retrying cannot help, so the launcher asks instead of logging and moving on.
+ */
+class SteamAuthException(val result: EResult) : RuntimeException("Steam sign-in expired ($result)")
+
+/** True when [this] or anything it wraps is a [SteamAuthException]; DepotFetcher wraps its errors. */
+fun Throwable.isSteamAuthExpired(): Boolean =
+    generateSequence(this) { it.cause }.take(10).any { it is SteamAuthException }

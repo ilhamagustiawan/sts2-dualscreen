@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  A spire at dusk, painted for this app (generated, original; no game art).
+  The whole picture is the background layer: it is full-bleed, and the tower
+  sits in the middle so the launcher's mask never cuts it.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/surface" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@mipmap/ic_launcher_art" />
+    <foreground android:drawable="@android:color/transparent" />
 </adaptive-icon>

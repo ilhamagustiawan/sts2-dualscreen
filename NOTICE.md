@@ -11,7 +11,8 @@ Copied with the package renamed to `dev.sts2ds.launcher`, then adapted:
 | `SteamSession.kt`, `TokenStore.kt`, `QrAuth.kt`, `QrRenderer.kt`, `CredentialsAuth.kt`, `SteamCrypto.kt`, `SteamCloudClient.kt`, `CloudCompression.kt`, `LoginActivity.kt`, `LogActivity.kt`, `LauncherLog.kt` | names, log tags, game log locations |
 | `DepotFetcher.kt` | retargeted to STS2 (app 2868840, Windows depot 2868841) |
 | `CloudSync.kt` | transfer machinery kept; save-path mapping rewritten for STS2 (`Sts2SavePaths`) |
-| `LauncherActivity.kt` | cloud pull/push flows and conflict prompt kept; layout, download and launch rewritten |
+| `LauncherActivity.kt` | conflict prompt kept; layout, download and launch rewritten |
+| `SaveSync.kt` | the cloud pull/push flows from `LauncherActivity.kt`, moved out; when to prompt (`SyncPlan`) is new |
 | `SettingsStore.kt`, `SettingsActivity.kt`, `Sts2App.kt`, `GameReset.kt` | same shape, STS2 settings |
 | `res/layout/activity_login.xml`, `res/drawable/focus_on_*.xml`, `res/xml/game_mode_config.xml`, login strings | as-is (palette re-tinted) |
 | `dualscreen/DsPresentation.java` touch handling, `cpp/sts2ds.c` touch queue | ported from `SecondaryDisplay.java` (`onTouch`, `TouchBuffer`) |
@@ -34,5 +35,8 @@ used unmodified, as shipped in that release.
 
 ## Not included
 
-No Slay the Spire 2 code, art, audio or data. The game is downloaded from the
+No Slay the Spire 2 code, art, audio or data. The launcher's look follows the
+game's main menu in colour only: its backdrop, spire and ornaments are drawn
+here as vectors, and the app icon (`mipmap-*/ic_launcher_art.png`) is an
+original image generated for this project. The game is downloaded from the
 user's own Steam account on the device.

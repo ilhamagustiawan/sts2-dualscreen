@@ -5,7 +5,9 @@
     <string name="godot_project_name_string">Slay the Spire 2</string>
 
     <string name="launcher_title">Slay the Spire 2</string>
-    <string name="launcher_subtitle">Dual Screen · map and deck on the lower screen</string>
+    <string name="launcher_title_words">Slay the Spire</string>
+    <string name="launcher_title_numeral">II</string>
+    <string name="launcher_subtitle">Dual Screen · the map and your piles below</string>
     <string name="launcher_status_idle">Ready.</string>
     <string name="launcher_status_need_login">Sign in to Steam to download your copy of the game.</string>
     <string name="launcher_status_need_download">Signed in as %1$s. Download the game to continue.</string>
@@ -16,16 +18,78 @@
     <string name="launcher_status_error">Couldn\'t start the game: %1$s</string>
     <string name="launcher_status_interrupted">The last download did not finish. Download again to resume.</string>
 
-    <string name="action_log_in">Log in to Steam</string>
-    <string name="action_log_in_as">Steam: %1$s · Log out</string>
+    <string name="launcher_status_syncing">Syncing saves with Steam Cloud…</string>
+    <string name="launcher_status_cancelled">Download paused. Resume any time; nothing downloaded so far is lost.</string>
+    <string name="launcher_status_download_failed">Download failed: %1$s</string>
+    <string name="launcher_status_download_done">Download complete. Ready to play.</string>
+    <string name="launcher_status_waiting_game">Waiting for the game to close before uploading saves…</string>
+
+    <string name="action_log_in">Sign in to Steam</string>
     <string name="action_download">Download game</string>
-    <string name="action_update">Update game files</string>
+    <string name="action_resume_download">Resume download</string>
+    <string name="action_update">Update files</string>
     <string name="action_cancel_download">Cancel download</string>
-    <string name="action_pull_saves">&#8595;  Download saves</string>
-    <string name="action_push_saves">&#8593;  Upload saves</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_sync_now">Sync now</string>
+    <string name="action_pull_short">&#8595; Cloud</string>
+    <string name="action_push_short">&#8593; Cloud</string>
+    <string name="action_pull_saves">Download saves from Steam Cloud</string>
+    <string name="action_push_saves">Upload saves to Steam Cloud</string>
     <string name="action_settings">Settings</string>
-    <string name="action_logs">View logs</string>
-    <string name="action_launch">Launch game</string>
+    <string name="action_logs">Logs</string>
+    <string name="action_launch">Play</string>
+
+    <string name="step_account_title">Steam account</string>
+    <string name="step_account_todo">Not signed in</string>
+    <string name="step_account_done">%1$s · select to sign out</string>
+    <string name="step_game_title">Game files</string>
+    <string name="step_game_todo">Not downloaded yet</string>
+    <string name="step_game_interrupted">Download interrupted. Resume to continue.</string>
+    <string name="step_game_running">Downloading… %1$s</string>
+    <string name="step_game_preparing">Preparing…</string>
+    <string name="step_game_done">Version %1$s installed</string>
+    <string name="step_game_done_unknown">Installed</string>
+    <string name="step_play_title">Play</string>
+    <string name="step_play_todo">Available once the game is downloaded</string>
+    <string name="step_play_done">Ready. Map and piles go on the lower screen.</string>
+
+    <string name="cloud_title">Steam Cloud</string>
+    <string name="cloud_signed_out">Sign in to keep your saves in sync with Steam Cloud.</string>
+    <string name="cloud_auto_on">Auto-sync on</string>
+    <string name="cloud_auto_off">Auto-sync off (see Settings)</string>
+    <string name="cloud_auto_pull_only">Auto-sync before play only</string>
+    <string name="cloud_auto_push_only">Auto-sync after play only</string>
+    <string name="cloud_synced">synced %1$s</string>
+    <string name="cloud_never">not synced yet</string>
+    <string name="cloud_pending">upload pending</string>
+    <string name="cloud_failed">last sync failed: %1$s</string>
+    <string name="cloud_offline">offline</string>
+    <string name="cloud_auth">sign-in expired</string>
+    <string name="cloud_syncing">syncing…</string>
+    <string name="cloud_status">%1$s · %2$s</string>
+
+    <string name="conflict_title">Save conflict</string>
+    <string name="conflict_message">Your saves changed on this device and in Steam Cloud since they were last in sync.\n\nThis device: %1$s\nSteam Cloud: %2$s\n\n%3$s\nThe copy you keep replaces the other one in full.</string>
+    <string name="conflict_more">…and %1$d more</string>
+    <string name="conflict_keep_device">Keep this device</string>
+    <string name="conflict_keep_cloud">Keep cloud</string>
+    <string name="conflict_play_anyway">Play without syncing</string>
+    <string name="conflict_unknown_time">unknown</string>
+
+    <string name="auth_expired_title">Steam sign-in expired</string>
+    <string name="auth_expired_message">Steam no longer accepts the saved sign-in for %1$s. Sign in again to keep downloading and syncing. Your game files and saves stay on this device.</string>
+    <string name="auth_sign_in">Sign in</string>
+
+    <string name="logout_message">Sign out of Steam? The downloaded game and your saves stay on this device.</string>
+    <string name="logout_confirm">Sign out</string>
+
+    <string name="download_channel">Game download</string>
+    <string name="download_notif_title">Downloading Slay the Spire 2</string>
+    <string name="download_notif_starting">Starting…</string>
+    <string name="download_notif_done_title">Slay the Spire 2 is ready</string>
+    <string name="download_notif_done_text">Open the launcher to play.</string>
+    <string name="download_notif_failed_title">Download failed</string>
+    <string name="download_failed_signed_out">Not signed in to Steam</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_section_dual_screen">Dual screen</string>
@@ -39,9 +103,9 @@
     <string name="settings_default_tab_subtitle">Tap to change. Combat switches to your piles and back by itself.</string>
     <string name="settings_section_cloud">Steam Cloud</string>
     <string name="settings_auto_pull">Download cloud saves before launching</string>
-    <string name="settings_auto_pull_subtitle">Download newer cloud saves right before the game starts.</string>
+    <string name="settings_auto_pull_subtitle">Brings newer saves down from Steam Cloud right before the game starts. Skipped when offline, so the game still starts at once.</string>
     <string name="settings_auto_push">Upload cloud saves after playing</string>
-    <string name="settings_auto_push_subtitle">Upload changed saves when you return from the game.</string>
+    <string name="settings_auto_push_subtitle">Uploads your saves when you come back from the game, even if Android closed the launcher while you played. You are only asked when both this device and the cloud have newer saves.</string>
     <string name="settings_section_game">Game</string>
     <string name="settings_reset">Reset and re-prepare</string>
     <string name="settings_reset_subtitle">Re-stages the game from the downloaded files on next launch. Saves, the download and your Steam sign-in are kept.</string>

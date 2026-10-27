@@ -17,13 +17,32 @@ class SettingsStore(context: Context) {
 
     /** Download newer cloud saves right before the game starts. */
     var autoPull: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_PULL, false)
+        get() = prefs.getBoolean(KEY_AUTO_PULL, true)
         set(value) { prefs.edit().putBoolean(KEY_AUTO_PULL, value).apply() }
 
     /** Upload changed saves when you come back from the game. */
     var autoPush: Boolean
-        get() = prefs.getBoolean(KEY_AUTO_PUSH, false)
+        get() = prefs.getBoolean(KEY_AUTO_PUSH, true)
         set(value) { prefs.edit().putBoolean(KEY_AUTO_PUSH, value).apply() }
+
+    /**
+     * Saves on this device have not reached the cloud yet: set as the game
+     * starts, cleared by a push. On disk rather than in the activity because
+     * Android may kill the launcher's process while the game runs.
+     */
+    var pendingPush: Boolean
+        get() = prefs.getBoolean(KEY_PENDING_PUSH, false)
+        set(value) { prefs.edit().putBoolean(KEY_PENDING_PUSH, value).apply() }
+
+    /** When saves last finished syncing, in epoch millis; 0 if never. */
+    var lastSyncAt: Long
+        get() = prefs.getLong(KEY_LAST_SYNC_AT, 0L)
+        set(value) { prefs.edit().putLong(KEY_LAST_SYNC_AT, value).apply() }
+
+    /** Why the last sync failed, or null when it did not. */
+    var lastSyncError: String?
+        get() = prefs.getString(KEY_LAST_SYNC_ERROR, null)
+        set(value) { prefs.edit().putString(KEY_LAST_SYNC_ERROR, value).apply() }
 
     /** Map and deck on the second screen. Does nothing on a single-screen device. */
     var dualScreen: Boolean
@@ -57,5 +76,8 @@ class SettingsStore(context: Context) {
         private const val KEY_DUAL_SCREEN_FPS = "dual_screen_fps"
         private const val KEY_DUAL_SCREEN_TAB = "dual_screen_default_tab"
         private const val KEY_DUAL_SCREEN_HINT = "dual_screen_top_hint"
+        private const val KEY_PENDING_PUSH = "pending_push"
+        private const val KEY_LAST_SYNC_AT = "last_sync_at"
+        private const val KEY_LAST_SYNC_ERROR = "last_sync_error"
     }
 }

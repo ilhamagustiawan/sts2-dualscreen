@@ -17,4 +17,29 @@
     <color name="text_muted">#B8AC9C</color>
     <color name="text_dim">#7C7064</color>
     <color name="gold">#E3B55A</color>
+    <color name="success">#3BAFB8</color>
+    <color name="divider">#4A3D2C</color>
+
+    <!--
+      The launcher's main menu, after the game's own: a dusk sky going from
+      violet to sea-teal under an orange glow, gold display type, a teal
+      numeral, and warm white menu text that turns gold when selected.
+    -->
+    <color name="sky_top">#272238</color>
+    <color name="sky_mid">#363E54</color>
+    <color name="sky_bottom">#3C5A64</color>
+    <color name="sky_glow">#B3EE8A2C</color>
+    <color name="sky_glow_edge">#00EE8A2C</color>
+    <color name="sea">#59304A58</color>
+    <color name="spire">#2B1F2E</color>
+    <color name="spire_shade">#21182A</color>
+    <color name="spire_window">#F2A443</color>
+    <color name="title_gold">#F7C62F</color>
+    <color name="title_shadow">#5A2A06</color>
+    <color name="teal">#53D3DC</color>
+    <color name="menu_text">#F4EEE0</color>
+    <color name="menu_selected">#F2C94C</color>
+    <color name="menu_disabled">#7D778A</color>
+    <color name="menu_pressed">#26F2C94C</color>
+    <color name="card_fill">#B3120F1A</color>
 </resources>

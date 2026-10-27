@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The curl beside the selected menu item; ornament_right is its mirror. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="22dp"
+    android:height="12dp"
+    android:viewportWidth="22"
+    android:viewportHeight="12">
+    <path
+        android:strokeColor="@color/menu_selected"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:pathData="M2,7 C5,2 10,2 12,5 C13.5,7.5 10.5,9.5 9,8 C8,7 9,5.5 10.5,6 M12,6.5 L20,6.5" />
+    <path
+        android:fillColor="@color/menu_selected"
+        android:pathData="M15,6.5 Q18,2.5 21,4 Q19,6 15,6.5 Z" />
+</vector>

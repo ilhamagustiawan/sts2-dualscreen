@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ornament_left only on the selected item; the blank keeps the text from shifting. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@drawable/ornament_left" android:state_focused="true" />
+    <item android:drawable="@drawable/ornament_blank" />
+</selector>

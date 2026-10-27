@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher's backdrop, drawn here rather than taken from the game (no game
+  art ships in the APK): a dusk sky, an orange glow over the top right, a band
+  of sea, and a lone spire on the right with lit windows.
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="@color/sky_top"
+                android:centerColor="@color/sky_mid"
+                android:endColor="@color/sky_bottom" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="radial"
+                android:centerX="0.82"
+                android:centerY="0.0"
+                android:gradientRadius="460dp"
+                android:startColor="@color/sky_glow"
+                android:endColor="@color/sky_glow_edge" />
+        </shape>
+    </item>
+    <item android:gravity="bottom|fill_horizontal" android:height="56dp">
+        <shape android:shape="rectangle">
+            <solid android:color="@color/sea" />
+        </shape>
+    </item>
+    <item
+        android:gravity="bottom|end"
+        android:width="170dp"
+        android:height="380dp"
+        android:end="36dp"
+        android:bottom="20dp"
+        android:drawable="@drawable/art_spire" />
+</layer-list>

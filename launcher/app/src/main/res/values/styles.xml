@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="LauncherTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
-        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:windowBackground">@drawable/bg_spire</item>
         <item name="android:colorAccent">@color/accent</item>
     </style>
 
@@ -16,6 +16,51 @@
         <item name="windowSplashScreenBackground">#000000</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/GodotAppMainTheme</item>
+    </style>
+
+    <!--
+      The launcher's menu, set like the game's main menu: bare serif text with
+      a dark drop shadow, gold and flanked by curls when selected. The
+      primary item (Play, or whatever comes next) is larger and always gold.
+    -->
+    <style name="LauncherMenuItem">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_gravity">center_horizontal</item>
+        <item name="android:minHeight">40dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:background">@drawable/bg_menu_item</item>
+        <item name="android:stateListAnimator">@null</item>
+        <!-- Gold text and the curls are the focus mark; not the platform's grey box. -->
+        <item name="android:defaultFocusHighlightEnabled">false</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textSize">19sp</item>
+        <item name="android:textColor">@color/menu_item_text</item>
+        <item name="android:shadowColor">#E6000000</item>
+        <item name="android:shadowDy">2</item>
+        <item name="android:shadowRadius">3</item>
+        <item name="android:drawablePadding">10dp</item>
+        <item name="android:drawableStart">@drawable/ornament_left_focus</item>
+        <item name="android:drawableEnd">@drawable/ornament_right_focus</item>
+    </style>
+
+    <style name="LauncherMenuItem.Primary">
+        <item name="android:textSize">26sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/menu_item_text_primary</item>
+    </style>
+
+    <!-- The Steam Cloud row in the card: smaller, no curls, sharing the width. -->
+    <style name="LauncherMenuItem.Small">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:drawableStart">@null</item>
+        <item name="android:drawableEnd">@null</item>
+        <item name="android:foreground">@drawable/focus_on_dark</item>
     </style>
 
     <style name="SettingsSection">
