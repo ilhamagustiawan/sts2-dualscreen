@@ -32,6 +32,14 @@ internal static unsafe class DsNative
     [DllImport(Lib, EntryPoint = "ds_submit_frame")]
     public static extern int SubmitFrame(byte* rgba, int width, int height, int stride);
 
+    /// <summary>Writes part of the surface at (x, y) in surface pixels, for Present; region is 0..3.</summary>
+    [DllImport(Lib, EntryPoint = "ds_submit_region")]
+    public static extern int SubmitRegion(byte* rgba, int width, int height, int stride, int x, int y, int region);
+
+    /// <summary>Posts the regions written since the last call as one buffer.</summary>
+    [DllImport(Lib, EntryPoint = "ds_present")]
+    public static extern int Present();
+
     [DllImport(Lib, EntryPoint = "ds_stats")]
     private static extern void ds_stats(long* outStats);
 

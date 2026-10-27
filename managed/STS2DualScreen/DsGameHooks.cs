@@ -73,6 +73,16 @@ internal static class DsGameHooks
     private static MethodInfo _chooseSelectPrefix;
     private static PropertyInfo _runInstance;
     private static MethodInfo _overlayOpen;
+    private static PropertyInfo _contextInstance;
+    private static MethodInfo _contextCurrent, _contextFocusDefault;
+
+    // NMapScreen members, resolved once: some are read on every forwarded
+    // controller event and every scrolled frame.
+    private static PropertyInfo _mapIsOpen;
+    private static FieldInfo _mapContainer, _mapTargetDrag, _mapDragging, _mapDrawingInput, _mapTween;
+    private static FieldInfo _mapBackstop, _mapLegend, _mapTools, _mapPoints, _mapRunState, _mapDistY;
+    private static MethodInfo _mapCanScroll, _mapCancelActAnim;
+    private static float _mapScrollLow = -600f, _mapScrollHigh = 1800f;
     private static bool _focusOverridden;
     private static Control _pendingMap;
     private static Control _map;
@@ -125,6 +135,7 @@ internal static class DsGameHooks
     public static void Apply(Harmony harmony)
     {
         _mapType = FindType(MapScreenType);
+        ResolveMap();
         _pileScreenType = FindType(CardPileScreenType);
         _pileTypeEnum = FindType(PileTypeType);
         var extensions = FindType(PileTypeExtensionsType);
@@ -140,6 +151,12 @@ internal static class DsGameHooks
         Patch(harmony, FindType(ControllerMapDrawingInputType), "_Process", prefix: nameof(ControllerDrawingProcessPrefix), postfix: nameof(ControllerDrawingProcessPostfix));
         _controllerManagerType = FindType(ControllerManagerType);
         _screenContextType = FindType(ActiveScreenContextType);
+        if (_screenContextType != null)
+        {
+            _contextInstance = AccessTools.Property(_screenContextType, "Instance");
+            _contextCurrent = AccessTools.Method(_screenContextType, "GetCurrentScreen");
+            _contextFocusDefault = AccessTools.Method(_screenContextType, "FocusOnDefaultControl");
+        }
         // The "Controller detected" / "Mouse detected" toast; the mode switch
         // itself happens before this and is untouched.
         Patch(harmony, _controllerManagerType, "ControlModeChanged", prefix: nameof(SkipPrefix));
@@ -158,7 +175,11 @@ internal static class DsGameHooks
         Patch(harmony, hoverTips, "CreateAndShowMapPointHistory", postfix: nameof(HoverTipPostfix));
         Patch(harmony, FindType(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
         Patch(harmony, FindType(CombatCardPileType), "OnRelease", postfix: nameof(CombatPileReleasePostfix));
+        Patch(harmony, FindType(CombatCardPileType), "AddCard", postfix: nameof(CombatPileCountPostfix));
+        Patch(harmony, FindType(CombatCardPileType), "RemoveCard", postfix: nameof(CombatPileCountPostfix));
+        Patch(harmony, FindType(CombatCardPileType), "_ExitTree", postfix: nameof(CombatPileExitPostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
+        Patch(harmony, FindType(TopBarDeckButtonType), "OnPileContentsChanged", postfix: nameof(DeckCountPostfix));
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
         Patch(harmony, _pileScreenType, "OnPileContentsChanged", prefix: nameof(PileContentsChangedPrefix));
         Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
@@ -217,6 +238,7 @@ internal static class DsGameHooks
 
     public static void OnBottomScreenReady(DsBottomScreen screen)
     {
+        SetCombatTabs(_inCombat);
         if (_pendingMap != null)
             AdoptMap(_pendingMap);
     }
@@ -240,20 +262,12 @@ internal static class DsGameHooks
     }
 
     /// <summary>The open map is the game's current screen, so the controller is its.</summary>
-    public static bool MapOwnsInput()
-    {
-        if (!IsMapOpen() || _screenContextType == null)
-            return false;
-        var context = ScreenContext();
-        return context != null && ReferenceEquals(AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null), _map);
-    }
+    public static bool MapOwnsInput() => IsMapOpen() && ReferenceEquals(CurrentScreen(), _map);
 
-    public static string CurrentScreenName()
-    {
-        var context = ScreenContext();
-        var current = context == null ? null : AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null);
-        return current?.GetType().Name ?? "none";
-    }
+    public static string CurrentScreenName() => CurrentScreen()?.GetType().Name ?? "none";
+
+    /// <summary>The open map's rooms pulse forever (NNormalMapPoint), and so does its marker.</summary>
+    public static bool MapAmbient() => IsMapOpen();
 
     /// <summary>A run is loaded (NRun exists). True when that can't be told, so nothing goes missing.</summary>
     public static bool InRun()
@@ -270,8 +284,13 @@ internal static class DsGameHooks
         }
     }
 
-    private static object ScreenContext() =>
-        _screenContextType == null ? null : AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+    private static object ScreenContext() => _contextInstance?.GetValue(null);
+
+    private static object CurrentScreen()
+    {
+        var context = ScreenContext();
+        return context == null ? null : _contextCurrent?.Invoke(context, null);
+    }
 
     /// <summary>
     /// Nothing on the top screen has controller focus: give it to the current
@@ -287,10 +306,10 @@ internal static class DsGameHooks
                 if (MapOwnsInput() || ((Engine.GetMainLoop() as SceneTree)?.Root.GuiGetFocusOwner() != null))
                     return;
                 var context = ScreenContext();
-                var current = context == null ? null : AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null);
+                var current = CurrentScreen();
                 if (current == null || current.GetType().Name.Contains("CombatRoom"))
                     return;
-                AccessTools.Method(_screenContextType, "FocusOnDefaultControl")?.Invoke(context, null);
+                _contextFocusDefault?.Invoke(context, null);
                 DsLog.Info($"top-screen focus restored ({why}, screen={current.GetType().Name})");
             }
             catch (Exception e)
@@ -537,6 +556,7 @@ internal static class DsGameHooks
             return;
         screen.Show("map");
         ScaleMapTools(_map);
+        screen.Dock.SetTraveling(true);
         screen.SetTopHint(true);
         screen.ReleaseTopFocus();
     }
@@ -549,6 +569,7 @@ internal static class DsGameHooks
         if (screen == null)
             return;
         screen.SetTopHint(false);
+        screen.Dock.SetTraveling(false);
         screen.ReleaseBottomFocus();
         // Close(animateOut: false) hides it directly.
         if (screen.Ready)
@@ -582,15 +603,41 @@ internal static class DsGameHooks
 
     private static bool MapValid() => _map != null && GodotObject.IsInstanceValid(_map);
 
-    private static bool IsMapOpen() =>
-        MapValid() && AccessTools.Property(_mapType, "IsOpen")?.GetValue(_map) is true;
+    private static bool IsMapOpen() => MapValid() && _mapIsOpen?.GetValue(_map) is true;
+
+    private static void ResolveMap()
+    {
+        if (_mapType == null)
+            return;
+        _mapIsOpen = AccessTools.Property(_mapType, "IsOpen");
+        _mapContainer = AccessTools.Field(_mapType, "_mapContainer");
+        _mapTargetDrag = AccessTools.Field(_mapType, "_targetDragPos");
+        _mapDragging = AccessTools.Field(_mapType, "_isDragging");
+        _mapDrawingInput = AccessTools.Field(_mapType, "_drawingInput");
+        _mapTween = AccessTools.Field(_mapType, "_tween");
+        _mapBackstop = AccessTools.Field(_mapType, "_backstop");
+        _mapLegend = AccessTools.Field(_mapType, "_mapLegend");
+        _mapTools = AccessTools.Field(_mapType, "_drawingTools");
+        _mapPoints = AccessTools.Field(_mapType, "_points");
+        _mapRunState = AccessTools.Field(_mapType, "_runState");
+        _mapDistY = AccessTools.Field(_mapType, "_distY");
+        _mapCanScroll = AccessTools.Method(_mapType, "CanScroll");
+        _mapCancelActAnim = AccessTools.Method(_mapType, "TryCancelStartOfActAnim");
+        // Consts; the literals are what v0.107.1 has.
+        if (AccessTools.Field(_mapType, "_scrollLimitBottom") is { IsLiteral: true } low && low.GetRawConstantValue() is float l)
+            _mapScrollLow = l;
+        if (AccessTools.Field(_mapType, "_scrollLimitTop") is { IsLiteral: true } high && high.GetRawConstantValue() is float h)
+            _mapScrollHigh = h;
+        if (_mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
+            DsLog.Info("map scroll fields not found; the map scrolls its own way");
+    }
 
     private static void UpdateMapPlaceholder()
     {
         var screen = DsBottomScreen.Instance;
         if (screen == null)
             return;
-        screen.SetPlaceholder("map", MapValid() ? "" : "The map shows here once a run starts.");
+        screen.SetPlaceholder("map", MapValid() ? "" : screen.PlaceholderText("map"));
     }
 
     /// <summary>
@@ -601,17 +648,17 @@ internal static class DsGameHooks
     {
         try
         {
-            if (AccessTools.Field(_mapType, "_tween")?.GetValue(map) is Tween tween && GodotObject.IsInstanceValid(tween))
+            if (_mapTween?.GetValue(map) is Tween tween && GodotObject.IsInstanceValid(tween))
                 tween.Kill();
             map.Visible = true;
             map.ProcessMode = Node.ProcessModeEnum.Inherit;
-            SetModulate(map, "_mapContainer", Colors.White);
-            SetModulate(map, "_mapLegend", Colors.White);
-            SetModulate(map, "_drawingTools", Colors.White);
-            SetModulate(map, "_points", Colors.White);
-            if (AccessTools.Field(_mapType, "_backstop")?.GetValue(map) is CanvasItem backstop)
+            SetModulate(map, _mapContainer, Colors.White);
+            SetModulate(map, _mapLegend, Colors.White);
+            SetModulate(map, _mapTools, Colors.White);
+            SetModulate(map, _mapPoints, Colors.White);
+            if (_mapBackstop?.GetValue(map) is CanvasItem backstop)
                 backstop.Modulate = backstop.Modulate with { A = 0.85f };
-            if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is Control legend)
+            if (_mapLegend?.GetValue(map) is Control legend)
                 legend.Position = legend.Position with { X = LegendX(map, legend) };
             ScaleMapTools(map);
             if (scrollToCurrent)
@@ -638,7 +685,7 @@ internal static class DsGameHooks
         var scale = new Vector2(MapToolsScale, MapToolsScale);
         var toLocal = map.GetGlobalTransform().AffineInverse();
         Rect2? toolsRect = null;
-        if (AccessTools.Field(_mapType, "_drawingTools")?.GetValue(map) is Control tools && tools.Size != Vector2.Zero)
+        if (_mapTools?.GetValue(map) is Control tools && tools.Size != Vector2.Zero)
         {
             var area = map.GetGlobalRect();
             var at = (tools.GetGlobalRect().GetCenter() - area.Position) / area.Size;
@@ -647,7 +694,7 @@ internal static class DsGameHooks
             var global = tools.GetGlobalRect();
             toolsRect = new Rect2(toLocal * global.Position, toLocal.BasisXform(global.Size));
         }
-        if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is not Control legend || legend.Size == Vector2.Zero)
+        if (_mapLegend?.GetValue(map) is not Control legend || legend.Size == Vector2.Zero)
             return;
         legend.Scale = Vector2.One;
         var obstacles = MapButtons(map, legend, toLocal);
@@ -722,37 +769,40 @@ internal static class DsGameHooks
 
     private static void MapLegendXPostfix(object __instance, ref float __result)
     {
-        if (__instance == _map && MapValid() && AccessTools.Field(_mapType, "_mapLegend")?.GetValue(_map) is Control legend)
+        if (__instance == _map && MapValid() && _mapLegend?.GetValue(_map) is Control legend)
             __result = LegendX(_map, legend);
     }
 
     // 0 for the near edge, 1 for the far one, 0.5 in between.
     private static float Side(float fraction) => fraction < 0.33f ? 0f : fraction > 0.67f ? 1f : 0.5f;
 
-    private static void SetModulate(Control map, string field, Color color)
+    private static void SetModulate(Control map, FieldInfo field, Color color)
     {
-        if (AccessTools.Field(_mapType, field)?.GetValue(map) is CanvasItem item)
+        if (field?.GetValue(map) is CanvasItem item)
             item.Modulate = color;
     }
 
     // Where Open() would put it: the current row near the bottom.
     private static void ScrollToCurrent(Control map)
     {
-        var runState = AccessTools.Field(_mapType, "_runState")?.GetValue(map);
-        if (runState == null || AccessTools.Field(_mapType, "_mapContainer")?.GetValue(map) is not Control container)
+        var runState = _mapRunState?.GetValue(map);
+        if (runState == null || _mapContainer?.GetValue(map) is not Control container)
             return;
         var coord = AccessTools.Property(runState.GetType(), "CurrentMapCoord")?.GetValue(runState);
         var row = coord == null ? 0 : Convert.ToInt32(AccessTools.Field(coord.GetType(), "row")?.GetValue(coord) ?? 0);
-        var distY = AccessTools.Field(_mapType, "_distY")?.GetValue(map) is float d ? d : 0f;
-        var target = new Vector2(0f, -600f + row * distY);
+        var distY = _mapDistY?.GetValue(map) is float d ? d : 0f;
+        var target = new Vector2(0f, _mapScrollLow + row * distY);
         container.Position = target;
-        AccessTools.Field(_mapType, "_targetDragPos")?.SetValue(map, target);
+        _mapTargetDrag?.SetValue(map, target);
     }
 
     // The game's own on-screen notice (the controller toast) is the closest
-    // match for our top-screen hint.
+    // match for our top-screen hint. The map legend's header is a game label
+    // with the game's font set on it, for the dock and placeholders.
     private static void StyleText(DsBottomScreen screen)
     {
+        if (MapValid() && _map.GetNodeOrNull("MapLegend/Header") is Label header && header.HasThemeFontOverride("font"))
+            screen.ApplyGameFont(header.GetThemeFont("font"));
         if (ControllerManager() is Node manager && manager.GetNodeOrNull("Label") is Label label)
             screen.ApplyGameTextStyle(label);
     }
@@ -823,15 +873,86 @@ internal static class DsGameHooks
 
     // ── piles ──────────────────────────────────────────────────────────────
 
-    private static void CombatPileInitializePostfix(object player)
+    private static void CombatPileInitializePostfix(object __instance, object player)
     {
         if (player == null)
             return;
         var changed = !ReferenceEquals(player, _player) || !_inCombat;
         _player = player;
+        if (!_inCombat)
+            SetCombatTabs(true);
         _inCombat = true;
         if (changed)
             ResetPiles("draw", "discard", "exhaust");
+        // The dock takes the button's own icon (draw and exhaust have no
+        // path the code names) and its count.
+        if (DsBottomScreen.Instance?.Dock is not { } dock || PileButtonTab(__instance) is not { } tab)
+            return;
+        if (__instance is Node node && node.GetNodeOrNull("Icon") is { } icon)
+            dock.SetIcon(tab, icon is TextureRect rect ? rect.Texture : icon.Get("texture").As<Texture2D>());
+        UpdatePileCount(__instance, tab);
+    }
+
+    // The game's own counter moved (one card at a time, as its label does).
+    private static void CombatPileCountPostfix(object __instance)
+    {
+        if (PileButtonTab(__instance) is { } tab)
+            UpdatePileCount(__instance, tab);
+    }
+
+    // The combat UI is going away: the combat piles with it.
+    private static void CombatPileExitPostfix()
+    {
+        if (!_inCombat)
+            return;
+        _inCombat = false;
+        SetCombatTabs(false);
+    }
+
+    private static void DeckCountPostfix(object __instance)
+    {
+        try
+        {
+            var pile = AccessTools.Field(__instance.GetType(), "_pile")?.GetValue(__instance);
+            var cards = pile == null ? null : AccessTools.Property(pile.GetType(), "Cards")?.GetValue(pile);
+            if (cards != null && AccessTools.Property(cards.GetType(), "Count")?.GetValue(cards) is int count)
+                DsBottomScreen.Instance?.Dock.SetCount("deck", count);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not read the deck count: {e.Message}");
+        }
+    }
+
+    private static readonly string[] CombatTabs = { "draw", "discard", "exhaust" };
+
+    // In combat the pile tabs light up (exhaust once it has a card, as the
+    // game shows its button); out of it they dim and lose their counts.
+    private static void SetCombatTabs(bool inCombat)
+    {
+        if (DsBottomScreen.Instance?.Dock is not { } dock)
+            return;
+        foreach (var tab in CombatTabs)
+        {
+            dock.SetEnabled(tab, inCombat && tab != "exhaust");
+            if (!inCombat)
+                dock.SetCount(tab, -1);
+        }
+    }
+
+    private static string PileButtonTab(object button)
+    {
+        var pile = button == null ? null : AccessTools.Field(button.GetType(), "_pile")?.GetValue(button);
+        return pile == null ? null : TabForPile(pile);
+    }
+
+    private static void UpdatePileCount(object button, string tab)
+    {
+        if (DsBottomScreen.Instance?.Dock is not { } dock || AccessTools.Field(button.GetType(), "_currentCount")?.GetValue(button) is not int count)
+            return;
+        dock.SetCount(tab, count);
+        if (tab == "exhaust")
+            dock.SetEnabled(tab, count > 0);
     }
 
     private static void DeckButtonInitializePostfix(object player)
@@ -1146,8 +1267,74 @@ internal static class DsGameHooks
             : grid;
     }
 
-    /// <summary>A finger took hold of (or let go of) the pile on this tab. False if there is none.</summary>
-    public static bool HoldPile(string tab, bool held)
+    /// <summary>A finger on this tab can scroll it: a pile with a grid, or the map when not drawing.</summary>
+    public static bool CanScroll(string tab) => tab == "map" ? MapCanScroll() : PileGrid(tab) != null;
+
+    /// <summary>A finger took hold of (or let go of) this tab's map or pile. False if it can't be held.</summary>
+    public static bool HoldScroll(string tab, bool held) => tab == "map" ? HoldMap(held) : HoldPile(tab, held);
+
+    /// <summary>Moves this tab's map or pile by a distance in lower-canvas pixels. False once past an end.</summary>
+    public static bool ScrollBy(string tab, float canvasDy) => tab == "map" ? ScrollMap(canvasDy) : ScrollPile(tab, canvasDy);
+
+    // The map eases toward its drag target every frame; down here it is put
+    // straight on it, so it stays under the finger, and the game's ease only
+    // pulls it back from past either end. Drawing tools keep the finger.
+    private static bool MapCanScroll()
+    {
+        if (!MapValid() || _mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
+            return false;
+        return _mapDrawingInput?.GetValue(_map) is not Node drawing || !GodotObject.IsInstanceValid(drawing) || drawing.IsQueuedForDeletion();
+    }
+
+    private static bool HoldMap(bool held)
+    {
+        if (!MapCanScroll())
+            return false;
+        try
+        {
+            if (held)
+            {
+                // The act's opening scroll gives way to a finger, as to a mouse.
+                _mapCancelActAnim?.Invoke(_map, null);
+                if (_mapCanScroll?.Invoke(_map, null) is false)
+                    return false;
+            }
+            _mapDragging.SetValue(_map, held);
+            if (_mapContainer.GetValue(_map) is Control container)
+                _mapTargetDrag.SetValue(_map, container.Position);
+            return true;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not hold the map: {e.InnerException?.Message ?? e.Message}");
+            return false;
+        }
+    }
+
+    private static bool ScrollMap(float canvasDy)
+    {
+        if (!MapValid() || _mapContainer?.GetValue(_map) is not Control container)
+            return false;
+        try
+        {
+            var scale = container.GetGlobalTransform().Scale.Y;
+            var dy = canvasDy / (Math.Abs(scale) > 0.01f ? scale : 1f);
+            var y = container.Position.Y;
+            var next = y + dy;
+            if (next < _mapScrollLow || next > _mapScrollHigh)
+                next = y + dy * OverscrollGive;
+            container.Position = container.Position with { Y = next };
+            _mapTargetDrag.SetValue(_map, container.Position);
+            return next >= _mapScrollLow && next <= _mapScrollHigh;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not scroll the map: {e.Message}");
+            return false;
+        }
+    }
+
+    private static bool HoldPile(string tab, bool held)
     {
         var grid = PileGrid(tab);
         if (grid == null)
@@ -1166,8 +1353,7 @@ internal static class DsGameHooks
         }
     }
 
-    /// <summary>Moves the pile by a distance in lower-canvas pixels. False once past an end.</summary>
-    public static bool ScrollPile(string tab, float canvasDy)
+    private static bool ScrollPile(string tab, float canvasDy)
     {
         var grid = PileGrid(tab);
         if (grid == null || _gridContainer.GetValue(grid) is not Control container)
@@ -1196,6 +1382,44 @@ internal static class DsGameHooks
         {
             DsLog.Info($"could not scroll the pile: {e.InnerException?.Message ?? e.Message}");
             return false;
+        }
+    }
+
+    /// <summary>
+    /// The card library's entrance, alpha only: the cards in view fade in one
+    /// after another. Their positions are the grid's, so it is never fought.
+    /// </summary>
+    public static void StaggerPile(string tab)
+    {
+        var grid = PileGrid(tab);
+        if (grid == null || _gridContainer.GetValue(grid) is not Control container || DsBottomScreen.Instance is not { } screen)
+            return;
+        try
+        {
+            var area = grid.GetGlobalRect();
+            var holders = new List<CanvasItem>();
+            foreach (var child in container.GetChildren())
+            {
+                if (child is Control { Visible: true } holder && holder.GetGlobalRect().Intersects(area))
+                    holders.Add(holder);
+                if (holders.Count == 40)
+                    break;
+            }
+            if (holders.Count == 0)
+                return;
+            var tween = DsStyle.Animate(container, 0.6).SetParallel(true);
+            for (var i = 0; i < holders.Count; i++)
+            {
+                var holder = holders[i];
+                holder.Modulate = holder.Modulate with { A = 0f };
+                tween.TweenProperty(holder, "modulate:a", 1f, 0.4).SetDelay(i / (double)holders.Count * 0.2)
+                    .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            }
+            screen.MarkChanged(container, 0.6);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not animate the pile in: {e.Message}");
         }
     }
 
@@ -1233,11 +1457,7 @@ internal static class DsGameHooks
         if (PileScreens.Remove(tab, out var old) && GodotObject.IsInstanceValid(old))
             old.QueueFree();
         PileBindings.Remove(tab);
-        if (pile == null)
-        {
-            DsBottomScreen.Instance?.SetPlaceholder(tab, tab == "deck"
-                ? "Your deck shows here once a run starts."
-                : $"Your {tab} pile shows here during combat.");
-        }
+        if (pile == null && DsBottomScreen.Instance is { } screen)
+            screen.SetPlaceholder(tab, screen.PlaceholderText(tab));
     }
 }

@@ -28,6 +28,7 @@ public static class DsEntry
         // Patches go in now, before the game creates its UI; the bottom-screen
         // host is created once there is a SceneTree to attach it to.
         DsGameHooks.Apply(Harmony);
+        DsStartup.Apply(Harmony);
         DsLog.Info($"started (fps={Config.Fps}, tab={Config.DefaultTab})");
     }
 
