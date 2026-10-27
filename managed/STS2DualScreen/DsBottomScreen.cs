@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using Godot.NativeInterop;
 
 namespace STS2DualScreen;
 
@@ -20,8 +21,8 @@ namespace STS2DualScreen;
 // is pushed in here too, so the map's focus, A to travel and the drawing
 // cursor work as they would on one screen.
 //
-// Outside a run (boot, main menu) the screen is plain black and ignores
-// touches; the tabs appear once a run is loaded.
+// Outside a run (boot, main menu) the screen shows the game's own animated
+// main-menu art and ignores touches; the tabs appear once a run is loaded.
 //
 // Nothing here subclasses a Godot type: this assembly is built without the
 // Godot source generators, so virtual callbacks like _Process would never
@@ -57,6 +58,24 @@ internal sealed class DsBottomScreen
     private int _generation = -1;
     private bool _surfaceReady;
     private bool _inRun;
+
+    // The main menu's backdrop scene (Spine art, particles, the logo), drawn
+    // for 1920x1080 and scaled to cover the canvas. Loaded on a thread while
+    // outside a run and freed when one starts, so its textures don't stay
+    // resident during play. It plays briefly to reach its pose, then is
+    // frozen into a still and the screen stops capturing: animated, it cost
+    // the menu a dropped frame in four.
+    private const string IdleArtScene = "res://scenes/backgrounds/main_menu_bg.tscn";
+    private static readonly Vector2 IdleArtSize = new(1920, 1080);
+    private const int IdleArtFps = 24;
+    private const ulong IdleArtSettleUsec = 1_500_000;
+    private ulong _idleArtShownUsec;
+    private bool _idleArtFrozen;
+    private const int PileFps = 30;
+    private Control _idle;
+    private Control _idleArt;
+    private bool _idleArtLoading;
+    private bool _idleArtFailed;
     private ulong _nextFrameUsec;
     private ulong _lastStatsUsec;
     private double _readbackMsTotal;
@@ -67,9 +86,10 @@ internal sealed class DsBottomScreen
     // Capture pacing. The viewport only renders when a capture is due: at
     // Config.Fps while the screen is changing (a touch, controller input on
     // the map, a tab switch, or the last capture differed), and at
-    // IdleIntervalUsec otherwise, to notice changes nobody announced (a pile
-    // updating, a map animation).
-    private const ulong IdleIntervalUsec = 250_000;
+    // IdleIntervalUsec otherwise, to notice changes nobody announced (a map
+    // animation). Each capture is a full render and readback, so idle checks
+    // are rare; piles announce their own changes (see DsGameHooks).
+    private const ulong IdleIntervalUsec = 1_000_000;
     private const ulong ActiveWindowUsec = 1_000_000;
     private const int MaxInFlight = 3;
     private ulong _activeUntilUsec;
@@ -101,6 +121,18 @@ internal sealed class DsBottomScreen
     private bool _twoFinger;
     private Vector2 _scrollMid;
 
+    // A touch on a pile turns into a scroll once it moves past the slop;
+    // until then it can still be a tap on a card. Let go fast and it flings.
+    private const float DragSlop = 14f;
+    private const float FlingDecay = 4.5f;
+    private const float FlingMin = 40f;
+    private Vector2 _dragOrigin;
+    private bool _pileDrag;
+    private float _dragVelocity;
+    private ulong _lastDragUsec;
+    private float _fling;
+    private ulong _lastFlingUsec;
+
     public bool Ready => _surfaceReady;
 
     /// <summary>A touch on the lower screen is down or ended in the last moment,
@@ -130,10 +162,13 @@ internal sealed class DsBottomScreen
         };
         ApplySize(1240, 1080);
 
-        // Shown alone outside a run.
+        // Shown outside a run: black, with the menu art over it once loaded.
         var blank = new ColorRect { Name = "Blank", Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
         blank.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _viewport.AddChild(blank);
+        _idle = new Control { Name = "Idle", ClipContents = true, MouseFilter = Control.MouseFilterEnum.Ignore };
+        _idle.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _viewport.AddChild(_idle);
 
         _root = new Control { Name = "Root", Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         _root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -199,7 +234,10 @@ internal sealed class DsBottomScreen
         _topHintLayer.AddChild(_topHint);
 
         _rd = RenderingServer.GetRenderingDevice();
-        _onFrameData = Callable.From<byte[]>(OnFrameData);
+        // Variant, not byte[]: the frame arrives as Godot's own refcounted
+        // PackedByteArray and is read in place. A byte[] would be a fresh
+        // 5 MB managed array per capture, and that churn forces full GCs.
+        _onFrameData = Callable.From<Variant>(OnFrameData);
         DsLog.Info(_rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
 
         _tree.Root.AddChild(_viewport);
@@ -359,6 +397,86 @@ internal sealed class DsBottomScreen
             (int)MathF.Round(width * scale),
             (int)MathF.Round(height * scale)
         );
+        LayoutIdleArt();
+    }
+
+    // ── idle art ───────────────────────────────────────────────────────────
+
+    private void UpdateIdleArt()
+    {
+        if (_idleArt != null || _idleArtFailed)
+            return;
+        try
+        {
+            if (!_idleArtLoading)
+            {
+                if (!ResourceLoader.Exists(IdleArtScene) || ResourceLoader.LoadThreadedRequest(IdleArtScene) != Error.Ok)
+                {
+                    _idleArtFailed = true;
+                    DsLog.Info($"menu art not available ({IdleArtScene}); lower screen stays black outside a run");
+                    return;
+                }
+                _idleArtLoading = true;
+                return;
+            }
+            var status = ResourceLoader.LoadThreadedGetStatus(IdleArtScene);
+            if (status == ResourceLoader.ThreadLoadStatus.InProgress)
+                return;
+            _idleArtLoading = false;
+            if (status != ResourceLoader.ThreadLoadStatus.Loaded || ResourceLoader.LoadThreadedGet(IdleArtScene) is not PackedScene scene)
+            {
+                _idleArtFailed = true;
+                DsLog.Info($"menu art failed to load ({status})");
+                return;
+            }
+            var art = scene.Instantiate<Control>();
+            var holder = new Control { Name = "MenuArt", MouseFilter = Control.MouseFilterEnum.Ignore, Size = IdleArtSize };
+            holder.AddChild(art);
+            art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            art.MouseFilter = Control.MouseFilterEnum.Ignore;
+            _idle.AddChild(holder);
+            _idleArt = holder;
+            _idleArtShownUsec = Time.GetTicksUsec();
+            _idleArtFrozen = false;
+            LayoutIdleArt();
+            MarkChanged();
+            DsLog.Info("menu art shown on the lower screen");
+        }
+        catch (Exception e)
+        {
+            _idleArtFailed = true;
+            _idleArtLoading = false;
+            DsLog.Info($"menu art failed: {e.Message}");
+        }
+    }
+
+    // Cover the canvas, centred: the art's middle is what matters.
+    private void LayoutIdleArt()
+    {
+        if (_idleArt == null || !GodotObject.IsInstanceValid(_idleArt))
+            return;
+        var canvas = CanvasSize;
+        var scale = Math.Max(canvas.X / IdleArtSize.X, canvas.Y / IdleArtSize.Y);
+        _idleArt.Scale = new Vector2(scale, scale);
+        _idleArt.Position = (canvas - IdleArtSize * scale) / 2f;
+    }
+
+    private void FreezeIdleArt()
+    {
+        if (_idleArt == null || _idleArtFrozen || Time.GetTicksUsec() - _idleArtShownUsec < IdleArtSettleUsec)
+            return;
+        _idleArtFrozen = true;
+        _idleArt.ProcessMode = Node.ProcessModeEnum.Disabled;
+        // One last capture of the still.
+        MarkChanged();
+    }
+
+    private void FreeIdleArt()
+    {
+        _idleArtFrozen = false;
+        if (_idleArt != null && GodotObject.IsInstanceValid(_idleArt))
+            _idleArt.QueueFree();
+        _idleArt = null;
     }
 
     // ── controller ─────────────────────────────────────────────────────────
@@ -432,7 +550,13 @@ internal sealed class DsBottomScreen
             }
 
             UpdateRunState();
+            if (!_inRun)
+            {
+                UpdateIdleArt();
+                FreezeIdleArt();
+            }
             PumpTouches();
+            UpdateFling();
 
             var now = Time.GetTicksUsec();
             // Last frame drew the viewport; its pixels are ready to copy.
@@ -446,9 +570,17 @@ internal sealed class DsBottomScreen
                 DsLog.Info($"bottom readback: {_inFlight} request(s) never answered; resetting");
                 _inFlight = 0;
             }
-            if (now >= _nextFrameUsec && _inFlight < MaxInFlight)
+            // The frozen menu art never changes by itself: no idle checks.
+            var still = !_inRun && _idleArtFrozen && now >= _activeUntilUsec;
+            if (now >= _nextFrameUsec && _inFlight < MaxInFlight && !still)
             {
-                var interval = now < _activeUntilUsec ? (ulong)(1_000_000 / Math.Max(1, _config.Fps)) : IdleIntervalUsec;
+                // The menu art animates without pause; it needn't be smooth.
+                // A pile grid is many cards, each costly to draw, and mostly
+                // still; only the map gets the full rate.
+                var fps = !_inRun ? Math.Min(_config.Fps, IdleArtFps)
+                    : _active == "map" || TouchRecent || _fling != 0 ? _config.Fps
+                    : Math.Min(_config.Fps, PileFps);
+                var interval = now < _activeUntilUsec ? (ulong)(1_000_000 / Math.Max(1, fps)) : IdleIntervalUsec;
                 _nextFrameUsec = now + interval;
                 RenderingServer.ViewportSetUpdateMode(_viewport.GetViewportRid(), RenderingServer.ViewportUpdateMode.Once);
                 _readbackDue = true;
@@ -473,6 +605,9 @@ internal sealed class DsBottomScreen
             return;
         _inRun = inRun;
         _root.Visible = inRun;
+        _idle.Visible = !inRun;
+        if (inRun)
+            FreeIdleArt();
         ReleasePointer();
         MarkChanged();
         DsLog.Info(inRun ? "run started; lower screen shown" : "no run; lower screen blank");
@@ -551,17 +686,29 @@ internal sealed class DsBottomScreen
         _readbackCount++;
     }
 
-    private void OnFrameData(byte[] data)
+    private unsafe void OnFrameData(Variant data)
     {
         if (_inFlight > 0)
             _inFlight--;
+        // Release the frame now, not when a finalizer gets to it.
+        using var frame = data;
         if (!_surfaceReady)
             return;
         var width = _requestWidth;
         var height = _requestHeight;
-        if (data == null || data.Length != width * height * 4)
-            return; // resized while in flight
-        Submit(data, width, height);
+        var native = frame.CopyNativeVariant();
+        var bytes = NativeFuncs.godotsharp_variant_as_packed_byte_array(in native);
+        try
+        {
+            if (bytes.Buffer == null || bytes.Size != width * height * 4)
+                return; // resized while in flight
+            Submit(bytes.Buffer, width, height);
+        }
+        finally
+        {
+            bytes.Dispose();
+            native.Dispose();
+        }
     }
 
     private void ReadbackInline()
@@ -580,12 +727,16 @@ internal sealed class DsBottomScreen
 
     private unsafe void Submit(byte[] data, int width, int height)
     {
-        var started = Time.GetTicksUsec();
-        int posted;
         fixed (byte* pixels = data)
         {
-            posted = DsNative.SubmitFrame(pixels, width, height, width * 4);
+            Submit(pixels, width, height);
         }
+    }
+
+    private unsafe void Submit(byte* pixels, int width, int height)
+    {
+        var started = Time.GetTicksUsec();
+        var posted = DsNative.SubmitFrame(pixels, width, height, width * 4);
         _submitMsTotal += (Time.GetTicksUsec() - started) / 1000.0;
         _submitCount++;
         // It differed from the last frame: the screen is moving, keep up with it.
@@ -620,6 +771,10 @@ internal sealed class DsBottomScreen
                         _pointerId = t.Id;
                         _pointerPos = pos;
                         _wheelAccumulator = 0;
+                        _dragOrigin = pos;
+                        _pileDrag = false;
+                        _dragVelocity = 0;
+                        _fling = 0;
                         Push(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
                         Push(MouseButtonEvent(pos, pressed: true));
                     }
@@ -628,8 +783,11 @@ internal sealed class DsBottomScreen
                         // A second finger turns the gesture into a scroll: let go
                         // of the first finger's press (ending a drawn line or a
                         // drag) and follow the midpoint from here.
-                        if (_pointerId >= 0)
+                        if (_pointerId >= 0 && !_pileDrag)
                             Push(MouseButtonEvent(_pointerPos, pressed: false));
+                        if (_pileDrag)
+                            DsGameHooks.HoldPile(_active, false);
+                        _pileDrag = false;
                         _pointerId = -1;
                         _twoFinger = true;
                         _wheelAccumulator = 0;
@@ -650,6 +808,8 @@ internal sealed class DsBottomScreen
                         break;
                     var relative = pos - _pointerPos;
                     _pointerPos = pos;
+                    if (_active != "map" && DragPile(pos, relative))
+                        break;
                     Push(new InputEventMouseMotion
                     {
                         Position = pos,
@@ -657,15 +817,16 @@ internal sealed class DsBottomScreen
                         Relative = relative,
                         ButtonMask = MouseButtonMask.Left,
                     });
-                    if (_active != "map")
-                        EmulateWheel(pos, relative.Y);
                     break;
                 case DsNative.PhaseUp:
                 case DsNative.PhaseCancel:
                     _fingers.Remove(t.Id);
                     if (t.Id == _pointerId)
                     {
-                        Push(MouseButtonEvent(pos, pressed: false));
+                        if (_pileDrag)
+                            ReleasePile();
+                        else
+                            Push(MouseButtonEvent(pos, pressed: false));
                         _pointerId = -1;
                     }
                     // The rest of a two-finger gesture never becomes a press.
@@ -702,8 +863,59 @@ internal sealed class DsBottomScreen
             return;
         if (_active == "map")
             Push(new InputEventPanGesture { Position = mid, Delta = new Vector2(0f, -dy / 50f) });
-        else
+        else if (!DsGameHooks.ScrollPile(_active, dy))
             EmulateWheel(mid, dy);
+    }
+
+    // Past the slop, the touch lets go of whatever card it pressed (off
+    // screen, so no card counts it as a tap) and moves the pile instead.
+    private bool DragPile(Vector2 pos, Vector2 relative)
+    {
+        if (!_pileDrag)
+        {
+            if ((pos - _dragOrigin).Length() < DragSlop || !DsGameHooks.HoldPile(_active, true))
+                return false;
+            _pileDrag = true;
+            var away = new Vector2(-10000f, -10000f);
+            Push(new InputEventMouseMotion { Position = away, GlobalPosition = away });
+            Push(MouseButtonEvent(away, pressed: false));
+            relative = pos - _dragOrigin;
+            _lastDragUsec = Time.GetTicksUsec();
+        }
+        DsGameHooks.ScrollPile(_active, relative.Y);
+        var now = Time.GetTicksUsec();
+        var dt = Math.Max(1e-3f, (now - _lastDragUsec) / 1e6f);
+        _lastDragUsec = now;
+        _dragVelocity = Mathf.Lerp(_dragVelocity, relative.Y / dt, 0.4f);
+        return true;
+    }
+
+    private void ReleasePile()
+    {
+        _pileDrag = false;
+        DsGameHooks.HoldPile(_active, false);
+        // A finger that stopped before lifting doesn't fling.
+        var still = Time.GetTicksUsec() - _lastDragUsec > 80_000;
+        _fling = still || Math.Abs(_dragVelocity) < FlingMin * 4 ? 0 : _dragVelocity;
+        _lastFlingUsec = Time.GetTicksUsec();
+    }
+
+    private void UpdateFling()
+    {
+        if (_fling == 0)
+            return;
+        var now = Time.GetTicksUsec();
+        var dt = (now - _lastFlingUsec) / 1e6f;
+        _lastFlingUsec = now;
+        if (_active == "map" || _pointerId >= 0 || !DsGameHooks.ScrollPile(_active, _fling * dt))
+        {
+            _fling = 0;
+            return;
+        }
+        _fling *= MathF.Exp(-FlingDecay * dt);
+        if (Math.Abs(_fling) < FlingMin)
+            _fling = 0;
+        MarkChanged();
     }
 
     // Card grids scroll with the wheel on PC; turn a vertical drag into wheel steps.

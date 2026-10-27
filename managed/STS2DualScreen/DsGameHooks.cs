@@ -39,10 +39,19 @@ internal static class DsGameHooks
     private const string ActiveScreenContextType = "MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext.ActiveScreenContext";
     private const string MouseModeMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMouseModeMapDrawingInput";
     private const string PlayerHandType = "MegaCrit.Sts2.Core.Nodes.Combat.NPlayerHand";
+    private const string CardRewardScreenType = "MegaCrit.Sts2.Core.Nodes.Screens.CardSelection.NCardRewardSelectionScreen";
+    private const string ChooseCardScreenType = "MegaCrit.Sts2.Core.Nodes.Screens.CardSelection.NChooseACardSelectionScreen";
+    private const string CompatMerchantConfirmType = "STS2Mobile.Patches.MerchantSelectionConfirmationPatches";
     private const string GameType = "MegaCrit.Sts2.Core.Nodes.NGame";
     private const string RunType = "MegaCrit.Sts2.Core.Nodes.NRun";
     private const string PlatformUtilType = "MegaCrit.Sts2.Core.Platform.PlatformUtil";
     private const string HoverTipSetType = "MegaCrit.Sts2.Core.Nodes.HoverTips.NHoverTipSet";
+
+    // The game's UI is sized for 1080p; on the small lower panel its cards
+    // and map tools read small. These scale them up there only.
+    private const float PileScale = 1.35f;
+    private const float MapToolsScale = 1.4f;
+    private const float LegendMargin = 8f;
 
     private static readonly Dictionary<string, string> TabToPileType = new()
     {
@@ -59,6 +68,8 @@ internal static class DsGameHooks
     private static Type _controllerManagerType;
     private static Type _screenContextType;
     private static MethodInfo _tapPreviewPrefix;
+    private static MethodInfo _rewardSelectPrefix;
+    private static MethodInfo _chooseSelectPrefix;
     private static PropertyInfo _runInstance;
     private static MethodInfo _overlayOpen;
     private static bool _focusOverridden;
@@ -68,6 +79,7 @@ internal static class DsGameHooks
     private static bool _inCombat;
     private static readonly Dictionary<string, Node> PileScreens = new();
     private static readonly Dictionary<string, object> PileBindings = new();
+    private static readonly HashSet<string> ResizeHooked = new();
 
     /// <summary>
     /// By full name, else by simple name in the game assembly: namespaces
@@ -115,6 +127,7 @@ internal static class DsGameHooks
         Patch(harmony, _mapType, "Open", postfix: nameof(MapOpenPostfix));
         Patch(harmony, _mapType, "Close", postfix: nameof(MapClosePostfix));
         Patch(harmony, _mapType, "AnimClose", prefix: nameof(MapAnimClosePrefix));
+        Patch(harmony, _mapType, "get_MapLegendX", postfix: nameof(MapLegendXPostfix));
         Patch(harmony, FindType(MapPointType), "OnRelease", prefix: nameof(MapPointReleasePrefix));
         Patch(harmony, FindType(MapDrawingInputType), "Create", prefix: nameof(DrawingInputCreatePrefix), postfix: nameof(DrawingInputCreatePostfix));
         Patch(harmony, FindType(ControllerMapDrawingInputType), "_Process", prefix: nameof(ControllerDrawingProcessPrefix), postfix: nameof(ControllerDrawingProcessPostfix));
@@ -124,7 +137,7 @@ internal static class DsGameHooks
         // itself happens before this and is untouched.
         Patch(harmony, _controllerManagerType, "ControlModeChanged", prefix: nameof(SkipPrefix));
         Patch(harmony, FindType(MouseModeMapDrawingInputType), "_Input", prefix: nameof(NotQueuedForDeletionPrefix));
-        GuardTapPreview(harmony);
+        GuardTouchOnlyPatches(harmony);
         // Touching the lower screen takes window focus from the game, and the
         // game drops every hotkey and controller action while unfocused.
         Patch(harmony, FindType(GameType), "IsGameFocusedWindow", postfix: nameof(GameFocusedPostfix));
@@ -140,6 +153,7 @@ internal static class DsGameHooks
         Patch(harmony, FindType(CombatCardPileType), "OnRelease", postfix: nameof(CombatPileReleasePostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
+        Patch(harmony, _pileScreenType, "OnPileContentsChanged", prefix: nameof(PileContentsChangedPrefix));
         Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
     }
 
@@ -318,42 +332,76 @@ internal static class DsGameHooks
         return manager != null && AccessTools.Property(_controllerManagerType, "IsUsingController")?.GetValue(manager) is true;
     }
 
-    // The compat pack's touch "tap to preview" turns the first press on a hand
-    // card into a pinned preview and, by default, the second into putting it
-    // back down. It doesn't check where the press came from, so with a
-    // controller A never plays a card. Its prefix is swapped for one that only
-    // runs it when not on a controller.
-    private static void GuardTapPreview(Harmony harmony)
+    // The compat pack makes some card presses touch-friendly, and doesn't
+    // check where the press came from, so on a controller A never finishes:
+    // - hand: "tap to preview" turns the first press into a pinned preview
+    //   and, by default, the second into putting it back down, so A never
+    //   plays a card;
+    // - card reward and "choose a card": a press only marks the card and
+    //   enables a Confirm button, and A on the focused card just marks it
+    //   again.
+    // Each prefix is swapped for one that runs it only when not on a
+    // controller, so A behaves as on PC and touch keeps the mobile flow.
+    // The shop's version (every slot press waits for a Confirm button) has
+    // one gate for all of its intercepts; that gate says no on a controller.
+    private static void GuardTouchOnlyPatches(Harmony harmony)
     {
-        var hand = FindType(PlayerHandType);
-        var target = hand == null ? null : AccessTools.Method(hand, "OnHolderPressed");
+        var merchant = AccessTools.TypeByName(CompatMerchantConfirmType);
+        if (merchant == null)
+            DsLog.Info("no compat shop confirmation; nothing to guard");
+        else
+            Patch(harmony, merchant, "ShouldConfirmSlotSelection", prefix: nameof(MerchantConfirmPrefix));
+        _tapPreviewPrefix = SwapForTouchOnly(harmony, PlayerHandType, "OnHolderPressed", "OnHolderPressedPrefix", nameof(HolderPressedPrefix));
+        _rewardSelectPrefix = SwapForTouchOnly(harmony, CardRewardScreenType, "SelectCard", "CardRewardSelectPrefix", nameof(RewardSelectPrefix));
+        _chooseSelectPrefix = SwapForTouchOnly(harmony, ChooseCardScreenType, "SelectHolder", "ChooseCardSelectPrefix", nameof(ChooseSelectPrefix));
+    }
+
+    private static MethodInfo SwapForTouchOnly(Harmony harmony, string typeName, string method, string compatPrefix, string guard)
+    {
+        var type = FindType(typeName);
+        var target = type == null ? null : AccessTools.Method(type, method);
         if (target == null)
-            return;
+            return null;
         try
         {
             var patch = Harmony.GetPatchInfo(target)?.Prefixes
-                .FirstOrDefault(p => p.PatchMethod.Name == "OnHolderPressedPrefix" && p.owner != harmony.Id);
+                .FirstOrDefault(p => p.PatchMethod.Name == compatPrefix && p.owner != harmony.Id);
             if (patch == null)
             {
-                DsLog.Info("no tap-preview patch on NPlayerHand.OnHolderPressed; nothing to guard");
-                return;
+                DsLog.Info($"no {compatPrefix} on {type.Name}.{method}; nothing to guard");
+                return null;
             }
-            _tapPreviewPrefix = patch.PatchMethod;
             harmony.Unpatch(target, patch.PatchMethod);
-            harmony.Patch(target, prefix: new HarmonyMethod(typeof(DsGameHooks), nameof(HolderPressedPrefix)));
-            DsLog.Info($"tap preview limited to touch ({patch.owner})");
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(DsGameHooks), guard));
+            DsLog.Info($"{type.Name}.{method}: {compatPrefix} limited to touch ({patch.owner})");
+            return patch.PatchMethod;
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not guard tap preview: {e.Message}");
+            DsLog.Info($"could not guard {type.Name}.{method}: {e.Message}");
+            return null;
         }
     }
 
-    private static bool HolderPressedPrefix(object __instance, object holder)
+    private static bool HolderPressedPrefix(object __instance, object holder) => RunUnlessController(_tapPreviewPrefix, __instance, holder);
+
+    private static bool RewardSelectPrefix(object __instance, object cardHolder) => RunUnlessController(_rewardSelectPrefix, __instance, cardHolder);
+
+    private static bool ChooseSelectPrefix(object __instance, object cardHolder) => RunUnlessController(_chooseSelectPrefix, __instance, cardHolder);
+
+    private static bool MerchantConfirmPrefix(ref bool __result)
     {
-        if (_tapPreviewPrefix == null || IsUsingController())
+        if (!IsUsingController())
             return true;
-        return _tapPreviewPrefix.Invoke(null, new[] { __instance, holder }) is not false;
+        __result = false;
+        return false;
+    }
+
+    private static bool RunUnlessController(MethodInfo compatPrefix, object instance, object holder)
+    {
+        if (compatPrefix == null || IsUsingController())
+            return true;
+        return compatPrefix.Invoke(null, new[] { instance, holder }) is not false;
     }
 
     // ── map ────────────────────────────────────────────────────────────────
@@ -408,6 +456,7 @@ internal static class DsGameHooks
         if (screen?.Ready != true)
             return;
         screen.Show("map");
+        ScaleMapTools(_map);
         screen.SetTopHint(true);
         screen.ReleaseTopFocus();
     }
@@ -483,7 +532,8 @@ internal static class DsGameHooks
             if (AccessTools.Field(_mapType, "_backstop")?.GetValue(map) is CanvasItem backstop)
                 backstop.Modulate = backstop.Modulate with { A = 0.85f };
             if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is Control legend)
-                legend.Position = legend.Position with { X = map.Size.X * 0.8f };
+                legend.Position = legend.Position with { X = LegendX(map, legend) };
+            ScaleMapTools(map);
             if (scrollToCurrent)
                 ScrollToCurrent(map);
         }
@@ -492,6 +542,54 @@ internal static class DsGameHooks
             DsLog.Info($"could not show the closed map: {e.Message}");
         }
     }
+
+    // The drawing tools, larger, growing toward the middle of the map from
+    // whichever edge or corner they sit at. The legend keeps the game's size
+    // and is tucked into the bottom-right corner (above the tools if they are
+    // there), where it covers the least of the map. The open/close tweens
+    // fade both and slide the legend along x to MapLegendX, which points at
+    // that corner too; they never touch y or scale.
+    private static bool _mapToolsLogged;
+
+    private static void ScaleMapTools(Control map)
+    {
+        var scale = new Vector2(MapToolsScale, MapToolsScale);
+        var toLocal = map.GetGlobalTransform().AffineInverse();
+        Rect2? toolsRect = null;
+        if (AccessTools.Field(_mapType, "_drawingTools")?.GetValue(map) is Control tools && tools.Size != Vector2.Zero)
+        {
+            var area = map.GetGlobalRect();
+            var at = (tools.GetGlobalRect().GetCenter() - area.Position) / area.Size;
+            tools.PivotOffset = new Vector2(Side(at.X) * tools.Size.X, Side(at.Y) * tools.Size.Y);
+            tools.Scale = scale;
+            var global = tools.GetGlobalRect();
+            toolsRect = new Rect2(toLocal * global.Position, toLocal.BasisXform(global.Size));
+        }
+        if (AccessTools.Field(_mapType, "_mapLegend")?.GetValue(map) is not Control legend || legend.Size == Vector2.Zero)
+            return;
+        legend.Scale = Vector2.One;
+        var x = LegendX(map, legend);
+        var bottom = map.Size.Y - LegendMargin;
+        if (toolsRect is { } t && t.Position.X < x + legend.Size.X && t.End.X > x && t.End.Y > bottom - legend.Size.Y)
+            bottom = Math.Min(bottom, t.Position.Y - LegendMargin);
+        legend.Position = new Vector2(x, bottom - legend.Size.Y);
+        if (!_mapToolsLogged)
+        {
+            _mapToolsLogged = true;
+            DsLog.Info($"map {map.Size}: legend size {legend.Size} now bottom-right at y={legend.Position.Y:F0}, tools {toolsRect?.ToString() ?? "none"}");
+        }
+    }
+
+    private static float LegendX(Control map, Control legend) => map.Size.X - LegendMargin - legend.Size.X;
+
+    private static void MapLegendXPostfix(object __instance, ref float __result)
+    {
+        if (__instance == _map && MapValid() && AccessTools.Field(_mapType, "_mapLegend")?.GetValue(_map) is Control legend)
+            __result = LegendX(_map, legend);
+    }
+
+    // 0 for the near edge, 1 for the far one, 0.5 in between.
+    private static float Side(float fraction) => fraction < 0.33f ? 0f : fraction > 0.67f ? 1f : 0.5f;
 
     private static void SetModulate(Control map, string field, Color color)
     {
@@ -620,6 +718,44 @@ internal static class DsGameHooks
             screen.Show(tab);
     }
 
+    // A pile screen rebuilds its whole grid of card nodes on every change to
+    // its pile. On PC only an open one exists; here all four live on, so a
+    // hand draw would rebuild each of them once per card. Down here a hidden
+    // one only notes it is stale and rebuilds when its tab is shown, and the
+    // visible one rebuilds once a burst of changes settles.
+    private const double PileRefreshDelay = 0.12;
+    private static readonly HashSet<Node> StalePiles = new();
+    private static bool _refreshingPile;
+
+    private static bool PileContentsChangedPrefix(object __instance)
+    {
+        if (_refreshingPile || DsBottomScreen.Instance is not { } screen || __instance is not CanvasItem node || !screen.IsBottom(node))
+            return true;
+        if (StalePiles.Add(node) && node.IsVisibleInTree())
+            node.GetTree().CreateTimer(PileRefreshDelay).Timeout += () => RefreshPile(node);
+        return false;
+    }
+
+    private static void RefreshPile(Node node)
+    {
+        if (!StalePiles.Remove(node) || !GodotObject.IsInstanceValid(node))
+            return;
+        _refreshingPile = true;
+        try
+        {
+            AccessTools.Method(_pileScreenType, "OnPileContentsChanged")?.Invoke(node, null);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not refresh a pile: {e.InnerException?.Message ?? e.Message}");
+        }
+        finally
+        {
+            _refreshingPile = false;
+        }
+        DsBottomScreen.Instance?.MarkChanged();
+    }
+
     // Instead of an overlay on the top screen, show the pile on the bottom one.
     // Callers ignore the returned screen, so it is left null.
     private static bool ShowPileScreenPrefix(object pile)
@@ -676,6 +812,16 @@ internal static class DsGameHooks
             var origin = parent is CanvasItem item ? item.GetGlobalTransform().Origin : Vector2.Zero;
             tip.Reparent(screen.HoverLayer, false);
             tip.Position += origin;
+            // The game placed it by the owner's own size, not counting a
+            // scaled-up parent (the pile screens): scale the whole placement
+            // about the owner to match.
+            var scale = owner.GetGlobalTransform().Scale.X / Math.Max(0.01f, owner.Scale.X);
+            if (Math.Abs(scale - 1f) > 0.01f)
+            {
+                var anchor = owner.GlobalPosition;
+                tip.Position = anchor + (tip.Position - anchor) * scale;
+                tip.Scale = new Vector2(scale, scale);
+            }
             Callable.From(() => FitTip(tip)).CallDeferred();
             screen.MarkChanged();
         }
@@ -727,6 +873,7 @@ internal static class DsGameHooks
 
     private static void ResetPiles(params string[] tabs)
     {
+        StalePiles.RemoveWhere(n => !GodotObject.IsInstanceValid(n));
         foreach (var tab in tabs)
         {
             if (PileScreens.Remove(tab, out var old) && GodotObject.IsInstanceValid(old))
@@ -761,7 +908,11 @@ internal static class DsGameHooks
         }
         if (PileScreens.TryGetValue(tab, out var existing) && GodotObject.IsInstanceValid(existing)
             && ReferenceEquals(PileBindings.GetValueOrDefault(tab), pile))
+        {
+            if (StalePiles.Contains(existing))
+                RefreshPile(existing);
             return;
+        }
         ResetIfStale(tab, pile);
 
         try
@@ -777,11 +928,29 @@ internal static class DsGameHooks
             node.Name = $"DsPile_{tab}";
             AccessTools.Property(_pileScreenType, "Pile").SetValue(node, pile);
             var page = screen.Page(tab);
-            page.AddChild(node);
             if (node is Control control)
             {
-                control.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+                // Laid out in a page-sized area divided by the scale, then
+                // scaled up to fill the page: fewer, bigger cards per row.
+                // Sized before it enters the tree: its grid lays out its
+                // columns in _Ready and redoes that on a resize only when it
+                // can scroll.
+                control.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
+                control.Scale = new Vector2(PileScale, PileScale);
+                control.Size = page.Size / PileScale;
                 control.Visible = true;
+                if (ResizeHooked.Add(tab))
+                    page.Resized += () => FitPileScreen(tab);
+            }
+            // Built at once: it is only created for the tab being shown.
+            _refreshingPile = true;
+            try
+            {
+                page.AddChild(node);
+            }
+            finally
+            {
+                _refreshingPile = false;
             }
             // Its back button closes the top screen's capstone; there is
             // nothing to go back from down here. Disabled, not just hidden:
@@ -792,6 +961,7 @@ internal static class DsGameHooks
                 back.Visible = false;
                 AccessTools.Method(back.GetType(), "Disable")?.Invoke(back, null);
             }
+            FitPileChrome(node);
             PileScreens[tab] = node;
             PileBindings[tab] = pile;
             screen.SetPlaceholder(tab, "");
@@ -800,6 +970,124 @@ internal static class DsGameHooks
         {
             DsLog.Info($"could not show {tab} pile: {e.InnerException?.Message ?? e.Message}");
         }
+    }
+
+    // ── pile scrolling ─────────────────────────────────────────────────────
+
+    // A finger on a pile drives its grid directly. The grid's own drag only
+    // starts on a press that no card took, and a card takes nearly every
+    // press; its wheel steps ease in after the finger. Here the grid follows
+    // the finger 1:1, with some give past either end, and its own update
+    // eases it back once the finger lets go.
+    private const float OverscrollGive = 0.35f;
+    private static Type _gridType;
+    private static FieldInfo _gridDragging, _gridTarget, _gridContainer, _gridScrollbar;
+    private static PropertyInfo _gridLimitTop, _gridLimitBottom;
+    private static MethodInfo _gridAllocate, _scrollbarSet;
+
+    private static Control PileGrid(string tab)
+    {
+        if (tab == null || !PileScreens.TryGetValue(tab, out var screen) || !GodotObject.IsInstanceValid(screen)
+            || AccessTools.Field(_pileScreenType, "_grid")?.GetValue(screen) is not Control grid)
+            return null;
+        var type = grid.GetType();
+        if (type != _gridType)
+        {
+            _gridType = type;
+            _gridDragging = AccessTools.Field(type, "_isDragging");
+            _gridTarget = AccessTools.Field(type, "_targetDrag");
+            _gridContainer = AccessTools.Field(type, "_scrollContainer");
+            _gridScrollbar = AccessTools.Field(type, "_scrollbar");
+            _gridLimitTop = AccessTools.Property(type, "ScrollLimitTop");
+            _gridLimitBottom = AccessTools.Property(type, "ScrollLimitBottom");
+            _gridAllocate = AccessTools.Method(type, "AllocateCardHolders");
+            _scrollbarSet = null;
+        }
+        return _gridDragging == null || _gridTarget == null || _gridContainer == null || _gridLimitTop == null || _gridLimitBottom == null
+            ? null
+            : grid;
+    }
+
+    /// <summary>A finger took hold of (or let go of) the pile on this tab. False if there is none.</summary>
+    public static bool HoldPile(string tab, bool held)
+    {
+        var grid = PileGrid(tab);
+        if (grid == null)
+            return false;
+        try
+        {
+            _gridDragging.SetValue(grid, held);
+            if (_gridContainer.GetValue(grid) is Control container)
+                _gridTarget.SetValue(grid, container.Position.Y);
+            return true;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not hold the pile: {e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>Moves the pile by a distance in lower-canvas pixels. False once past an end.</summary>
+    public static bool ScrollPile(string tab, float canvasDy)
+    {
+        var grid = PileGrid(tab);
+        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
+            return false;
+        try
+        {
+            var top = (float)_gridLimitTop.GetValue(grid);
+            var bottom = (float)_gridLimitBottom.GetValue(grid);
+            float low = Math.Min(top, bottom), high = Math.Max(top, bottom);
+            var dy = canvasDy / PileScale;
+            var y = container.Position.Y;
+            var next = y + dy;
+            if (next < low || next > high)
+                next = y + dy * OverscrollGive;
+            _gridTarget.SetValue(grid, next);
+            container.Position = container.Position with { Y = next };
+            _gridAllocate?.Invoke(grid, null);
+            if (_gridScrollbar.GetValue(grid) is Node bar && Math.Abs(bottom) > 0.01f)
+            {
+                _scrollbarSet ??= AccessTools.Method(bar.GetType(), "SetValueWithoutAnimation");
+                _scrollbarSet?.Invoke(bar, new object[] { (double)(Math.Clamp(next / bottom, 0f, 1f) * 100f) });
+            }
+            return next >= low && next <= high;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not scroll the pile: {e.InnerException?.Message ?? e.Message}");
+            return false;
+        }
+    }
+
+    // Made for a full screen under the top bar: the grid starts below where
+    // the bar would be, and fades cards to black at its top and bottom
+    // edges. Down here that is a black band over the cards; drop both. The
+    // caption box stays only where there is a caption (none for the deck).
+    private static void FitPileChrome(Node pileScreen)
+    {
+        if (pileScreen.GetNodeOrNull("CardGrid") is Control grid)
+        {
+            if (grid.GetNodeOrNull("BorderGradient") is CanvasItem gradient)
+                gradient.Visible = false;
+            grid.OffsetTop = 0;
+            AccessTools.Method(grid.GetType(), "ReflowColumns")?.Invoke(grid, null);
+        }
+        if (pileScreen.GetNodeOrNull("BottomText") is CanvasItem caption
+            && pileScreen.GetNodeOrNull("BottomText/MarginContainer/BottomLabel") is CanvasItem { Visible: false })
+            caption.Visible = false;
+    }
+
+    private static void FitPileScreen(string tab)
+    {
+        if (!PileScreens.TryGetValue(tab, out var node) || node is not Control control || !GodotObject.IsInstanceValid(control)
+            || DsBottomScreen.Instance is not { } screen)
+            return;
+        control.Size = screen.Page(tab).Size / PileScale;
+        // See EnsurePileScreen: the grid won't reflow by itself.
+        if (AccessTools.Field(_pileScreenType, "_grid")?.GetValue(control) is Node grid)
+            AccessTools.Method(grid.GetType(), "ReflowColumns")?.Invoke(grid, null);
     }
 
     private static void ResetIfStale(string tab, object pile)
