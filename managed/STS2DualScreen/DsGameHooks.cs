@@ -39,6 +39,10 @@ internal static class DsGameHooks
     private const string ActiveScreenContextType = "MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext.ActiveScreenContext";
     private const string MouseModeMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMouseModeMapDrawingInput";
     private const string PlayerHandType = "MegaCrit.Sts2.Core.Nodes.Combat.NPlayerHand";
+    private const string GameType = "MegaCrit.Sts2.Core.Nodes.NGame";
+    private const string RunType = "MegaCrit.Sts2.Core.Nodes.NRun";
+    private const string PlatformUtilType = "MegaCrit.Sts2.Core.Platform.PlatformUtil";
+    private const string HoverTipSetType = "MegaCrit.Sts2.Core.Nodes.HoverTips.NHoverTipSet";
 
     private static readonly Dictionary<string, string> TabToPileType = new()
     {
@@ -55,6 +59,9 @@ internal static class DsGameHooks
     private static Type _controllerManagerType;
     private static Type _screenContextType;
     private static MethodInfo _tapPreviewPrefix;
+    private static PropertyInfo _runInstance;
+    private static MethodInfo _overlayOpen;
+    private static bool _focusOverridden;
     private static Control _pendingMap;
     private static Control _map;
     private static object _player;
@@ -118,13 +125,38 @@ internal static class DsGameHooks
         Patch(harmony, _controllerManagerType, "ControlModeChanged", prefix: nameof(SkipPrefix));
         Patch(harmony, FindType(MouseModeMapDrawingInputType), "_Input", prefix: nameof(NotQueuedForDeletionPrefix));
         GuardTapPreview(harmony);
+        // Touching the lower screen takes window focus from the game, and the
+        // game drops every hotkey and controller action while unfocused.
+        Patch(harmony, FindType(GameType), "IsGameFocusedWindow", postfix: nameof(GameFocusedPostfix));
+        _overlayOpen = FindType(PlatformUtilType) is { } platform ? AccessTools.Method(platform, "IsPlatformOverlayOpen") : null;
+        _runInstance = FindType(RunType) is { } run ? AccessTools.Property(run, "Instance") : null;
+        var hoverTips = FindType(HoverTipSetType);
+        // The single-tip overload calls this one.
+        var createAndShow = hoverTips == null ? null : AccessTools.GetDeclaredMethods(hoverTips)
+            .FirstOrDefault(m => m.Name == "CreateAndShow" && m.GetParameters().Length == 3 && m.GetParameters()[1].ParameterType.IsGenericType);
+        Patch(harmony, hoverTips, createAndShow, "CreateAndShow", postfix: nameof(HoverTipPostfix));
+        Patch(harmony, hoverTips, "CreateAndShowMapPointHistory", postfix: nameof(HoverTipPostfix));
         Patch(harmony, FindType(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
+        Patch(harmony, FindType(CombatCardPileType), "OnRelease", postfix: nameof(CombatPileReleasePostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
         Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
     }
 
     private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null)
+    {
+        MethodInfo target = null;
+        try
+        {
+            target = type == null ? null : AccessTools.Method(type, method);
+        }
+        catch (AmbiguousMatchException)
+        {
+        }
+        Patch(harmony, type, target, method, prefix, postfix);
+    }
+
+    private static void Patch(Harmony harmony, Type type, MethodInfo target, string method, string prefix = null, string postfix = null)
     {
         if (type == null)
         {
@@ -133,7 +165,6 @@ internal static class DsGameHooks
         }
         try
         {
-            var target = AccessTools.Method(type, method);
             if (target == null)
             {
                 DsLog.Info($"hook skipped, {type.Name}.{method} not found");
@@ -183,15 +214,92 @@ internal static class DsGameHooks
     {
         if (!IsMapOpen() || _screenContextType == null)
             return false;
-        var context = AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+        var context = ScreenContext();
         return context != null && ReferenceEquals(AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null), _map);
     }
 
     public static string CurrentScreenName()
     {
-        var context = _screenContextType == null ? null : AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+        var context = ScreenContext();
         var current = context == null ? null : AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null);
         return current?.GetType().Name ?? "none";
+    }
+
+    /// <summary>A run is loaded (NRun exists). True when that can't be told, so nothing goes missing.</summary>
+    public static bool InRun()
+    {
+        if (_runInstance == null)
+            return true;
+        try
+        {
+            return _runInstance.GetValue(null) != null;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
+    private static object ScreenContext() =>
+        _screenContextType == null ? null : AccessTools.Property(_screenContextType, "Instance")?.GetValue(null);
+
+    /// <summary>
+    /// Nothing on the top screen has controller focus: give it to the current
+    /// screen's default control, as the game does when a screen opens. Not in
+    /// combat, where an unfocused hand is normal (targeting, for one).
+    /// </summary>
+    public static void RestoreTopFocus(string why)
+    {
+        Callable.From(() =>
+        {
+            try
+            {
+                if (MapOwnsInput() || ((Engine.GetMainLoop() as SceneTree)?.Root.GuiGetFocusOwner() != null))
+                    return;
+                var context = ScreenContext();
+                var current = context == null ? null : AccessTools.Method(_screenContextType, "GetCurrentScreen")?.Invoke(context, null);
+                if (current == null || current.GetType().Name.Contains("CombatRoom"))
+                    return;
+                AccessTools.Method(_screenContextType, "FocusOnDefaultControl")?.Invoke(context, null);
+                DsLog.Info($"top-screen focus restored ({why}, screen={current.GetType().Name})");
+            }
+            catch (Exception e)
+            {
+                DsLog.Info($"could not restore focus: {e.InnerException?.Message ?? e.Message}");
+            }
+        }).CallDeferred();
+    }
+
+    // The game counts as focused while it is on screen with the lower screen
+    // up (that is, between the activity's onStart and onStop), even if a touch
+    // down there moved window focus.
+    private static void GameFocusedPostfix(ref bool __result)
+    {
+        if (__result)
+        {
+            if (_focusOverridden)
+            {
+                _focusOverridden = false;
+                DsLog.Info("game window focused again");
+            }
+            return;
+        }
+        if (DsBottomScreen.Instance?.Ready != true)
+            return;
+        try
+        {
+            if (_overlayOpen?.Invoke(null, null) is true)
+                return;
+        }
+        catch (Exception)
+        {
+        }
+        __result = true;
+        if (!_focusOverridden)
+        {
+            _focusOverridden = true;
+            DsLog.Info("game window lost focus to the lower screen; still taking input");
+        }
     }
 
     private static object ControllerManager() =>
@@ -319,6 +427,10 @@ internal static class DsGameHooks
         UpdateMapPlaceholder();
         if (_inCombat && screen.ActiveTab == "map")
             screen.Show("draw");
+        // Opening the map let go of top-screen focus; the screen under it
+        // (rewards, say) does not take it back by itself.
+        if (IsUsingController())
+            RestoreTopFocus("map closed");
     }
 
     private static bool MapAnimClosePrefix(object __instance, ref System.Threading.Tasks.Task __result)
@@ -494,6 +606,20 @@ internal static class DsGameHooks
         ResetPiles("deck");
     }
 
+    // An empty pile shows a thought bubble instead of opening; switch the
+    // bottom tab anyway, so the pile button and its hotkey always do.
+    private static void CombatPileReleasePostfix(object __instance)
+    {
+        var screen = DsBottomScreen.Instance;
+        if (screen?.Ready != true || !_inCombat)
+            return;
+        var pile = AccessTools.Field(__instance.GetType(), "_pile")?.GetValue(__instance);
+        if (pile == null || AccessTools.Property(pile.GetType(), "IsEmpty")?.GetValue(pile) is not true)
+            return;
+        if (TabForPile(pile) is { } tab)
+            screen.Show(tab);
+    }
+
     // Instead of an overlay on the top screen, show the pile on the bottom one.
     // Callers ignore the returned screen, so it is left null.
     private static bool ShowPileScreenPrefix(object pile)
@@ -520,6 +646,72 @@ internal static class DsGameHooks
         }
         screen.Show("deck");
         return false;
+    }
+
+    // ── hover tips ─────────────────────────────────────────────────────────
+
+    // Tips go into the game's container on the top screen. One for a card or
+    // map point on the lower screen moves down there, next to it.
+    private static void HoverTipPostfix(Control owner, Control __result) => MoveTip(__result, owner, retry: true);
+
+    private static void MoveTip(Control tip, Control owner, bool retry)
+    {
+        var screen = DsBottomScreen.Instance;
+        if (tip == null || screen == null || !GodotObject.IsInstanceValid(tip) || !screen.IsBottom(owner))
+            return;
+        try
+        {
+            var parent = tip.GetParent();
+            if (parent == null)
+            {
+                // Added deferred; move it once it is in.
+                if (retry)
+                    Callable.From(() => MoveTip(tip, owner, retry: false)).CallDeferred();
+                return;
+            }
+            if (parent == screen.HoverLayer)
+                return;
+            // It was placed in lower-screen canvas coordinates relative to the
+            // container; keep that placement under the identity layer.
+            var origin = parent is CanvasItem item ? item.GetGlobalTransform().Origin : Vector2.Zero;
+            tip.Reparent(screen.HoverLayer, false);
+            tip.Position += origin;
+            Callable.From(() => FitTip(tip)).CallDeferred();
+            screen.MarkChanged();
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not move a hover tip: {e.Message}");
+        }
+    }
+
+    // The game keeps tips inside the top screen's size; keep them inside the lower canvas.
+    private static void FitTip(Control tip)
+    {
+        var screen = DsBottomScreen.Instance;
+        if (screen == null || !GodotObject.IsInstanceValid(tip))
+            return;
+        Rect2? bounds = null;
+        foreach (var child in tip.GetChildren())
+        {
+            if (child is Control { Visible: true } control && control.Size != Vector2.Zero)
+                bounds = bounds?.Merge(control.GetGlobalRect()) ?? control.GetGlobalRect();
+        }
+        if (bounds is not { } rect)
+            return;
+        var canvas = screen.CanvasSize;
+        var shift = Vector2.Zero;
+        if (rect.End.X > canvas.X)
+            shift.X = canvas.X - rect.End.X;
+        if (rect.Position.X + shift.X < 0)
+            shift.X = -rect.Position.X;
+        if (rect.End.Y > canvas.Y)
+            shift.Y = canvas.Y - rect.End.Y;
+        if (rect.Position.Y + shift.Y < 0)
+            shift.Y = -rect.Position.Y;
+        if (shift != Vector2.Zero)
+            tip.Position += shift;
+        screen.MarkChanged();
     }
 
     private static string TabForPile(object pile)
@@ -592,9 +784,14 @@ internal static class DsGameHooks
                 control.Visible = true;
             }
             // Its back button closes the top screen's capstone; there is
-            // nothing to go back from down here.
+            // nothing to go back from down here. Disabled, not just hidden:
+            // enabled, it holds the newest binding for cancel/back, and the
+            // game's hotkeys go to the newest binding only.
             if (node.GetNodeOrNull("BackButton") is CanvasItem back)
+            {
                 back.Visible = false;
+                AccessTools.Method(back.GetType(), "Disable")?.Invoke(back, null);
+            }
             PileScreens[tab] = node;
             PileBindings[tab] = pile;
             screen.SetPlaceholder(tab, "");

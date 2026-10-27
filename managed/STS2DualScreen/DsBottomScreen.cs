@@ -20,6 +20,9 @@ namespace STS2DualScreen;
 // is pushed in here too, so the map's focus, A to travel and the drawing
 // cursor work as they would on one screen.
 //
+// Outside a run (boot, main menu) the screen is plain black and ignores
+// touches; the tabs appear once a run is loaded.
+//
 // Nothing here subclasses a Godot type: this assembly is built without the
 // Godot source generators, so virtual callbacks like _Process would never
 // fire. Everything runs off SceneTree.ProcessFrame and signals instead.
@@ -36,7 +39,7 @@ internal sealed class DsBottomScreen
         ["exhaust"] = "Exhaust",
         ["deck"] = "Deck",
     };
-    private const float TabBarHeight = 96f;
+    private const float TabBarHeight = 150f;
 
     private readonly DsConfig _config;
     private readonly SceneTree _tree;
@@ -46,12 +49,14 @@ internal sealed class DsBottomScreen
     private readonly Dictionary<string, Control> _pages = new();
     private readonly Dictionary<string, Button> _buttons = new();
     private readonly Dictionary<string, Label> _placeholders = new();
+    private readonly CanvasLayer _hoverLayer;
     private readonly CanvasLayer _topHintLayer;
     private readonly Label _topHint;
     private bool _styled;
     private string _active;
     private int _generation = -1;
     private bool _surfaceReady;
+    private bool _inRun;
     private ulong _nextFrameUsec;
     private ulong _lastStatsUsec;
     private double _readbackMsTotal;
@@ -103,6 +108,11 @@ internal sealed class DsBottomScreen
     public bool TouchRecent => _pointerId >= 0 || Time.GetTicksUsec() - _lastTouchUsec < 300_000;
     public Vector2 CanvasSize => _viewport.Size2DOverride;
 
+    /// <summary>Hover tips for nodes on this screen, above the pages and the dock.</summary>
+    public CanvasLayer HoverLayer => _hoverLayer;
+
+    public bool IsBottom(Node node) => node != null && GodotObject.IsInstanceValid(node) && node.GetViewport() == _viewport;
+
     private DsBottomScreen(SceneTree tree, DsConfig config)
     {
         _tree = tree;
@@ -120,7 +130,12 @@ internal sealed class DsBottomScreen
         };
         ApplySize(1240, 1080);
 
-        _root = new Control { Name = "Root", MouseFilter = Control.MouseFilterEnum.Ignore };
+        // Shown alone outside a run.
+        var blank = new ColorRect { Name = "Blank", Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
+        blank.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _viewport.AddChild(blank);
+
+        _root = new Control { Name = "Root", Visible = false, MouseFilter = Control.MouseFilterEnum.Ignore };
         _root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
         _viewport.AddChild(_root);
 
@@ -163,6 +178,9 @@ internal sealed class DsBottomScreen
         SetPlaceholder("deck", "Your deck shows here once a run starts.");
 
         BuildTabBar();
+
+        _hoverLayer = new CanvasLayer { Name = "HoverTips", Layer = 100 };
+        _viewport.AddChild(_hoverLayer);
 
         _topHintLayer = new CanvasLayer { Name = "DsTopHint", Layer = 120, Visible = false };
         _topHint = new Label
@@ -234,7 +252,7 @@ internal sealed class DsBottomScreen
 
     public string ActiveTab => _active;
 
-    public void SetTopHint(bool visible) => _topHintLayer.Visible = visible && _config.ShowTopHint && _surfaceReady;
+    public void SetTopHint(bool visible) => _topHintLayer.Visible = visible && _config.ShowTopHint && _surfaceReady && _inRun;
 
     /// <summary>The map took the controller: nothing on the top screen keeps focus.</summary>
     public void ReleaseTopFocus() => _tree.Root.GuiReleaseFocus();
@@ -286,13 +304,15 @@ internal sealed class DsBottomScreen
         bar.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
         bar.OffsetTop = -TabBarHeight;
         var barStyle = new StyleBoxFlat { BgColor = new Color(0.12f, 0.1f, 0.08f) };
-        barStyle.BorderWidthTop = 3;
+        barStyle.BorderWidthTop = 4;
         barStyle.BorderColor = new Color(0.55f, 0.42f, 0.24f);
+        barStyle.ContentMarginLeft = barStyle.ContentMarginRight = 12;
+        barStyle.ContentMarginTop = barStyle.ContentMarginBottom = 10;
         bar.AddThemeStyleboxOverride("panel", barStyle);
         _root.AddChild(bar);
 
-        var row = new HBoxContainer { Alignment = BoxContainer.AlignmentMode.Center };
-        row.AddThemeConstantOverride("separation", 8);
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 10);
         bar.AddChild(row);
 
         var group = new ButtonGroup();
@@ -304,10 +324,12 @@ internal sealed class DsBottomScreen
                 ToggleMode = true,
                 ButtonGroup = group,
                 FocusMode = Control.FocusModeEnum.None,
-                CustomMinimumSize = new Vector2(220, TabBarHeight - 16),
-                SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+                ClipText = true,
+                CustomMinimumSize = new Vector2(0, TabBarHeight - 24),
+                SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+                SizeFlagsVertical = Control.SizeFlags.Fill,
             };
-            button.AddThemeFontSizeOverride("font_size", 38);
+            button.AddThemeFontSizeOverride("font_size", 54);
             button.AddThemeStyleboxOverride("normal", TabStyle(new Color(0.18f, 0.15f, 0.12f)));
             button.AddThemeStyleboxOverride("hover", TabStyle(new Color(0.24f, 0.2f, 0.15f)));
             button.AddThemeStyleboxOverride("pressed", TabStyle(new Color(0.45f, 0.33f, 0.17f)));
@@ -324,7 +346,7 @@ internal sealed class DsBottomScreen
     private static StyleBoxFlat TabStyle(Color color)
     {
         var style = new StyleBoxFlat { BgColor = color };
-        style.SetCornerRadiusAll(10);
+        style.SetCornerRadiusAll(14);
         style.ContentMarginLeft = style.ContentMarginRight = 12;
         return style;
     }
@@ -346,7 +368,7 @@ internal sealed class DsBottomScreen
     // buttons with Input.ParseInputEvent.
     private void OnRootInput(InputEvent e)
     {
-        if (!_surfaceReady || e is InputEventMouse or InputEventScreenTouch or InputEventScreenDrag or InputEventGesture)
+        if (!_surfaceReady || !_inRun || e is InputEventMouse or InputEventScreenTouch or InputEventScreenDrag or InputEventGesture)
             return;
         try
         {
@@ -356,13 +378,25 @@ internal sealed class DsBottomScreen
                 MarkChanged();
                 return;
             }
-            if (e is InputEventAction { Pressed: true } action && action.Action == "ui_select" && _tree.Root.GuiGetFocusOwner() == null)
-                DsLog.Info($"select pressed with nothing focused on the top screen (screen={DsGameHooks.CurrentScreenName()})");
+            if (e.IsPressed() && !e.IsEcho() && _tree.Root.GuiGetFocusOwner() == null && IsFocusAction(e))
+                DsGameHooks.RestoreTopFocus($"nothing focused on {DsGameHooks.CurrentScreenName()}");
         }
         catch (Exception ex)
         {
             DsLog.Info($"controller forwarding failed: {ex.Message}");
         }
+    }
+
+    private static readonly string[] FocusActions = { "ui_accept", "ui_select", "ui_up", "ui_down", "ui_left", "ui_right" };
+
+    private static bool IsFocusAction(InputEvent e)
+    {
+        foreach (var action in FocusActions)
+        {
+            if (e.IsAction(action))
+                return true;
+        }
+        return false;
     }
 
     // ── per frame ──────────────────────────────────────────────────────────
@@ -397,6 +431,7 @@ internal sealed class DsBottomScreen
                 DsGameHooks.OnSurfaceReady();
             }
 
+            UpdateRunState();
             PumpTouches();
 
             var now = Time.GetTicksUsec();
@@ -429,6 +464,34 @@ internal sealed class DsBottomScreen
             DsLog.Info($"frame failed, bottom screen stopped: {e}");
             _tree.ProcessFrame -= OnProcessFrame;
         }
+    }
+
+    private void UpdateRunState()
+    {
+        var inRun = DsGameHooks.InRun();
+        if (inRun == _inRun)
+            return;
+        _inRun = inRun;
+        _root.Visible = inRun;
+        ReleasePointer();
+        MarkChanged();
+        DsLog.Info(inRun ? "run started; lower screen shown" : "no run; lower screen blank");
+        if (!inRun)
+        {
+            _topHintLayer.Visible = false;
+            return;
+        }
+        Show(Array.IndexOf(Tabs, _config.DefaultTab) >= 0 ? _config.DefaultTab : "map");
+        DsGameHooks.OnSurfaceReady();
+    }
+
+    private void ReleasePointer()
+    {
+        if (_pointerId >= 0)
+            Push(MouseButtonEvent(_pointerPos, pressed: false));
+        _pointerId = -1;
+        _fingers.Clear();
+        _twoFinger = false;
     }
 
     // A hitch is a game frame that took more than 25 ms (a dropped frame at 60 fps).
@@ -535,6 +598,9 @@ internal sealed class DsBottomScreen
         const int Max = 64;
         var touches = stackalloc DsNative.Touch[Max];
         var count = DsNative.PollTouches(touches, Max);
+        // Nothing to touch outside a run; drop them.
+        if (!_inRun)
+            return;
         if (count > 0)
             MarkChanged();
         for (var i = 0; i < count; i++)
