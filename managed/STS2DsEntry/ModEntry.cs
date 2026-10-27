@@ -8,13 +8,15 @@ namespace STS2Mobile;
 
 // The engine's entry point, shimmed.
 //
-// The custom Godot engine binds to STS2Mobile.ModEntry by name: first
-// InitializeGodotSharp (sets up GodotSharp's native interop), then Apply
-// (Harmony patches, before the game's own startup). The Sts2MobileLauncher
-// compat pack implements both, under the same assembly name, so it is shipped
-// next to this file as STS2AndroidPortCompat.dll and loaded into a load
-// context of its own; everything it references (GodotSharp, Harmony, sts2)
-// still resolves to the default context, so it patches the same game.
+// The custom Godot engine opens STS2Mobile.dll and calls STS2Mobile.ModEntry:
+// first InitializeGodotSharp (GodotSharp's native interop), then Apply
+// (Harmony patches, before the game's own startup). This file is staged as
+// STS2Mobile.dll but its assembly name is STS2DsEntry, so the Sts2MobileLauncher
+// compat pack, shipped next to it as STS2AndroidPortCompat.dll, can be loaded
+// into the default context under its own name, STS2Mobile. That matters:
+// Harmony's generated patch wrappers reference the compat pack by assembly
+// name, and an earlier version that loaded it into a separate context had
+// every wrapper resolve to this shim instead and fail.
 //
 // The compat pack is used unmodified. After it has run, the dual-screen layer
 // starts. A failure there is logged and leaves the game single-screen.
@@ -82,10 +84,9 @@ public static class ModEntry
     {
         if (_compatEntry != null)
             return _compatEntry;
-        var dir = Path.GetDirectoryName(typeof(ModEntry).Assembly.Location) ?? AppContext.BaseDirectory;
-        var path = Path.Combine(dir, CompatFileName);
-        var context = new CompatLoadContext();
-        var assembly = context.LoadFromAssemblyPath(path);
+        // Assembly.Location is empty on this engine; see DsPaths.
+        var path = Path.Combine(STS2DualScreen.DsPaths.PublishDir, CompatFileName);
+        var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
         _compatEntry = assembly.GetType("STS2Mobile.ModEntry", throwOnError: true);
         Log($"compat pack loaded: {assembly.FullName} from {path}");
         return _compatEntry;
@@ -100,12 +101,4 @@ public static class ModEntry
 
     internal static void Log(string message) => Console.Error.WriteLine($"[STS2DualScreen] {message}");
 
-    // Everything except the compat pack itself comes from the default context.
-    private sealed class CompatLoadContext : AssemblyLoadContext
-    {
-        public CompatLoadContext()
-            : base("sts2-android-compat", isCollectible: false) { }
-
-        protected override Assembly Load(AssemblyName assemblyName) => null;
-    }
 }

@@ -36,7 +36,8 @@ runtime:
 managed: $(RUNTIME_STAMP)
 	$(DOTNET) build managed/STS2DsEntry/STS2DsEntry.csproj -c Release -nologo -v q
 	mkdir -p $(ASSETS)/dualscreen
-	cp managed/STS2DsEntry/bin/Release/net9.0/STS2Mobile.dll $(ASSETS)/dualscreen/
+	# File name the engine opens; assembly name STS2DsEntry (see the .csproj).
+	cp managed/STS2DsEntry/bin/Release/net9.0/STS2DsEntry.dll $(ASSETS)/dualscreen/STS2Mobile.dll
 	cp managed/STS2DualScreen/bin/Release/net9.0/STS2DualScreen.dll $(ASSETS)/dualscreen/
 
 launcher/local.properties:

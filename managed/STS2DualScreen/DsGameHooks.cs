@@ -49,21 +49,55 @@ internal static class DsGameHooks
     private static readonly Dictionary<string, Node> PileScreens = new();
     private static readonly Dictionary<string, object> PileBindings = new();
 
+    /// <summary>
+    /// By full name, else by simple name in the game assembly: namespaces
+    /// have moved between game versions (TopBar was MegaCrit.sts2.* in one).
+    /// </summary>
+    private static Type FindType(string fullName)
+    {
+        var type = AccessTools.TypeByName(fullName);
+        if (type != null)
+            return type;
+        var simple = fullName.Substring(fullName.LastIndexOf('.') + 1);
+        foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+        {
+            if (assembly.GetName().Name != "sts2")
+                continue;
+            try
+            {
+                foreach (var candidate in assembly.GetTypes())
+                {
+                    if (candidate.Name == simple)
+                        return candidate;
+                }
+            }
+            catch (ReflectionTypeLoadException e)
+            {
+                foreach (var candidate in e.Types)
+                {
+                    if (candidate?.Name == simple)
+                        return candidate;
+                }
+            }
+        }
+        return null;
+    }
+
     public static void Apply(Harmony harmony)
     {
-        _mapType = AccessTools.TypeByName(MapScreenType);
-        _pileScreenType = AccessTools.TypeByName(CardPileScreenType);
-        _pileTypeEnum = AccessTools.TypeByName(PileTypeType);
-        var extensions = AccessTools.TypeByName(PileTypeExtensionsType);
+        _mapType = FindType(MapScreenType);
+        _pileScreenType = FindType(CardPileScreenType);
+        _pileTypeEnum = FindType(PileTypeType);
+        var extensions = FindType(PileTypeExtensionsType);
         _getPile = extensions == null ? null : AccessTools.Method(extensions, "GetPile");
 
         Patch(harmony, _mapType, "_Ready", postfix: nameof(MapReadyPostfix));
         Patch(harmony, _mapType, "Open", postfix: nameof(MapOpenPostfix));
         Patch(harmony, _mapType, "Close", postfix: nameof(MapClosePostfix));
-        Patch(harmony, AccessTools.TypeByName(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
-        Patch(harmony, AccessTools.TypeByName(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
+        Patch(harmony, FindType(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
+        Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
-        Patch(harmony, AccessTools.TypeByName(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
+        Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
     }
 
     private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null)

@@ -109,9 +109,11 @@ object GamePrep {
         }
         copyIfDifferent(compat.dll, File(publish, COMPAT_DLL_NAME))
 
-        val gameStamp = "${gameDir.absolutePath}:$dllSha"
+        val gameStamp = "${gameDir.absolutePath}:$dllSha:$bclStamp"
         if (force || state.getString("game_stamp", "") != gameStamp) {
-            copyGameAssemblies(assemblies, publish)
+            val runtimeNames = context.assets.list("dotnet_bcl").orEmpty().toSet() +
+                context.assets.list("dualscreen").orEmpty() + COMPAT_DLL_NAME
+            copyGameAssemblies(assemblies, publish, runtimeNames)
             state.edit().putString("game_stamp", gameStamp).apply()
         }
 
@@ -210,9 +212,14 @@ object GamePrep {
 
     // ── staging helpers ────────────────────────────────────────────────────
 
-    private fun copyGameAssemblies(src: File, publish: File) {
+    /**
+     * The game's own files, minus anything the Android runtime provides: the
+     * depot carries Windows CoreCLR builds of framework assemblies (and its
+     * own Harmony/MonoMod) that must not replace the Android ones.
+     */
+    private fun copyGameAssemblies(src: File, publish: File, runtimeNames: Set<String>) {
         val names = src.listFiles().orEmpty()
-            .filter { it.isFile && !isNative(it.name) && !isProtectedBcl(it.name) }
+            .filter { it.isFile && !isNative(it.name) && !isProtectedBcl(it.name) && it.name !in runtimeNames }
         // Drop game DLLs left over from a previous version.
         val keep = names.map { it.name }.toSet()
         publish.listFiles().orEmpty()
@@ -222,19 +229,11 @@ object GamePrep {
         for (file in names) copyIfDifferent(file, File(publish, file.name))
     }
 
-    private fun isNative(name: String): Boolean {
-        val lower = name.lowercase()
-        // Windows natives (steam_api64.dll, sentry.dll, fmod.dll, ...) are not
-        // managed assemblies and must not shadow the Android runtime.
-        return lower.endsWith(".so") || lower.endsWith(".exe") || lower.endsWith(".pdb") ||
-            lower in WINDOWS_NATIVES
-    }
-
-    private val WINDOWS_NATIVES = setOf(
-        "steam_api64.dll", "sentry.dll", "fmod.dll", "fmodstudio.dll", "fmodl.dll",
-        "fmodstudiol.dll", "libgodotfmod.windows.template_release.x86_64.dll",
-        "libspine_godot.windows.template_release.x86_64.dll", "d3dcompiler_47.dll",
-    )
+    // Everything but .so files goes across, as Sts2MobileLauncher does. Do not
+    // filter Windows "natives" by name: Sentry.dll, for one, is the managed
+    // Sentry SDK the game's root node loads, and without it nothing renders.
+    // Native Windows DLLs in the publish dir are inert on Android.
+    private fun isNative(name: String): Boolean = name.lowercase().endsWith(".so")
 
     private fun isProtectedBcl(name: String): Boolean =
         name.startsWith("System.") || name == "mscorlib.dll" || name == "netstandard.dll" ||

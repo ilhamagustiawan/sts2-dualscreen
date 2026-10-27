@@ -16,17 +16,10 @@ internal sealed class DsConfig
     /// 1080p-designed UI keeps a readable scale on the 3.9" panel.</summary>
     public float CanvasScale = 1.3f;
 
-    public static string FilesDir()
-    {
-        // <files>/.godot/mono/publish/arm64/STS2DualScreen.dll
-        var dir = new DirectoryInfo(Path.GetDirectoryName(typeof(DsConfig).Assembly.Location) ?? ".");
-        return dir.Parent?.Parent?.Parent?.Parent?.FullName ?? AppContext.BaseDirectory;
-    }
-
     public static DsConfig Load()
     {
         var config = new DsConfig();
-        var path = Path.Combine(FilesDir(), "dualscreen.json");
+        var path = Path.Combine(DsPaths.FilesDir, "dualscreen.json");
         try
         {
             if (!File.Exists(path))
