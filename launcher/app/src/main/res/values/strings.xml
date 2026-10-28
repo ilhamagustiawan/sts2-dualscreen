@@ -100,10 +100,8 @@
     <string name="settings_dual_screen_subtitle">With touch. Does nothing on a device with one screen.</string>
     <string name="settings_dual_screen_60">Smoother lower screen (60 FPS)</string>
     <string name="settings_dual_screen_60_subtitle">Off: 30 FPS, which saves battery and is plenty for the map and piles.</string>
-    <string name="settings_top_hint">Path hint on the top screen</string>
-    <string name="settings_top_hint_subtitle">While the map is open below, say so on the top screen.</string>
     <string name="settings_default_tab">Opens on</string>
-    <string name="settings_default_tab_subtitle">Fights switch to your piles and back by themselves.</string>
+    <string name="settings_default_tab_subtitle">After that, tabs change only when you touch them.</string>
     <string name="settings_perf_note">The defaults are tuned for smooth play. Changes apply from the next launch.</string>
     <string name="settings_perf_note_missing">Start the game once: these settings live in its settings file, which it creates on first run.</string>
     <string name="settings_particles">Particle effects</string>

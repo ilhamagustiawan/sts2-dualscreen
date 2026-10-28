@@ -4,8 +4,10 @@
 // Godot window at all. The game renders the bottom-screen UI into an offscreen
 // SubViewport, reads the pixels back and hands them here; this copies them
 // into the Surface of an Android Presentation on the other display. During a
-// run the pages and the dock are captured separately, as regions of one
-// buffer posted once a frame, so a moving dock never costs a full-screen copy.
+// run the pages, the dock and the two corner buttons are captured separately,
+// as regions of one buffer posted once a frame, so moving buttons never cost
+// a full-screen copy. The corner buttons are overlays: drawn with alpha over
+// the pages, which go on under them.
 //
 // Touches go the other way. The Presentation's view queues them here from the
 // UI thread, and the game drains the queue once per frame from its own thread.
@@ -29,6 +31,8 @@
 
 #define TOUCH_CAPACITY 256
 #define REGION_COUNT 4
+// Regions from here up are overlays, blended over the ones below.
+#define FIRST_OVERLAY 2
 
 typedef struct {
     int32_t id;
@@ -51,6 +55,17 @@ static int32_t g_shadow_w, g_shadow_h;
 static uint64_t g_region_hash[REGION_COUNT];
 static ARect g_pending_rect;
 static int32_t g_pending;
+// An overlay keeps its own pixels and what the regions below drew under it,
+// so either side can change on its own and the blend is redone from both.
+// Pixels are premultiplied, as a transparent viewport renders them.
+typedef struct {
+    uint8_t *pixels;
+    uint8_t *under;
+    size_t capacity; // in pixels, of both buffers
+    int32_t x, y, w, h;
+    int32_t valid;
+} ds_overlay;
+static ds_overlay g_overlays[REGION_COUNT];
 static ds_touch g_touches[TOUCH_CAPACITY];
 static int32_t g_touch_count;
 static int32_t g_touch_overflow;
@@ -68,6 +83,80 @@ static void reset_hashes_locked(void) {
     g_last_hash = 0;
     g_pending = 0;
     memset(g_region_hash, 0, sizeof(g_region_hash));
+    for (int32_t i = 0; i < REGION_COUNT; i++) g_overlays[i].valid = 0;
+}
+
+// The overlay over what is under it, into the shadow, within the clip rect.
+static void blend_overlay_locked(const ds_overlay *o, int32_t cl, int32_t ct, int32_t cr, int32_t cb) {
+    int32_t left = o->x > cl ? o->x : cl, top = o->y > ct ? o->y : ct;
+    int32_t right = o->x + o->w < cr ? o->x + o->w : cr, bottom = o->y + o->h < cb ? o->y + o->h : cb;
+    size_t shadow_stride = (size_t)g_shadow_w * 4;
+    for (int32_t row = top; row < bottom; row++) {
+        const uint8_t *src = o->pixels + ((size_t)(row - o->y) * o->w + (left - o->x)) * 4;
+        const uint8_t *und = o->under + ((size_t)(row - o->y) * o->w + (left - o->x)) * 4;
+        uint8_t *dst = g_shadow + (size_t)row * shadow_stride + (size_t)left * 4;
+        for (int32_t col = left; col < right; col++, src += 4, und += 4, dst += 4) {
+            uint32_t keep = 255u - src[3];
+            dst[0] = (uint8_t)(src[0] + (und[0] * keep + 127) / 255);
+            dst[1] = (uint8_t)(src[1] + (und[1] * keep + 127) / 255);
+            dst[2] = (uint8_t)(src[2] + (und[2] * keep + 127) / 255);
+            dst[3] = 255;
+        }
+    }
+}
+
+// A region below the overlays was written at this rect: what it drew under
+// each overlay is kept, and the overlay laid back over it.
+static void restore_overlays_locked(int32_t l, int32_t t, int32_t r, int32_t b) {
+    size_t shadow_stride = (size_t)g_shadow_w * 4;
+    for (int32_t i = FIRST_OVERLAY; i < REGION_COUNT; i++) {
+        ds_overlay *o = &g_overlays[i];
+        if (!o->valid) continue;
+        int32_t left = o->x > l ? o->x : l, top = o->y > t ? o->y : t;
+        int32_t right = o->x + o->w < r ? o->x + o->w : r, bottom = o->y + o->h < b ? o->y + o->h : b;
+        if (left >= right || top >= bottom) continue;
+        for (int32_t row = top; row < bottom; row++) {
+            memcpy(o->under + ((size_t)(row - o->y) * o->w + (left - o->x)) * 4,
+                   g_shadow + (size_t)row * shadow_stride + (size_t)left * 4, (size_t)(right - left) * 4);
+        }
+        blend_overlay_locked(o, left, top, right, bottom);
+    }
+}
+
+// Takes an overlay's new pixels. Moved or resized, what is under it is not
+// known yet: the regions below are asked to post again (their hashes reset).
+static int32_t store_overlay_locked(int32_t region, const uint8_t *rgba, int32_t stride,
+                                    int32_t x, int32_t y, int32_t cw, int32_t ch) {
+    ds_overlay *o = &g_overlays[region];
+    size_t need = (size_t)cw * ch;
+    if (need > o->capacity) {
+        free(o->pixels);
+        free(o->under);
+        o->pixels = malloc(need * 4);
+        o->under = calloc(need, 4);
+        o->capacity = o->pixels && o->under ? need : 0;
+        if (!o->capacity) {
+            o->valid = 0;
+            return -4;
+        }
+        o->valid = 0;
+    }
+    if (!o->valid || o->x != x || o->y != y || o->w != cw || o->h != ch) {
+        o->x = x;
+        o->y = y;
+        o->w = cw;
+        o->h = ch;
+        // The best guess until the regions below post again: what is there.
+        size_t shadow_stride = (size_t)g_shadow_w * 4;
+        for (int32_t row = 0; row < ch; row++)
+            memcpy(o->under + (size_t)row * cw * 4, g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4, (size_t)cw * 4);
+        for (int32_t i = 0; i < FIRST_OVERLAY; i++) g_region_hash[i] = 0;
+        o->valid = 1;
+    }
+    for (int32_t row = 0; row < ch; row++)
+        memcpy(o->pixels + (size_t)row * cw * 4, rgba + (size_t)row * stride, (size_t)cw * 4);
+    blend_overlay_locked(o, x, y, x + cw, y + ch);
+    return 1;
 }
 
 // ── Java side (dev.sts2ds.dualscreen.DsNative) ─────────────────────────────
@@ -220,8 +309,9 @@ out:
 
 // Writes one RGBA8 region of the surface at (x, y), in surface pixels, into
 // the shadow, to be posted by the next ds_present. Each region keeps its own
-// hash, so an unchanged one costs nothing. Returns 1 if it changed, 0 if
-// skipped, negative on error.
+// hash, so an unchanged one costs nothing. Regions FIRST_OVERLAY and up are
+// premultiplied overlays, blended over the rest. Returns 1 if it changed, 0
+// if skipped, negative on error.
 EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32_t stride,
                                 int32_t x, int32_t y, int32_t region) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4 || x < 0 || y < 0
@@ -261,11 +351,18 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
         g_shadow_h = g_height;
         // The other regions are not in the new shadow yet.
         memset(g_region_hash, 0, sizeof(g_region_hash));
+        for (int32_t i = 0; i < REGION_COUNT; i++) g_overlays[i].valid = 0;
     }
-    size_t shadow_stride = (size_t)g_shadow_w * 4;
-    for (int32_t row = 0; row < ch; row++) {
-        memcpy(g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4,
-               rgba + (size_t)row * stride, (size_t)cw * 4);
+    if (region >= FIRST_OVERLAY) {
+        result = store_overlay_locked(region, rgba, stride, x, y, cw, ch);
+        if (result != 1) goto out;
+    } else {
+        size_t shadow_stride = (size_t)g_shadow_w * 4;
+        for (int32_t row = 0; row < ch; row++) {
+            memcpy(g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4,
+                   rgba + (size_t)row * stride, (size_t)cw * 4);
+        }
+        restore_overlays_locked(x, y, x + cw, y + ch);
     }
     if (!g_pending) {
         g_pending_rect = (ARect){x, y, x + cw, y + ch};

@@ -4,8 +4,10 @@ using Godot;
 
 namespace STS2DualScreen;
 
-// The tab dock along the bottom edge, drawn in its own small viewport so that
-// its motion never costs a full-screen capture.
+// A set of tabs, drawn in its own small viewport so that its motion never
+// costs a full-screen capture: the strip along the bottom edge (the combat
+// piles), or a plate in a top corner (the map, the deck), as the game puts
+// its own buttons. DsDockSet treats them as one dock.
 //
 // Each tab is the game's icon over its localized name, styled and moving as
 // the game's own buttons do: the settings tabs' selected/unselected look
@@ -14,8 +16,22 @@ namespace STS2DualScreen;
 // it applies, the top-bar map button's rocking when travel is possible and
 // the deck button's rocking while its screen is open. A gold marker slides to
 // the selected tab and breathes.
+internal enum DockShape
+{
+    Strip,
+    CornerLeft,
+    CornerRight,
+}
+
 internal sealed class DsDock
 {
+    /// <summary>A corner plate's viewport, in canvas units: the plate and room for its shadow.</summary>
+    public static readonly Vector2 CornerSize = new(200f, 162f);
+    private const float CornerShadow = 12f;
+
+    /// <summary>How far a corner plate reaches down the pages, in canvas units.</summary>
+    public const float CornerPlateHeight = 162f - CornerShadow;
+
     private const float IconSize = 84f;
     private const float BadgeSize = 46f;
     private const float SelectedScale = 1.1f;
@@ -48,6 +64,7 @@ internal sealed class DsDock
     }
 
     private readonly Control _root;
+    private readonly DockShape _shape;
     private readonly Action<string> _onPressed;
     private readonly Dictionary<string, Tab> _tabs = new();
     private readonly Panel _marker;
@@ -56,14 +73,56 @@ internal sealed class DsDock
     private bool _traveling;
     private bool _live;
 
-    public DsDock(Control root, string[] tabs, Action<string> onPressed)
+    public DsDock(Control root, string[] tabs, Action<string> onPressed, DockShape shape = DockShape.Strip)
     {
         _root = root;
+        _shape = shape;
         _onPressed = onPressed;
 
-        // Opaque: it is posted on its own, not over the pages. Darker at the
-        // bottom edge, with a faint gold rim and glow along the top like the
-        // game's framed panels.
+        var row = new HBoxContainer { Name = "Tabs", MouseFilter = Control.MouseFilterEnum.Pass };
+        row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        row.AddThemeConstantOverride("separation", 8);
+        if (shape == DockShape.Strip)
+        {
+            BuildStrip();
+            row.OffsetLeft = 12;
+            row.OffsetRight = -12;
+            row.OffsetTop = 4;
+        }
+        else
+        {
+            var plate = BuildPlate(shape == DockShape.CornerLeft);
+            row.OffsetLeft = plate.OffsetLeft + 6;
+            row.OffsetRight = plate.OffsetRight - 6;
+            row.OffsetBottom = plate.OffsetBottom - 10;
+        }
+        _root.AddChild(row);
+        foreach (var key in tabs)
+        {
+            var tab = BuildTab(key);
+            row.AddChild(tab.Button);
+            _tabs[key] = tab;
+        }
+
+        var markerStyle = new StyleBoxFlat
+        {
+            BgColor = DsStyle.Gold,
+            ShadowColor = DsStyle.Gold with { A = 0.55f },
+            ShadowSize = 9,
+        };
+        markerStyle.SetCornerRadiusAll(3);
+        _marker = new Panel { Name = "Marker", MouseFilter = Control.MouseFilterEnum.Ignore, Visible = false };
+        _marker.AddThemeStyleboxOverride("panel", markerStyle);
+        _marker.Size = new Vector2(0, 6);
+        _root.AddChild(_marker);
+        _root.Resized += () => PlaceMarker(animate: false);
+    }
+
+    // Opaque: it is posted on its own, not over the pages. Darker at the
+    // bottom edge, with a faint gold rim and glow along the top like the
+    // game's framed panels.
+    private void BuildStrip()
+    {
         var backdrop = new TextureRect
         {
             Name = "Backdrop",
@@ -89,34 +148,36 @@ internal sealed class DsDock
         rim.SetAnchorsPreset(Control.LayoutPreset.TopWide);
         rim.OffsetBottom = 2;
         _root.AddChild(rim);
-
-        var row = new HBoxContainer { Name = "Tabs", MouseFilter = Control.MouseFilterEnum.Pass };
-        row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        row.OffsetLeft = 12;
-        row.OffsetRight = -12;
-        row.OffsetTop = 4;
-        row.AddThemeConstantOverride("separation", 8);
-        _root.AddChild(row);
-        foreach (var key in tabs)
-        {
-            var tab = BuildTab(key);
-            row.AddChild(tab.Button);
-            _tabs[key] = tab;
-        }
-
-        var markerStyle = new StyleBoxFlat
-        {
-            BgColor = DsStyle.Gold,
-            ShadowColor = DsStyle.Gold with { A = 0.55f },
-            ShadowSize = 9,
-        };
-        markerStyle.SetCornerRadiusAll(3);
-        _marker = new Panel { Name = "Marker", MouseFilter = Control.MouseFilterEnum.Ignore };
-        _marker.AddThemeStyleboxOverride("panel", markerStyle);
-        _marker.Size = new Vector2(0, 6);
-        _root.AddChild(_marker);
-        _root.Resized += () => PlaceMarker(animate: false);
     }
+
+    // Over the pages, in a transparent viewport: the strip's colours on a
+    // plate hung from the screen's corner, its free corner rounded and
+    // rimmed in gold, with a soft shadow on the page.
+    private Control BuildPlate(bool left)
+    {
+        var style = new StyleBoxFlat
+        {
+            BgColor = new Color(0.09f, 0.078f, 0.066f, 0.94f),
+            BorderColor = DsStyle.Gold with { A = 0.45f },
+            ShadowColor = new Color(0f, 0f, 0f, 0.5f),
+            ShadowSize = (int)CornerShadow,
+        };
+        style.BorderWidthBottom = 2;
+        style.BorderWidthLeft = left ? 0 : 2;
+        style.BorderWidthRight = left ? 2 : 0;
+        style.CornerRadiusBottomLeft = left ? 0 : 22;
+        style.CornerRadiusBottomRight = left ? 22 : 0;
+        var plate = new Panel { Name = "Plate", MouseFilter = Control.MouseFilterEnum.Ignore };
+        plate.AddThemeStyleboxOverride("panel", style);
+        plate.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        plate.OffsetBottom = -CornerShadow;
+        plate.OffsetLeft = left ? 0 : CornerShadow;
+        plate.OffsetRight = left ? -CornerShadow : 0;
+        _root.AddChild(plate);
+        return plate;
+    }
+
+    public bool Has(string key) => _tabs.ContainsKey(key);
 
     // The icons and the shader load when the dock first shows, not while
     // the game boots.
@@ -145,7 +206,7 @@ internal sealed class DsDock
         {
             if (!_live)
                 return false;
-            if (DsStyle.Running(_markerBreath))
+            if (DsStyle.Running(_markerBreath) && _marker.Visible)
                 return true;
             foreach (var tab in _tabs.Values)
             {
@@ -423,7 +484,16 @@ internal sealed class DsDock
     private void PlaceMarker(bool animate)
     {
         if (_selected == null || !_tabs.TryGetValue(_selected, out var tab))
+        {
+            if (_marker.Visible)
+            {
+                _marker.Visible = false;
+                DsBottomScreen.Instance?.MarkChanged(_root, 0.1);
+            }
             return;
+        }
+        var shown = _marker.Visible;
+        _marker.Visible = true;
         var rect = tab.Button.GetGlobalRect();
         if (rect.Size.X <= 0)
         {
@@ -433,10 +503,11 @@ internal sealed class DsDock
         }
         var origin = _root.GetGlobalRect().Position;
         var width = rect.Size.X * 0.56f;
-        var position = new Vector2(rect.Position.X - origin.X + (rect.Size.X - width) / 2, _root.Size.Y - 12);
+        var bottom = _shape == DockShape.Strip ? _root.Size.Y : _root.Size.Y - CornerShadow;
+        var position = new Vector2(rect.Position.X - origin.X + (rect.Size.X - width) / 2, bottom - 12);
         var size = new Vector2(width, 6);
         DsStyle.Kill(ref _markerMove);
-        if (!animate || _marker.Size.X <= 0)
+        if (!animate || !shown || _marker.Size.X <= 0)
         {
             _marker.Position = position;
             _marker.Size = size;
@@ -460,7 +531,12 @@ internal sealed class DsDock
             _marker.Modulate = Colors.White;
             return;
         }
-        if (!DsStyle.Running(_markerBreath))
+        if (_selected == null || !_tabs.ContainsKey(_selected))
+        {
+            DsStyle.Kill(ref _markerBreath);
+            _marker.Modulate = Colors.White;
+        }
+        else if (!DsStyle.Running(_markerBreath))
         {
             _markerBreath = DsStyle.Loop(_marker);
             _markerBreath.TweenProperty(_marker, "modulate:a", 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
@@ -521,4 +597,68 @@ internal sealed class DsDock
             Width = 4,
             Height = 64,
         };
+}
+
+/// <summary>The strip and the corner plates, as one dock: one selection, and
+/// the game's news for a tab goes to whichever holds it.</summary>
+internal sealed class DsDockSet
+{
+    private readonly DsDock[] _docks;
+
+    public DsDockSet(params DsDock[] docks) => _docks = docks;
+
+    public bool Animating
+    {
+        get
+        {
+            foreach (var dock in _docks)
+            {
+                if (dock.Animating)
+                    return true;
+            }
+            return false;
+        }
+    }
+
+    private DsDock Holder(string key) => Array.Find(_docks, d => d.Has(key));
+
+    public string Title(string key) => Holder(key)?.Title(key) ?? key;
+
+    public Texture2D IconOf(string key) => Holder(key)?.IconOf(key);
+
+    public void SetIcon(string key, Texture2D texture) => Holder(key)?.SetIcon(key, texture);
+
+    public void SetEnabled(string key, bool enabled) => Holder(key)?.SetEnabled(key, enabled);
+
+    public void SetCount(string key, int count) => Holder(key)?.SetCount(key, count);
+
+    public void SetTraveling(bool traveling)
+    {
+        foreach (var dock in _docks)
+            dock.SetTraveling(traveling);
+    }
+
+    public void Select(string key, bool animate)
+    {
+        foreach (var dock in _docks)
+            dock.Select(key, animate);
+    }
+
+    public void SetLive(bool live)
+    {
+        foreach (var dock in _docks)
+            dock.SetLive(live);
+    }
+
+    public void ApplyFont(Font font)
+    {
+        foreach (var dock in _docks)
+            dock.ApplyFont(font);
+    }
+
+    public void RefreshTitles()
+    {
+        foreach (var dock in _docks)
+            dock.RefreshTitles();
+    }
 }

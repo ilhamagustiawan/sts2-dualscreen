@@ -40,9 +40,6 @@ class SettingsActivity : Activity() {
             settings.dualScreenFps = if (it) 60 else 30
             LauncherLog.log("Settings: lower screen ${settings.dualScreenFps} FPS")
         }
-        bind(R.id.sw_top_hint, settings.dualScreenTopHint) {
-            settings.dualScreenTopHint = it
-        }
         // One switch for both directions; they were rarely wanted apart.
         bind(R.id.sw_cloud_sync, settings.autoPull && settings.autoPush) {
             settings.autoPull = it

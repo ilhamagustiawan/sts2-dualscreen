@@ -10,7 +10,6 @@ internal sealed class DsConfig
     public bool Enabled = true;
     public int Fps = 30;
     public string DefaultTab = "map";
-    public bool ShowTopHint = true;
 
     /// <summary>Bottom-screen canvas is the panel size times this, so the game's
     /// 1080p-designed UI keeps a readable scale on the 3.9" panel.</summary>
@@ -35,8 +34,6 @@ internal sealed class DsConfig
                 config.Fps = Math.Clamp(fps, 10, 60);
             if (root.TryGetProperty("default_tab", out var t) && t.ValueKind == JsonValueKind.String)
                 config.DefaultTab = t.GetString();
-            if (root.TryGetProperty("show_top_hint", out var h))
-                config.ShowTopHint = h.GetBoolean();
             if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))
                 config.ParticleAmount = Math.Clamp(amount, 0.1f, 1f);
             if (root.TryGetProperty("canvas_scale", out var s) && s.TryGetSingle(out var scale))

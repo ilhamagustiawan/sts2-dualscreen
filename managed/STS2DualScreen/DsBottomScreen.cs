@@ -6,19 +6,19 @@ namespace STS2DualScreen;
 
 // The bottom screen.
 //
-// Two SubViewports, each captured on its own (DsCapture) and handed to
+// Four SubViewports, each captured on its own (DsCapture) and handed to
 // libsts2ds as a region of the surface, posted together once a frame: the
-// pages above, the tab dock (DsDock) along the bottom edge. Pages host the game's own nodes (its map
+// pages above, the combat piles' tab strip (DsDock) along the bottom edge,
+// and the map's and the deck's tabs as plates in the top corners, laid over
+// the pages with alpha (as the game puts those buttons up top). Pages host the game's own nodes (its map
 // screen, its card pile screens), moved or instantiated here by DsGameHooks,
 // so they look and behave as they do on PC. The dock's endless motion costs
 // only its own small strip; the pages render only when a capture is due (see
 // MarkChanged). Touches queued by the Presentation come back as mouse events
-// pushed into whichever viewport they landed on.
-//
-// Controller and keyboard input reaches only the root window. While the open
-// map is the game's current screen, every non-pointer event the root receives
-// is pushed in here too, so the map's focus, A to travel and the drawing
-// cursor work as they would on one screen.
+// pushed into whichever viewport they landed on. This screen is for touch
+// only: each of those runs with the game in touch mode, even while the top
+// screen is in controller mode (DsGameHooks.BeginTouchDispatch). Controller
+// and keyboard input stays with the game on the top screen.
 //
 // Outside a run (boot, main menu) the screen shows the game's own animated
 // main-menu art at half resolution over the whole surface and ignores
@@ -36,28 +36,36 @@ internal sealed class DsBottomScreen
     public static DsBottomScreen Instance { get; private set; }
 
     public static readonly string[] Tabs = { "map", "draw", "discard", "exhaust", "deck" };
+    private static readonly string[] StripTabs = { "draw", "discard", "exhaust" };
     public const float TabBarHeight = 150f;
+
+    // A part of the screen drawn and captured on its own: the strip or a
+    // corner plate. Px is where it goes on the surface.
+    private sealed class DockPart
+    {
+        public SubViewport Viewport;
+        public DsCapture Capture;
+        public Control Root;
+        public DsDock Dock;
+        public int Region;
+        public Rect2I Px;
+    }
 
     private readonly DsConfig _config;
     private readonly SceneTree _tree;
     private readonly SubViewport _viewport;
-    private readonly SubViewport _dockViewport;
     private readonly DsCapture _page;
-    private readonly DsCapture _dockCapture;
     private readonly Control _root;
-    private readonly Control _dockRoot;
-    private readonly DsDock _dock;
+    private readonly DockPart _strip, _mapCorner, _deckCorner;
+    private readonly DockPart[] _parts;
+    private readonly DsDockSet _dock;
     private readonly Control _content;
     private readonly Dictionary<string, Control> _pages = new();
     private readonly Dictionary<string, Control> _placeholders = new();
     private readonly Dictionary<string, Label> _placeholderLabels = new();
     private readonly Dictionary<string, TextureRect> _placeholderIcons = new();
     private readonly CanvasLayer _hoverLayer;
-    private readonly CanvasLayer _topHintLayer;
-    private readonly Label _topHint;
-    private Tween _hintTween, _pageTween, _runTween;
-    private bool _hintShown;
-    private bool _styled;
+    private Tween _pageTween, _runTween;
     private bool _fontApplied;
     private string _active;
     private int _generation = -1;
@@ -67,7 +75,7 @@ internal sealed class DsBottomScreen
     // Surface layout, in surface pixels: the pages over the top _pagePx rows,
     // the dock under them (in a run only).
     private int _surfaceW = 1240, _surfaceH = 1080;
-    private int _pagePx = 1080, _dockPx;
+    private int _pagePx = 1080;
 
     // The main menu's backdrop scene (Spine art, particles, the logo), drawn
     // for 1920x1080 and scaled to cover the canvas. Loaded on a thread while
@@ -135,7 +143,8 @@ internal sealed class DsBottomScreen
     private int _pointerId = -1;
     private Vector2 _pointerPos;
     private Vector2 _pushedPos;
-    private bool _pointerOnDock;
+    // The dock part the gesture went down on; null for the pages.
+    private DockPart _pointerPart;
     private ulong _lastTouchUsec;
     private readonly Dictionary<int, Vector2> _fingers = new();
     private bool _twoFinger;
@@ -164,11 +173,28 @@ internal sealed class DsBottomScreen
     private float _fling;
     private ulong _lastFlingUsec;
 
+    // Drawing. With a drawing tool on, a finger on the map draws, and two
+    // fingers scroll it. The pen goes down only once the finger has moved
+    // a little or held still for a moment: a second finger arriving first
+    // makes it a scroll that leaves no mark. The line still starts where
+    // the finger first touched.
+    private const ulong PenDelayUsec = 70_000;
+    private const float PenSlop = 6f;
+    private bool _penPending;
+    private ulong _penDownUsec;
+
+    // The touch let go of what it pressed but could not scroll; the rest of
+    // it does nothing.
+    private bool _gestureDead;
+
     public bool Ready => _surfaceReady;
 
     /// <summary>A touch on the lower screen is down or ended in the last moment,
     /// so whatever it pressed was pressed by touch, not the controller.</summary>
     public bool TouchRecent => _pointerId >= 0 || Time.GetTicksUsec() - _lastTouchUsec < 300_000;
+
+    /// <summary>A finger is on the pages, or they are still moving from one.</summary>
+    public bool Touching => TouchRecent || _twoFinger || _fling != 0;
 
     /// <summary>The pages' canvas: everything above the dock.</summary>
     public Vector2 CanvasSize => _viewport.Size2DOverride;
@@ -176,14 +202,14 @@ internal sealed class DsBottomScreen
     /// <summary>Hover tips for nodes on this screen, above the pages.</summary>
     public CanvasLayer HoverLayer => _hoverLayer;
 
-    public DsDock Dock => _dock;
+    public DsDockSet Dock => _dock;
 
     public bool IsBottom(Node node)
     {
         if (node == null || !GodotObject.IsInstanceValid(node))
             return false;
         var viewport = node.GetViewport();
-        return viewport == _viewport || viewport == _dockViewport;
+        return viewport == _viewport || PartOf(viewport) != null;
     }
 
     private DsBottomScreen(SceneTree tree, DsConfig config)
@@ -192,7 +218,6 @@ internal sealed class DsBottomScreen
         _config = config;
 
         _viewport = NewViewport("DsBottomScreen");
-        _dockViewport = NewViewport("DsDock");
 
         // Shown outside a run: black, with the menu art over it once loaded.
         var blank = new ColorRect { Name = "Blank", Color = Colors.Black, MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -216,10 +241,12 @@ internal sealed class DsBottomScreen
         _content.MouseFilter = Control.MouseFilterEnum.Pass;
         _root.AddChild(_content);
 
-        _dockRoot = new Control { Name = "Dock", MouseFilter = Control.MouseFilterEnum.Pass };
-        _dockRoot.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _dockViewport.AddChild(_dockRoot);
-        _dock = new DsDock(_dockRoot, Tabs, Show);
+        var rd = RenderingServer.GetRenderingDevice();
+        _strip = NewPart("DsDock", 1, StripTabs, DockShape.Strip, rd);
+        _mapCorner = NewPart("DsMapTab", 2, new[] { "map" }, DockShape.CornerLeft, rd);
+        _deckCorner = NewPart("DsDeckTab", 3, new[] { "deck" }, DockShape.CornerRight, rd);
+        _parts = new[] { _strip, _mapCorner, _deckCorner };
+        _dock = new DsDockSet(_strip.Dock, _mapCorner.Dock, _deckCorner.Dock);
 
         foreach (var tab in Tabs)
         {
@@ -234,32 +261,14 @@ internal sealed class DsBottomScreen
         _hoverLayer = new CanvasLayer { Name = "HoverTips", Layer = 100 };
         _viewport.AddChild(_hoverLayer);
 
-        _topHintLayer = new CanvasLayer { Name = "DsTopHint", Layer = 120, Visible = false };
-        _topHint = new Label
-        {
-            Text = "Choose your path on the lower screen",
-            HorizontalAlignment = HorizontalAlignment.Center,
-            VerticalAlignment = VerticalAlignment.Bottom,
-            MouseFilter = Control.MouseFilterEnum.Ignore,
-        };
-        _topHint.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _topHint.OffsetBottom = -48;
-        _topHint.AddThemeFontSizeOverride("font_size", 36);
-        _topHint.AddThemeColorOverride("font_color", new Color(1f, 0.92f, 0.7f));
-        _topHint.AddThemeColorOverride("font_outline_color", Colors.Black);
-        _topHint.AddThemeConstantOverride("outline_size", 10);
-        _topHintLayer.AddChild(_topHint);
-
         _createdUsec = Time.GetTicksUsec();
-        var rd = RenderingServer.GetRenderingDevice();
         _page = new DsCapture("page", _viewport, rd);
-        _dockCapture = new DsCapture("dock", _dockViewport, rd) { Enabled = false };
         DsLog.Info(rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
         ApplyLayout(_surfaceW, _surfaceH);
 
         _tree.Root.AddChild(_viewport);
-        _tree.Root.AddChild(_dockViewport);
-        _tree.Root.AddChild(_topHintLayer);
+        foreach (var part in _parts)
+            _tree.Root.AddChild(part.Viewport);
         _tree.ProcessFrame += OnProcessFrame;
         RenderingServer.FramePostDraw += OnPostDraw;
         _tree.Root.WindowInput += OnRootInput;
@@ -277,6 +286,34 @@ internal sealed class DsBottomScreen
             RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled,
             Size2DOverrideStretch = true,
         };
+
+    private DockPart NewPart(string name, int region, string[] tabs, DockShape shape, RenderingDevice rd)
+    {
+        var viewport = NewViewport(name);
+        // The corner plates are laid over the pages: their background is see-through.
+        viewport.TransparentBg = shape != DockShape.Strip;
+        var root = new Control { Name = "Dock", MouseFilter = Control.MouseFilterEnum.Pass };
+        root.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        viewport.AddChild(root);
+        return new DockPart
+        {
+            Viewport = viewport,
+            Root = root,
+            Region = region,
+            Dock = new DsDock(root, tabs, Show, shape),
+            Capture = new DsCapture(name, viewport, rd) { Enabled = false },
+        };
+    }
+
+    private DockPart PartOf(Viewport viewport)
+    {
+        foreach (var part in _parts)
+        {
+            if (part.Viewport == viewport)
+                return part;
+        }
+        return null;
+    }
 
     public static void Create(SceneTree tree, DsConfig config)
     {
@@ -363,8 +400,8 @@ internal sealed class DsBottomScreen
     public void MarkChanged(Node owner, double seconds)
     {
         var viewport = owner != null && GodotObject.IsInstanceValid(owner) && owner.IsInsideTree() ? owner.GetViewport() : null;
-        if (viewport == _dockViewport)
-            _dockCapture.MarkChanged(seconds);
+        if (PartOf(viewport) is { } part)
+            part.Capture.MarkChanged(seconds);
         else if (viewport == _viewport || viewport == null)
             _page.MarkChanged(seconds);
     }
@@ -422,45 +459,6 @@ internal sealed class DsBottomScreen
         Callable.From(() => DsGameHooks.StaggerPile(tab)).CallDeferred();
     }
 
-    public void SetTopHint(bool visible)
-    {
-        var show = visible && _config.ShowTopHint && _surfaceReady && _inRun;
-        if (show == _hintShown)
-            return;
-        _hintShown = show;
-        DsStyle.Kill(ref _hintTween);
-        // NCommonBanner: fades in rising into place, fades out where it is.
-        // The top screen renders every frame; no capture to pace.
-        if (show)
-        {
-            _topHintLayer.Visible = true;
-            _topHint.Modulate = _topHint.Modulate with { A = 0f };
-            _topHint.Position = new Vector2(0f, 50f);
-            _hintTween = _topHint.CreateTween().SetParallel(true);
-            _hintTween.TweenProperty(_topHint, "modulate:a", 1f, 0.4).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-            _hintTween.TweenProperty(_topHint, "position:y", 0f, 0.4).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        }
-        else
-        {
-            _hintTween = _topHint.CreateTween();
-            _hintTween.TweenProperty(_topHint, "modulate:a", 0f, 0.4).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Sine);
-            _hintTween.TweenCallback(Callable.From(() => _topHintLayer.Visible = false));
-        }
-    }
-
-    private void HideTopHintNow()
-    {
-        DsStyle.Kill(ref _hintTween);
-        _hintShown = false;
-        _topHintLayer.Visible = false;
-    }
-
-    /// <summary>The map took the controller: nothing on the top screen keeps focus.</summary>
-    public void ReleaseTopFocus() => _tree.Root.GuiReleaseFocus();
-
-    /// <summary>The map gave the controller back.</summary>
-    public void ReleaseBottomFocus() => _viewport.GuiReleaseFocus();
-
     // ── text style ─────────────────────────────────────────────────────────
 
     /// <summary>
@@ -478,38 +476,6 @@ internal sealed class DsBottomScreen
         DsLog.Info($"game font applied to the lower screen ({font.ResourcePath})");
     }
 
-    /// <summary>
-    /// Restyles the top-screen hint after a live game notice: its font,
-    /// colours, outline and shadow.
-    /// </summary>
-    public void ApplyGameTextStyle(Label reference)
-    {
-        if (_styled || reference == null || !GodotObject.IsInstanceValid(reference))
-            return;
-        _styled = true;
-        var font = reference.GetThemeFont("font");
-        if (reference.LabelSettings is { } settings)
-        {
-            var copy = (LabelSettings)settings.Duplicate();
-            copy.FontSize = Math.Max(copy.FontSize, 36);
-            _topHint.LabelSettings = copy;
-            font = settings.Font ?? font;
-        }
-        else
-        {
-            _topHint.AddThemeFontOverride("font", font);
-            _topHint.AddThemeColorOverride("font_color", reference.GetThemeColor("font_color"));
-            _topHint.AddThemeColorOverride("font_outline_color", reference.GetThemeColor("font_outline_color"));
-            _topHint.AddThemeConstantOverride("outline_size", reference.GetThemeConstant("outline_size"));
-            _topHint.AddThemeColorOverride("font_shadow_color", reference.GetThemeColor("font_shadow_color"));
-            _topHint.AddThemeConstantOverride("shadow_offset_x", reference.GetThemeConstant("shadow_offset_x"));
-            _topHint.AddThemeConstantOverride("shadow_offset_y", reference.GetThemeConstant("shadow_offset_y"));
-            _topHint.AddThemeConstantOverride("shadow_outline_size", reference.GetThemeConstant("shadow_outline_size"));
-        }
-        // Until a game label with its own font override turns up.
-        ApplyGameFont(font);
-    }
-
     // ── layout ─────────────────────────────────────────────────────────────
 
     private void ApplyLayout(int width, int height)
@@ -519,12 +485,16 @@ internal sealed class DsBottomScreen
         var scale = _config.CanvasScale;
         if (_inRun)
         {
-            _dockPx = Math.Clamp((int)MathF.Round(TabBarHeight / scale), 1, Math.Max(1, height / 2));
-            _pagePx = height - _dockPx;
+            var stripPx = Math.Clamp((int)MathF.Round(TabBarHeight / scale), 1, Math.Max(1, height / 2));
+            _pagePx = height - stripPx;
             SetSize(_viewport, new Vector2I(width, _pagePx), scale);
-            SetSize(_dockViewport, new Vector2I(width, _dockPx), scale);
             _page.TargetRegion(0, 0, 0);
-            _dockCapture.TargetRegion(0, _pagePx, 1);
+            PlacePart(_strip, new Rect2I(0, _pagePx, width, stripPx), scale);
+            var corner = new Vector2I(
+                Math.Clamp((int)MathF.Round(DsDock.CornerSize.X / scale), 1, Math.Max(1, width / 3)),
+                Math.Clamp((int)MathF.Round(DsDock.CornerSize.Y / scale), 1, Math.Max(1, _pagePx / 3)));
+            PlacePart(_mapCorner, new Rect2I(0, 0, corner.X, corner.Y), scale);
+            PlacePart(_deckCorner, new Rect2I(width - corner.X, 0, corner.X, corner.Y), scale);
         }
         else
         {
@@ -536,8 +506,16 @@ internal sealed class DsBottomScreen
             _page.TargetWhole();
         }
         _page.Retarget();
-        _dockCapture.Retarget();
+        foreach (var part in _parts)
+            part.Capture.Retarget();
         LayoutIdleArt();
+    }
+
+    private static void PlacePart(DockPart part, Rect2I px, float scale)
+    {
+        part.Px = px;
+        SetSize(part.Viewport, px.Size, scale);
+        part.Capture.TargetRegion(px.Position.X, px.Position.Y, part.Region);
     }
 
     private static void SetSize(SubViewport viewport, Vector2I size, float scale)
@@ -614,44 +592,12 @@ internal sealed class DsBottomScreen
         _idleArt = null;
     }
 
-    // ── controller ─────────────────────────────────────────────────────────
+    // ── top-screen input ───────────────────────────────────────────────────
 
     // Emitted for every event the root window gets, before the root handles
     // it; that includes the ui_* actions the game makes from controller
-    // buttons with Input.ParseInputEvent.
-    private void OnRootInput(InputEvent e)
-    {
-        DsGameHooks.NoteInput(e);
-        if (!_surfaceReady || !_inRun || e is InputEventMouse or InputEventScreenTouch or InputEventScreenDrag or InputEventGesture)
-            return;
-        try
-        {
-            if (DsGameHooks.MapOwnsInput())
-            {
-                _viewport.PushInput(e, false);
-                MarkChanged();
-                return;
-            }
-            if (e.IsPressed() && !e.IsEcho() && _tree.Root.GuiGetFocusOwner() == null && IsFocusAction(e))
-                DsGameHooks.RestoreTopFocus($"nothing focused on {DsGameHooks.CurrentScreenName()}");
-        }
-        catch (Exception ex)
-        {
-            DsLog.Info($"controller forwarding failed: {ex.Message}");
-        }
-    }
-
-    private static readonly string[] FocusActions = { "ui_accept", "ui_select", "ui_up", "ui_down", "ui_left", "ui_right" };
-
-    private static bool IsFocusAction(InputEvent e)
-    {
-        foreach (var action in FocusActions)
-        {
-            if (e.IsAction(action))
-                return true;
-        }
-        return false;
-    }
+    // buttons with Input.ParseInputEvent. Only noted, never handled here.
+    private void OnRootInput(InputEvent e) => DsGameHooks.NoteInput(e);
 
     // ── per frame ──────────────────────────────────────────────────────────
 
@@ -667,9 +613,9 @@ internal sealed class DsBottomScreen
                 if (_surfaceReady)
                 {
                     _surfaceReady = false;
-                    HideTopHintNow();
                     _page.Retarget();
-                    _dockCapture.Retarget();
+                    foreach (var part in _parts)
+                        part.Capture.Retarget();
                     DsLog.Info("bottom surface gone; paused");
                 }
                 return;
@@ -685,7 +631,7 @@ internal sealed class DsBottomScreen
                 _bootFrameShown = false;
                 StopScroll();
                 MarkChanged();
-                DsLog.Info($"bottom surface {state.Width}x{state.Height}, pages {_viewport.Size} (canvas {_viewport.Size2DOverride}), dock {_dockViewport.Size}");
+                DsLog.Info($"bottom surface {state.Width}x{state.Height}, pages {_viewport.Size} (canvas {_viewport.Size2DOverride}), dock {_strip.Viewport.Size}, corners {_mapCorner.Viewport.Size}");
                 DsGameHooks.OnSurfaceReady();
             }
 
@@ -718,7 +664,10 @@ internal sealed class DsBottomScreen
             }
             // The dock changes only by its own animations, which say so.
             if (!defer)
-                _dockCapture.Tick(now, _config.Fps, dockAmbient ? DockAmbientFps[_budget] : 0, idleChecks: false);
+            {
+                foreach (var part in _parts)
+                    part.Capture.Tick(now, _config.Fps, _inRun && part.Dock.Animating ? DockAmbientFps[_budget] : 0, idleChecks: false);
+            }
 
             if (now - _lastStatsUsec > 10_000_000)
             {
@@ -790,7 +739,8 @@ internal sealed class DsBottomScreen
         _inRun = inRun;
         _root.Visible = inRun;
         _idle.Visible = !inRun;
-        _dockCapture.Enabled = inRun;
+        foreach (var part in _parts)
+            part.Capture.Enabled = inRun;
         _dock.SetLive(inRun);
         if (inRun)
             FreeIdleArt();
@@ -799,10 +749,7 @@ internal sealed class DsBottomScreen
         MarkChanged();
         DsLog.Info(inRun ? "run started; lower screen shown" : "no run; lower screen shows the menu art");
         if (!inRun)
-        {
-            HideTopHintNow();
             return;
-        }
         // The game's localization is up by now.
         _dock.RefreshTitles();
         RefreshPlaceholders();
@@ -810,18 +757,21 @@ internal sealed class DsBottomScreen
         // The capstone backstop's fade.
         DsStyle.Kill(ref _runTween);
         _root.Modulate = _root.Modulate with { A = 0f };
-        _dockRoot.Modulate = _dockRoot.Modulate with { A = 0f };
+        foreach (var part in _parts)
+        {
+            part.Root.Modulate = part.Root.Modulate with { A = 0f };
+            var fade = DsStyle.Animate(part.Root, 0.5);
+            fade.TweenProperty(part.Root, "modulate:a", 1f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        }
         _runTween = DsStyle.Animate(_root, 0.5).SetParallel(true);
         _runTween.TweenProperty(_root, "modulate:a", 1f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        var dockFade = DsStyle.Animate(_dockRoot, 0.5);
-        dockFade.TweenProperty(_dockRoot, "modulate:a", 1f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
         DsGameHooks.OnSurfaceReady();
     }
 
     private void ReleasePointer()
     {
-        if (_pointerId >= 0 && !_scrollDrag)
-            PushPointer(MouseButtonEvent(_pushedPos, pressed: false));
+        CancelPress();
+        _penPending = false;
         StopScroll();
         _pointerId = -1;
         _fingers.Clear();
@@ -896,7 +846,7 @@ internal sealed class DsBottomScreen
         var gcMinor = GC.CollectionCount(0);
         var gcMajor = GC.CollectionCount(GC.MaxGeneration);
         DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred} ambient={PageAmbientFps[_budget]}/{DockAmbientFps[_budget]}"
-            + $" | {_page.TakeStats()} | {_dockCapture.TakeStats()}"
+            + $" | {_page.TakeStats()} | {string.Join(" | ", Array.ConvertAll(_parts, part => part.Capture.TakeStats()))}"
             + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}");
         _frameUsecTotal = _frameUsecMax = 0;
         _frameCount = _hitches = _deferred = 0;
@@ -906,7 +856,19 @@ internal sealed class DsBottomScreen
 
     // ── touch ──────────────────────────────────────────────────────────────
 
-    private bool InDock(DsNative.Touch t) => _inRun && t.Y * _surfaceH >= _pagePx;
+    // The corner plates lie over the pages, so they are asked first.
+    private DockPart PartAt(DsNative.Touch t)
+    {
+        if (!_inRun)
+            return null;
+        var at = new Vector2I((int)(t.X * _surfaceW), (int)(t.Y * _surfaceH));
+        foreach (var part in _parts)
+        {
+            if (part.Px.HasPoint(at))
+                return part;
+        }
+        return null;
+    }
 
     // Canvas coordinates, pushed as local: PushInput would map Position
     // through the stretch but leave GlobalPosition in surface pixels, and the
@@ -917,11 +879,15 @@ internal sealed class DsBottomScreen
         return new Vector2(t.X * canvas.X, t.Y * _surfaceH / Math.Max(1, _pagePx) * canvas.Y);
     }
 
-    private Vector2 DockPos(DsNative.Touch t)
+    private Vector2 PartPos(DockPart part, DsNative.Touch t)
     {
-        var canvas = _dockViewport.Size2DOverride;
-        return new Vector2(t.X * canvas.X, (t.Y * _surfaceH - _pagePx) / Math.Max(1, _dockPx) * canvas.Y);
+        var canvas = part.Viewport.Size2DOverride;
+        return new Vector2(
+            (t.X * _surfaceW - part.Px.Position.X) / Math.Max(1, part.Px.Size.X) * canvas.X,
+            (t.Y * _surfaceH - part.Px.Position.Y) / Math.Max(1, part.Px.Size.Y) * canvas.Y);
     }
+
+    private Vector2 PointerPos(DsNative.Touch t) => _pointerPart != null ? PartPos(_pointerPart, t) : PagePos(t);
 
     private unsafe void PumpTouches(ulong now)
     {
@@ -945,26 +911,32 @@ internal sealed class DsBottomScreen
                         // A new gesture: finish the last one's scroll first.
                         FlushScroll(now);
                         _fingers[t.Id] = PagePos(t);
-                        _pointerOnDock = InDock(t);
-                        var pos = _pointerOnDock ? DockPos(t) : PagePos(t);
+                        _pointerPart = PartAt(t);
+                        var pos = PointerPos(t);
                         _pointerId = t.Id;
                         _pointerPos = _dragOrigin = pos;
                         _scrollDrag = false;
+                        _gestureDead = false;
                         _fling = 0;
+                        _pushedPos = pos;
+                        if (_pointerPart == null && DsGameHooks.IsDrawing(_active))
+                        {
+                            _penPending = true;
+                            _penDownUsec = now;
+                            break;
+                        }
                         PushPointer(new InputEventMouseMotion { Position = pos, GlobalPosition = pos });
                         PushPointer(MouseButtonEvent(pos, pressed: true));
-                        _pushedPos = pos;
                     }
                     else
                     {
                         _fingers[t.Id] = PagePos(t);
-                        if (_fingers.Count == 2 && !_twoFinger && !_pointerOnDock)
+                        if (_fingers.Count == 2 && !_twoFinger && _pointerPart == null)
                         {
                             // A second finger turns the gesture into a scroll:
-                            // let go of the first finger's press (ending a drawn
-                            // line or a tap) and follow the midpoint from here.
-                            if (_pointerId >= 0 && !_scrollDrag)
-                                PushPointer(MouseButtonEvent(_pushedPos, pressed: false));
+                            // let go of the first finger's press (without a tap)
+                            // and follow the midpoint from here.
+                            CancelPress();
                             _scrollDrag = false;
                             _pointerId = -1;
                             _twoFinger = true;
@@ -987,12 +959,18 @@ internal sealed class DsBottomScreen
                         }
                         break;
                     }
-                    if (t.Id != _pointerId)
+                    if (t.Id != _pointerId || _gestureDead)
                         break;
-                    var at = _pointerOnDock ? DockPos(t) : PagePos(t);
+                    var at = PointerPos(t);
                     var moved = at - _pointerPos;
                     _pointerPos = at;
-                    if (!_pointerOnDock)
+                    if (_penPending)
+                    {
+                        if ((at - _dragOrigin).Length() >= PenSlop)
+                            PenDown(at);
+                        break;
+                    }
+                    if (_pointerPart == null)
                     {
                         if (_scrollDrag)
                         {
@@ -1005,10 +983,10 @@ internal sealed class DsBottomScreen
                             if ((at - _dragOrigin).Length() < DragSlop)
                                 break;
                             if (StartScrollDrag())
-                            {
                                 _pendingDy += at.Y - _dragOrigin.Y;
-                                break;
-                            }
+                            else
+                                _gestureDead = true;
+                            break;
                         }
                     }
                     PushPointer(new InputEventMouseMotion
@@ -1025,18 +1003,26 @@ internal sealed class DsBottomScreen
                     _fingers.Remove(t.Id);
                     if (t.Id == _pointerId)
                     {
+                        // Taken away by the system: not a tap, not a dot.
+                        var cancelled = t.Phase == DsNative.PhaseCancel;
+                        if (cancelled)
+                            CancelPress();
+                        // A tap with the pen: a dot, as a click makes.
+                        else if (_penPending)
+                            PenDown(_dragOrigin);
                         if (_scrollDrag)
                         {
                             _releaseDue = true;
                         }
-                        else
+                        else if (!_gestureDead && !cancelled)
                         {
-                            var up = _pointerOnDock ? DockPos(t) : PagePos(t);
+                            var up = PointerPos(t);
                             if (up != _pushedPos)
                                 PushPointer(new InputEventMouseMotion { Position = up, GlobalPosition = up, Relative = up - _pushedPos, ButtonMask = MouseButtonMask.Left });
                             PushPointer(MouseButtonEvent(up, pressed: false));
                         }
                         _pointerId = -1;
+                        _gestureDead = false;
                     }
                     // The rest of a two-finger gesture never becomes a press.
                     if (_fingers.Count == 0)
@@ -1052,7 +1038,57 @@ internal sealed class DsBottomScreen
                     break;
             }
         }
+        // Held still long enough: the pen goes down where the finger is.
+        if (_penPending && _pointerId >= 0 && now - _penDownUsec >= PenDelayUsec)
+            PenDown(_pointerPos);
         FlushScroll(now);
+    }
+
+    // The press held back for drawing, at the first touch, then the line
+    // drawn on to where the finger is now.
+    private void PenDown(Vector2 at)
+    {
+        _penPending = false;
+        PushPointer(new InputEventMouseMotion { Position = _dragOrigin, GlobalPosition = _dragOrigin });
+        PushPointer(MouseButtonEvent(_dragOrigin, pressed: true));
+        _pushedPos = _dragOrigin;
+        if (at == _dragOrigin)
+            return;
+        PushPointer(new InputEventMouseMotion
+        {
+            Position = at,
+            GlobalPosition = at,
+            Relative = at - _dragOrigin,
+            ButtonMask = MouseButtonMask.Left,
+        });
+        _pushedPos = at;
+    }
+
+    // Lets go of the touch's press without it counting as a tap: off screen,
+    // or, mid-line, where it is (moving it away would draw a line there).
+    private void CancelPress()
+    {
+        if (_pointerId < 0 || _scrollDrag || _gestureDead)
+            return;
+        if (_penPending)
+        {
+            _penPending = false;
+            return;
+        }
+        if (_pointerPart == null && DsGameHooks.IsDrawing(_active))
+            PushPointer(MouseButtonEvent(_pushedPos, pressed: false));
+        else
+            ReleaseAway();
+    }
+
+    // Motion, then the release, far off the canvas. No relative movement,
+    // so nothing dragging (the map's own drag) moves with it.
+    private void ReleaseAway()
+    {
+        var away = new Vector2(-10000f, -10000f);
+        PushPointer(new InputEventMouseMotion { Position = away, GlobalPosition = away });
+        PushPointer(MouseButtonEvent(away, pressed: false));
+        _pushedPos = away;
     }
 
     private Vector2 Midpoint()
@@ -1072,10 +1108,7 @@ internal sealed class DsBottomScreen
     // so nothing counts it as a tap) and moves the map or pile instead.
     private bool StartScrollDrag()
     {
-        var away = new Vector2(-10000f, -10000f);
-        Push(new InputEventMouseMotion { Position = away, GlobalPosition = away });
-        Push(MouseButtonEvent(away, pressed: false));
-        _pushedPos = away;
+        ReleaseAway();
         if (!HoldScroll())
             return false;
         _scrollDrag = true;
@@ -1170,7 +1203,22 @@ internal sealed class DsBottomScreen
             ButtonMask = pressed ? MouseButtonMask.Left : 0,
         };
 
-    private void Push(InputEvent e) => _viewport.PushInput(e, true);
+    private void Push(InputEvent e) => PushAsTouch(_viewport, e);
 
-    private void PushPointer(InputEvent e) => (_pointerOnDock ? _dockViewport : _viewport).PushInput(e, true);
+    private void PushPointer(InputEvent e) => PushAsTouch(_pointerPart?.Viewport ?? _viewport, e);
+
+    // The game's nodes down here read its one input mode; a finger is a
+    // finger whatever the controller up top is doing.
+    private static void PushAsTouch(SubViewport viewport, InputEvent e)
+    {
+        var restore = DsGameHooks.BeginTouchDispatch();
+        try
+        {
+            viewport.PushInput(e, true);
+        }
+        finally
+        {
+            DsGameHooks.EndTouchDispatch(restore);
+        }
+    }
 }

@@ -9,17 +9,28 @@ namespace STS2DualScreen;
 
 // Where the bottom screen meets the game.
 //
-// Map: the game's NMapScreen is moved into the bottom screen's Map page as
-// soon as it exists. It keeps all of its own behaviour (opening at the end of
-// a room, travel, drawing, the back button); it simply renders and takes
-// input down there. When it opens, the bottom screen switches to the Map tab,
-// the top screen shows a one-line hint, and the controller drives the map.
-// It no longer covers the top screen, so closing it skips the fade-out: the
-// Map tab always shows it, closed (look and scroll only) or open.
+// The bottom screen is a companion: the top screen is the game as it is,
+// and the bottom one shows its own copies of the game's screens, for touch.
+// Nothing down here opens, closes or replaces anything up top.
+//
+// Map: a second NMapScreen from the game's own scene, in the bottom
+// screen's Map page. The game only ever reaches its map through
+// NMapScreen.Instance (the one in its global UI), so it never calls this
+// one; the hooks below mirror the top map's state into it (run state, act
+// map, marker, travel state, rebuilt after each room) and keep it from
+// touching the game (cursor, top bar, travel). It scrolls, shows room tips
+// and draws; travel is the top map's. Drawings are shared: a line on
+// either map is mirrored onto the other, and only the top one talks to the
+// network, so lines drawn below are saved and sent as if drawn up top.
 //
 // Piles: each pile tab hosts a fresh instance of the game's NCardPileScreen
-// bound to the live CardPile, so it updates as cards move. The pile buttons
-// on the top screen switch the bottom tab instead of opening an overlay.
+// bound to the live CardPile, so it updates as cards move. The top screen's
+// pile buttons and hotkeys open the game's own overlays as usual.
+//
+// Input mode: the bottom screen is for touch. The few changes to the top's
+// input handling (the mode toast, stray mouse events, the compat pack's
+// touch-only flows on a controller, window focus) are each explained where
+// they are made.
 //
 // All game types are looked up by name. If one is missing (a game update),
 // that feature logs and stays off; nothing here throws into the game.
@@ -27,14 +38,16 @@ internal static class DsGameHooks
 {
     private const string MapScreenType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapScreen";
     private const string CardPileScreenType = "MegaCrit.Sts2.Core.Nodes.Screens.NCardPileScreen";
-    private const string DeckViewScreenType = "MegaCrit.Sts2.Core.Nodes.Screens.NDeckViewScreen";
     private const string CombatCardPileType = "MegaCrit.Sts2.Core.Nodes.Combat.NCombatCardPile";
     private const string TopBarDeckButtonType = "MegaCrit.sts2.Core.Nodes.TopBar.NTopBarDeckButton";
     private const string PileTypeType = "MegaCrit.Sts2.Core.Entities.Cards.PileType";
     private const string PileTypeExtensionsType = "MegaCrit.Sts2.Core.Entities.Cards.PileTypeExtensions";
     private const string MapPointType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapPoint";
+    private const string NormalMapPointType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NNormalMapPoint";
     private const string MapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapDrawingInput";
-    private const string ControllerMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NControllerMapDrawingInput";
+    private const string MapDrawingsType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMapDrawings";
+    private const string RunStateType = "MegaCrit.Sts2.Core.Runs.RunState";
+    private const string MapScenePath = "res://scenes/screens/map/map_screen.tscn";
     private const string ControllerManagerType = "MegaCrit.Sts2.Core.Nodes.CommonUi.NControllerManager";
     private const string ActiveScreenContextType = "MegaCrit.Sts2.Core.Nodes.Screens.ScreenContext.ActiveScreenContext";
     private const string MouseModeMapDrawingInputType = "MegaCrit.Sts2.Core.Nodes.Screens.Map.NMouseModeMapDrawingInput";
@@ -67,6 +80,10 @@ internal static class DsGameHooks
     private static MethodInfo _getPile;
     private static Type _pileTypeEnum;
     private static Type _controllerManagerType;
+    private static PropertyInfo _managerInstance, _gameInstance;
+    private static FieldInfo _skipMouseFrames, _lastMousePosition;
+    private static MethodInfo _gameFocused;
+    private static GodotObject _seenManager;
     private static Type _screenContextType;
     private static MethodInfo _tapPreviewPrefix;
     private static MethodInfo _rewardSelectPrefix;
@@ -74,18 +91,25 @@ internal static class DsGameHooks
     private static PropertyInfo _runInstance;
     private static MethodInfo _overlayOpen;
     private static PropertyInfo _contextInstance;
-    private static MethodInfo _contextCurrent, _contextFocusDefault;
+    private static MethodInfo _contextFocusDefault;
 
-    // NMapScreen members, resolved once: some are read on every forwarded
-    // controller event and every scrolled frame.
-    private static PropertyInfo _mapIsOpen;
+    // NMapScreen members, resolved once: some are read on every scrolled frame.
     private static FieldInfo _mapContainer, _mapTargetDrag, _mapDragging, _mapDrawingInput, _mapTween;
     private static FieldInfo _mapBackstop, _mapLegend, _mapTools, _mapPoints, _mapRunState, _mapDistY;
+    private static FieldInfo _mapActMap, _mapBackButton, _mapLegendHotkey, _mapToolsHotkey;
+    private static PropertyInfo _mapTravelEnabled, _mapDebugTravelEnabled, _mapDrawings;
     private static MethodInfo _mapCanScroll, _mapCancelActAnim;
+    private static MethodInfo _mapInitialize, _mapSetMap, _mapInitMarker, _mapRefreshVotes, _mapRefreshVisuals;
     private static float _mapScrollLow = -600f, _mapScrollHigh = 1800f;
     private static bool _focusOverridden;
-    private static Control _pendingMap;
+
+    // The game's map, on the top screen, and the bottom screen's copy of it.
+    private static Control _topMap;
     private static Control _map;
+    // Boxed as SetMap takes it: its type has changed between versions (uint, ulong).
+    private static object _mapSeed;
+    private static object _markerCoord;
+    private static bool _rebuildQueued;
     private static object _player;
     private static bool _inCombat;
 
@@ -142,24 +166,38 @@ internal static class DsGameHooks
         _getPile = extensions == null ? null : AccessTools.Method(extensions, "GetPile");
 
         Patch(harmony, _mapType, "_Ready", postfix: nameof(MapReadyPostfix));
-        Patch(harmony, _mapType, "Open", postfix: nameof(MapOpenPostfix));
-        Patch(harmony, _mapType, "Close", postfix: nameof(MapClosePostfix));
-        Patch(harmony, _mapType, "AnimClose", prefix: nameof(MapAnimClosePrefix));
+        Patch(harmony, _mapType, "Initialize", postfix: nameof(MapInitializePostfix));
+        Patch(harmony, _mapType, "SetMap", postfix: nameof(MapSetMapPostfix));
+        Patch(harmony, _mapType, "InitMarker", postfix: nameof(MapInitMarkerPostfix));
+        Patch(harmony, _mapType, "RefreshAllMapPointVotes", postfix: nameof(MapRefreshVotesPostfix));
+        Patch(harmony, _mapType, "SetTravelEnabled", postfix: nameof(MapTravelPostfix));
+        Patch(harmony, _mapType, "SetDebugTravelEnabled", postfix: nameof(MapTravelPostfix));
+        // The copy's own reactions that reach past it: taking the network
+        // cursor from the top map, rocking the top bar's map button, the
+        // hotkey icons (a controller never drives it), and a travel vote.
+        Patch(harmony, _mapType, "OnVisibilityChanged", prefix: nameof(TopMapOnlyPrefix));
+        Patch(harmony, _mapType, "OnCapstoneChanged", prefix: nameof(TopMapOnlyPrefix));
+        Patch(harmony, _mapType, "UpdateHotkeyDisplay", prefix: nameof(TopMapOnlyPrefix));
+        Patch(harmony, _mapType, "OnMapPointSelectedLocally", prefix: nameof(TopMapOnlyPrefix));
         Patch(harmony, _mapType, "get_MapLegendX", postfix: nameof(MapLegendXPostfix));
         Patch(harmony, FindType(MapPointType), "OnRelease", prefix: nameof(MapPointReleasePrefix));
+        Patch(harmony, FindType(NormalMapPointType), "_ExitTree", finalizer: nameof(CopyPointExitFinalizer));
+        Patch(harmony, FindType(RunStateType), "AddVisitedMapCoord", postfix: nameof(VisitedMapCoordPostfix));
         Patch(harmony, FindType(MapDrawingInputType), "Create", prefix: nameof(DrawingInputCreatePrefix), postfix: nameof(DrawingInputCreatePostfix));
-        Patch(harmony, FindType(ControllerMapDrawingInputType), "_Process", prefix: nameof(ControllerDrawingProcessPrefix), postfix: nameof(ControllerDrawingProcessPostfix));
+        ApplyDrawingHooks(harmony);
         _controllerManagerType = FindType(ControllerManagerType);
+        ResolveControllerManager();
         _screenContextType = FindType(ActiveScreenContextType);
         if (_screenContextType != null)
         {
             _contextInstance = AccessTools.Property(_screenContextType, "Instance");
-            _contextCurrent = AccessTools.Method(_screenContextType, "GetCurrentScreen");
             _contextFocusDefault = AccessTools.Method(_screenContextType, "FocusOnDefaultControl");
         }
         // The "Controller detected" / "Mouse detected" toast; the mode switch
         // itself happens before this and is untouched.
         Patch(harmony, _controllerManagerType, "ControlModeChanged", prefix: nameof(SkipPrefix));
+        Patch(harmony, _controllerManagerType, "CheckForMouseInput", prefix: nameof(MouseCheckPrefix));
+        Patch(harmony, _controllerManagerType, "CheckForControllerInput", prefix: nameof(ControllerCheckPrefix));
         Patch(harmony, FindType(MouseModeMapDrawingInputType), "_Input", prefix: nameof(NotQueuedForDeletionPrefix));
         GuardTouchOnlyPatches(harmony);
         // Touching the lower screen takes window focus from the game, and the
@@ -174,15 +212,12 @@ internal static class DsGameHooks
         Patch(harmony, hoverTips, createAndShow, "CreateAndShow", postfix: nameof(HoverTipPostfix));
         Patch(harmony, hoverTips, "CreateAndShowMapPointHistory", postfix: nameof(HoverTipPostfix));
         Patch(harmony, FindType(CombatCardPileType), "Initialize", postfix: nameof(CombatPileInitializePostfix));
-        Patch(harmony, FindType(CombatCardPileType), "OnRelease", postfix: nameof(CombatPileReleasePostfix));
         Patch(harmony, FindType(CombatCardPileType), "AddCard", postfix: nameof(CombatPileCountPostfix));
         Patch(harmony, FindType(CombatCardPileType), "RemoveCard", postfix: nameof(CombatPileCountPostfix));
         Patch(harmony, FindType(CombatCardPileType), "_ExitTree", postfix: nameof(CombatPileExitPostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "OnPileContentsChanged", postfix: nameof(DeckCountPostfix));
-        Patch(harmony, _pileScreenType, "ShowScreen", prefix: nameof(ShowPileScreenPrefix));
         Patch(harmony, _pileScreenType, "OnPileContentsChanged", prefix: nameof(PileContentsChangedPrefix));
-        Patch(harmony, FindType(DeckViewScreenType), "ShowScreen", prefix: nameof(ShowDeckScreenPrefix));
         Patch(harmony, FindType(MainMenuType), "_Ready", postfix: nameof(MainMenuReadyPostfix));
     }
 
@@ -192,9 +227,21 @@ internal static class DsGameHooks
             return;
         MainMenuReady = true;
         DsLog.Info("main menu ready; lower screen wakes");
+        // The game starts in mouse mode until a pad is pressed; with a pad in
+        // hand (the Thor always has one) the menu starts focused instead.
+        Input.JoyConnectionChanged += (_, connected) =>
+        {
+            if (connected && !IsUsingController())
+                EnterControllerMode("controller connected");
+        };
+        Callable.From(() =>
+        {
+            if (Input.GetConnectedJoypads().Count > 0 && !IsUsingController() && _lastPointerPressUsec == 0)
+                EnterControllerMode("controller connected at boot");
+        }).CallDeferred();
     }
 
-    private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null)
+    private static void Patch(Harmony harmony, Type type, string method, string prefix = null, string postfix = null, string finalizer = null)
     {
         MethodInfo target = null;
         try
@@ -204,14 +251,14 @@ internal static class DsGameHooks
         catch (AmbiguousMatchException)
         {
         }
-        Patch(harmony, type, target, method, prefix, postfix);
+        Patch(harmony, type, target, method, prefix, postfix, finalizer);
     }
 
-    private static void Patch(Harmony harmony, Type type, MethodInfo target, string method, string prefix = null, string postfix = null)
+    private static void Patch(Harmony harmony, Type type, MethodInfo target, string method, string prefix = null, string postfix = null, string finalizer = null)
     {
         if (type == null)
         {
-            DsLog.Info($"hook skipped, type not found for {method} ({prefix ?? postfix})");
+            DsLog.Info($"hook skipped, type not found for {method} ({prefix ?? postfix ?? finalizer})");
             return;
         }
         try
@@ -224,7 +271,8 @@ internal static class DsGameHooks
             harmony.Patch(
                 target,
                 prefix: prefix == null ? null : new HarmonyMethod(typeof(DsGameHooks), prefix),
-                postfix: postfix == null ? null : new HarmonyMethod(typeof(DsGameHooks), postfix)
+                postfix: postfix == null ? null : new HarmonyMethod(typeof(DsGameHooks), postfix),
+                finalizer: finalizer == null ? null : new HarmonyMethod(typeof(DsGameHooks), finalizer)
             );
             DsLog.Info($"hooked {type.Name}.{method}");
         }
@@ -239,17 +287,12 @@ internal static class DsGameHooks
     public static void OnBottomScreenReady(DsBottomScreen screen)
     {
         SetCombatTabs(_inCombat);
-        if (_pendingMap != null)
-            AdoptMap(_pendingMap);
+        QueueRebuild();
     }
 
     public static void OnSurfaceReady()
     {
-        if (!MapValid())
-            return;
-        if (IsMapOpen())
-            DsBottomScreen.Instance?.Show("map");
-        else
+        if (MapValid())
             RevealMap(_map, scrollToCurrent: false);
     }
 
@@ -261,13 +304,8 @@ internal static class DsGameHooks
             UpdateMapPlaceholder();
     }
 
-    /// <summary>The open map is the game's current screen, so the controller is its.</summary>
-    public static bool MapOwnsInput() => IsMapOpen() && ReferenceEquals(CurrentScreen(), _map);
-
-    public static string CurrentScreenName() => CurrentScreen()?.GetType().Name ?? "none";
-
-    /// <summary>The open map's rooms pulse forever (NNormalMapPoint), and so does its marker.</summary>
-    public static bool MapAmbient() => IsMapOpen();
+    /// <summary>While travel is on, the map's rooms you can reach pulse forever (NNormalMapPoint).</summary>
+    public static bool MapAmbient() => MapValid() && _mapTravelEnabled?.GetValue(_map) is true;
 
     /// <summary>A run is loaded (NRun exists). True when that can't be told, so nothing goes missing.</summary>
     public static bool InRun()
@@ -285,39 +323,6 @@ internal static class DsGameHooks
     }
 
     private static object ScreenContext() => _contextInstance?.GetValue(null);
-
-    private static object CurrentScreen()
-    {
-        var context = ScreenContext();
-        return context == null ? null : _contextCurrent?.Invoke(context, null);
-    }
-
-    /// <summary>
-    /// Nothing on the top screen has controller focus: give it to the current
-    /// screen's default control, as the game does when a screen opens. Not in
-    /// combat, where an unfocused hand is normal (targeting, for one).
-    /// </summary>
-    public static void RestoreTopFocus(string why)
-    {
-        Callable.From(() =>
-        {
-            try
-            {
-                if (MapOwnsInput() || ((Engine.GetMainLoop() as SceneTree)?.Root.GuiGetFocusOwner() != null))
-                    return;
-                var context = ScreenContext();
-                var current = CurrentScreen();
-                if (current == null || current.GetType().Name.Contains("CombatRoom"))
-                    return;
-                _contextFocusDefault?.Invoke(context, null);
-                DsLog.Info($"top-screen focus restored ({why}, screen={current.GetType().Name})");
-            }
-            catch (Exception e)
-            {
-                DsLog.Info($"could not restore focus: {e.InnerException?.Message ?? e.Message}");
-            }
-        }).CallDeferred();
-    }
 
     // The game counts as focused while it is on screen with the lower screen
     // up (that is, between the activity's onStart and onStop), even if a touch
@@ -351,8 +356,71 @@ internal static class DsGameHooks
         }
     }
 
+    // The game's input mode. Up to v0.107 a flag, IsUsingController; since
+    // v0.111 an enum, InputType (MouseAndKeyboard, Controller,
+    // KeyboardOnlyMode), and controller mode also turns the mouse off for
+    // the whole game node (MouseBehaviorRecursive). Held as the value the
+    // game uses for mouse mode and for controller mode, whichever it is.
+    private static PropertyInfo _mode, _directional;
+    private static FieldInfo _modeField;
+    private static object _mouseMode, _controllerMode;
+    private static bool _modeIsEnum;
+
+    private static void ResolveControllerManager()
+    {
+        if (_controllerManagerType == null)
+            return;
+        _managerInstance = AccessTools.Property(_controllerManagerType, "Instance");
+        _mode = AccessTools.Property(_controllerManagerType, "InputType");
+        if (_mode?.PropertyType.IsEnum == true)
+        {
+            _modeIsEnum = true;
+            _mouseMode = Enum.TryParse(_mode.PropertyType, "MouseAndKeyboard", out var mouse) ? mouse : null;
+            _controllerMode = Enum.TryParse(_mode.PropertyType, "Controller", out var pad) ? pad : null;
+            _directional = AccessTools.Property(_controllerManagerType, "IsUsingDirectionalNavigation");
+        }
+        else
+        {
+            _mode = AccessTools.Property(_controllerManagerType, "IsUsingController");
+            _mouseMode = false;
+            _controllerMode = true;
+        }
+        // Without a setter, the compiler's backing field still holds it.
+        _modeField = _mode == null || _mode.CanWrite ? null : AccessTools.Field(_controllerManagerType, $"<{_mode.Name}>k__BackingField");
+        // Both only steady the mouse around the switch; it works without them.
+        _skipMouseFrames = AccessTools.Field(_controllerManagerType, "_skipMouseCheckFrames");
+        _lastMousePosition = AccessTools.Field(_controllerManagerType, "_lastMousePosition");
+        var game = FindType(GameType);
+        _gameFocused = game == null ? null : AccessTools.Method(game, "IsGameFocusedWindow");
+        _gameInstance = game == null ? null : AccessTools.Property(game, "Instance");
+        var missing = new List<string>();
+        if (_managerInstance == null) missing.Add("Instance");
+        if (_mode?.CanRead != true) missing.Add("InputType or IsUsingController");
+        else if (!CanSwitchModes()) missing.Add($"a way to set {_mode.Name}");
+        if (_gameFocused == null) missing.Add("NGame.IsGameFocusedWindow");
+        if (missing.Count > 0)
+            DsLog.Info($"controller manager has no {string.Join(", ", missing)}"
+                + (CanSwitchModes() ? "" : "; the game switches input modes its own way"));
+        else
+            DsLog.Info($"input mode: {_mode.Name} ({_mouseMode} / {_controllerMode})");
+    }
+
+    private static bool CanSwitchModes() =>
+        _mode?.CanRead == true && (_mode.CanWrite || _modeField != null) && _mouseMode != null && _controllerMode != null;
+
+    private static object GetMode(object manager) => _mode.GetValue(manager);
+
+    private static void SetMode(object manager, object value)
+    {
+        if (_mode.CanWrite)
+            _mode.SetValue(manager, value);
+        else
+            _modeField.SetValue(manager, value);
+    }
+
+    // Instance, or else the one whose input checks last ran.
     private static object ControllerManager() =>
-        _controllerManagerType == null ? null : AccessTools.Property(_controllerManagerType, "Instance")?.GetValue(null);
+        _managerInstance?.GetValue(null) ?? (GodotObject.IsInstanceValid(_seenManager) ? _seenManager : null);
 
     private static bool SkipPrefix() => false;
 
@@ -361,20 +429,154 @@ internal static class DsGameHooks
     private static bool NotQueuedForDeletionPrefix(object __instance) =>
         __instance is not Node node || !node.IsQueuedForDeletion();
 
+    /// <summary>The game is in controller (or keyboard-only) mode: focus moves, not the mouse.</summary>
     private static bool IsUsingController()
     {
-        var manager = ControllerManager();
-        return manager != null && AccessTools.Property(_controllerManagerType, "IsUsingController")?.GetValue(manager) is true;
+        if (ControllerManager() is not { } manager || _mode?.CanRead != true)
+            return false;
+        if (_directional?.GetValue(manager) is bool directional)
+            return directional;
+        return Equals(GetMode(manager), _controllerMode);
     }
 
-    // Whether the press being handled came from a controller. The game's own
-    // IsUsingController flips to mouse on any mouse event at all, and one
-    // turns up now and then while a controller is in hand, after which every
-    // A press went down the touch path. So a press is judged by the last
-    // press the window saw, controller (pad, key, action) or pointer (touch,
-    // click); the game's mode only decides before either has happened.
-    private static ulong _lastPadPressUsec, _lastPointerPressUsec, _lastTouchUsec;
-    private static int _strayMouseLogged;
+    // ── input mode ─────────────────────────────────────────────────────────
+
+    // The top screen is for the controller. The game leaves controller mode
+    // on any mouse event at all: a release, the wheel, or motion, and on the
+    // Thor such events turn up with no mouse in hand. Only a tap (Godot's
+    // click for it) or a real mouse's click switches to touch mode here.
+    private static int _mouseIgnoredLogged;
+
+    private static bool MouseCheckPrefix(GodotObject __instance, InputEvent inputEvent)
+    {
+        _seenManager = __instance;
+        if (inputEvent is InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.Left or MouseButton.Right or MouseButton.Middle })
+            return true;
+        // The first few the game would have acted on, to tell where they come from.
+        var counted = inputEvent is InputEventMouseButton || inputEvent is InputEventMouseMotion motion && motion.Velocity.LengthSquared() > 100f;
+        if (counted && _mouseIgnoredLogged++ < 5 && inputEvent is InputEventMouse mouse)
+            DsLog.Info($"ignored {mouse.GetType().Name} for input mode: device={mouse.Device} at {mouse.Position}");
+        return false;
+    }
+
+    // Back from touch, the game's first controller press only switches mode
+    // and focuses the screen's default control; it is swallowed. A direction
+    // moves focus at once instead. Other buttons keep the game's way, so A
+    // never presses a control that was not visibly focused yet.
+    private static readonly string[] DirectionActionNames =
+    {
+        "controller_d_pad_north", "controller_d_pad_south", "controller_d_pad_east", "controller_d_pad_west",
+        "controller_joystick_up", "controller_joystick_down", "controller_joystick_left", "controller_joystick_right",
+    };
+    private static StringName[] _directionActions;
+
+    private static bool IsDirectionPress(InputEvent e)
+    {
+        // Asking about an action the input map lacks logs an error each time.
+        _directionActions ??= DirectionActionNames.Select(name => new StringName(name)).Where(InputMap.HasAction).ToArray();
+        foreach (var action in _directionActions)
+        {
+            if (e.IsActionPressed(action))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool ControllerCheckPrefix(GodotObject __instance, InputEvent inputEvent)
+    {
+        _seenManager = __instance;
+        if (!CanSwitchModes() || _gameFocused == null || !IsDirectionPress(inputEvent))
+            return true;
+        try
+        {
+            if (_gameFocused.Invoke(null, null) is not true)
+                return true;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+        return !EnterControllerMode("direction pressed");
+    }
+
+    private static readonly Vector2 OffscreenMouse = Vector2.One * -1000f;
+    private static readonly HashSet<string> ModeLogged = new();
+
+    /// <summary>
+    /// The game's own switch to controller mode (as CheckForControllerInput
+    /// does it), but without swallowing the event that caused it.
+    /// </summary>
+    private static bool EnterControllerMode(string why)
+    {
+        if (!CanSwitchModes())
+            return false;
+        if (ControllerManager() is not Node manager)
+        {
+            if (ModeLogged.Add(why))
+                DsLog.Info($"no controller manager to switch ({why})");
+            return false;
+        }
+        try
+        {
+            SetMode(manager, _controllerMode);
+            if (_modeIsEnum)
+            {
+                // As the game does it since v0.111: the mouse off for the game's nodes.
+                if (_gameInstance?.GetValue(null) is Control game)
+                    game.MouseBehaviorRecursive = Control.MouseBehaviorRecursiveEnum.Disabled;
+            }
+            else if (manager.GetViewport() is { } viewport)
+            {
+                var mouse = DisplayServer.MouseGetPosition() - DisplayServer.WindowGetPosition();
+                _lastMousePosition?.SetValue(manager, new Vector2(mouse.X, mouse.Y));
+                viewport.WarpMouse(OffscreenMouse);
+                _skipMouseFrames?.SetValue(manager, 2);
+            }
+            if (ScreenContext() is { } context)
+                _contextFocusDefault?.Invoke(context, null);
+            // The cursor, hotkey icons and the like follow this signal.
+            manager.EmitSignal("ControllerDetected");
+            if (ModeLogged.Add(why))
+                DsLog.Info($"controller mode: {why}");
+            return true;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not switch to controller mode ({why}): {e.InnerException?.Message ?? e.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// A pointer event for the lower screen is about to be pushed. The lower
+    /// screen is for touch: while it is handled, the game's nodes there see
+    /// mouse mode, whatever the controller up top is doing. Only the mode
+    /// value changes (no signals, no focus change, nothing up top), and only
+    /// for that one push. Pass the result to EndTouchDispatch.
+    /// </summary>
+    public static object BeginTouchDispatch()
+    {
+        if (!CanSwitchModes() || ControllerManager() is not { } manager)
+            return null;
+        var mode = GetMode(manager);
+        if (Equals(mode, _mouseMode))
+            return null;
+        SetMode(manager, _mouseMode);
+        return mode;
+    }
+
+    public static void EndTouchDispatch(object previous)
+    {
+        if (previous != null && ControllerManager() is { } manager)
+            SetMode(manager, previous);
+    }
+
+    // Whether the press being handled came from a controller. The game's mode
+    // no longer drops to touch on stray mouse events (MouseCheckPrefix), but a
+    // press is still judged by the last press the window saw, controller (pad,
+    // key, action) or pointer (touch, click), in case something else moves
+    // it; the game's mode only decides before either has happened.
+    private static ulong _lastPadPressUsec, _lastPointerPressUsec;
 
     /// <summary>Every event the top window receives, before anything handles it.</summary>
     public static void NoteInput(InputEvent e)
@@ -383,15 +585,8 @@ internal static class DsGameHooks
         switch (e)
         {
             case InputEventScreenTouch { Pressed: true }:
-                _lastPointerPressUsec = _lastTouchUsec = now;
-                break;
-            case InputEventMouseButton { Pressed: true } mouse:
+            case InputEventMouseButton { Pressed: true }:
                 _lastPointerPressUsec = now;
-                // A click no touch made: the kind that throws the game out of
-                // controller mode. Godot's own click for a touch (device -1)
-                // arrives just before that touch, so it is not one.
-                if (mouse.Device != -1 && now - _lastTouchUsec > 200_000 && _strayMouseLogged++ < 5)
-                    DsLog.Info($"mouse press without a touch: {mouse.AsText()} device={mouse.Device} at {mouse.Position}");
                 break;
             case InputEventJoypadButton { Pressed: true }:
             case InputEventAction { Pressed: true }:
@@ -505,111 +700,283 @@ internal static class DsGameHooks
 
     // ── map ────────────────────────────────────────────────────────────────
 
+    private static bool IsCopy(object instance) => instance != null && ReferenceEquals(instance, _map);
+
+    private static bool IsTopMap(object instance) => instance != null && ReferenceEquals(instance, _topMap);
+
     private static void MapReadyPostfix(object __instance)
     {
         if (__instance is not Control map)
             return;
-        // Reparenting inside _Ready is not allowed; wait a frame.
-        Callable.From(() => AdoptMap(map)).CallDeferred();
-    }
-
-    private static void AdoptMap(Control map)
-    {
-        var screen = DsBottomScreen.Instance;
-        if (screen == null)
+        if (IsCopy(map))
         {
-            _pendingMap = map;
+            // Nothing to go back from, and no controller to show hotkeys for.
+            HideField(map, _mapBackButton);
+            HideField(map, _mapLegendHotkey);
+            HideField(map, _mapToolsHotkey);
+            _copyDrawings = _mapDrawings?.GetValue(map);
             return;
         }
-        _pendingMap = null;
+        // A new run's map, before the last one has left: the copy was of that one.
+        if (_topMap != null && !ReferenceEquals(_topMap, map))
+            MapExitPostfix(_topMap);
+        _topMap = map;
+        _topDrawings = _mapDrawings?.GetValue(map);
+        // Not every version overrides _ExitTree, so there may be none to patch.
+        map.TreeExiting += () => MapExitPostfix(map);
+    }
+
+    private static void HideField(Control map, FieldInfo field)
+    {
+        if (field?.GetValue(map) is CanvasItem item)
+            item.Visible = false;
+    }
+
+    // The run's UI is going away: the copy with it, out of the tree at once.
+    // Its rooms let go of the game's map (NMapScreen.Instance) as they
+    // leave, and that is gone by the time a queued free would run.
+    private static void MapExitPostfix(object __instance)
+    {
+        if (!IsTopMap(__instance))
+            return;
+        _topMap = null;
+        if (MapValid())
+        {
+            try
+            {
+                _map.GetParent()?.RemoveChild(_map);
+            }
+            catch (Exception e)
+            {
+                DsLog.Info($"could not take the map copy down: {e.Message}");
+            }
+            _map.QueueFree();
+        }
+        _map = null;
+        _topDrawings = _copyDrawings = null;
+        _mapSeed = null;
+        _markerCoord = null;
+        UpdateMapPlaceholder();
+    }
+
+    private static void MapInitializePostfix(object __instance)
+    {
+        if (IsTopMap(__instance))
+            QueueRebuild();
+    }
+
+    // The seed is a different integer type in different versions; by __args.
+    private static void MapSetMapPostfix(object __instance, object[] __args)
+    {
+        if (!IsTopMap(__instance) || __args.Length < 3)
+            return;
+        _mapSeed = __args[1];
+        var clearDrawings = __args[2] is true;
+        // A new act: the drawings were cleared up top; clear them below too.
+        if (clearDrawings && _copyDrawings != null)
+            TryMap(() => _drawClearAll?.Invoke(_copyDrawings, null), "clear the drawings");
+        QueueRebuild();
+    }
+
+    // The coord is a struct of the game's; boxed through __args.
+    private static void MapInitMarkerPostfix(object __instance, object[] __args)
+    {
+        if (!IsTopMap(__instance) || __args.Length == 0)
+            return;
+        // Placed by the rebuild: the copy's rooms are rebuilt then too, so
+        // the coord's room may not exist on it yet.
+        _markerCoord = __args[0];
+        QueueRebuild();
+    }
+
+    private static void MapRefreshVotesPostfix(object __instance)
+    {
+        if (IsTopMap(__instance) && MapValid())
+            TryMap(() => _mapRefreshVotes?.Invoke(_map, null), "refresh votes");
+    }
+
+    // Travel switched on or off up top: the copy shows the same rooms as
+    // reachable (they pulse), and the dock's map tab rocks while it is on.
+    private static void MapTravelPostfix(object __instance)
+    {
+        if (!IsTopMap(__instance))
+            return;
+        CopyTravelState();
+        DsBottomScreen.Instance?.Dock.SetTraveling(_mapTravelEnabled?.GetValue(_topMap) is true);
+        DsBottomScreen.Instance?.MarkChanged();
+    }
+
+    private static void CopyTravelState()
+    {
+        if (!MapValid() || !GodotObject.IsInstanceValid(_topMap))
+            return;
+        TryMap(() =>
+        {
+            foreach (var flag in new[] { _mapTravelEnabled, _mapDebugTravelEnabled })
+            {
+                if (flag?.CanWrite == true)
+                    flag.SetValue(_map, flag.GetValue(_topMap));
+            }
+            _mapRefreshVisuals?.Invoke(_map, null);
+        }, "copy the travel state");
+    }
+
+    // A room was entered: rebuild the copy, as the game draws the map for a
+    // run in progress (travelled paths, the marker, what is reachable).
+    private static void VisitedMapCoordPostfix() => QueueRebuild();
+
+    private static bool TopMapOnlyPrefix(object __instance) => !IsCopy(__instance);
+
+    // Should a room of the copy still leave after the game's map has gone,
+    // its unsubscribing from that map finds nothing; nothing to undo then.
+    private static int _pointExitFailures;
+
+    private static Exception CopyPointExitFinalizer(object __instance, Exception __exception)
+    {
+        if (__exception is not NullReferenceException || __instance is not Node node
+            || _topMap != null && GodotObject.IsInstanceValid(_topMap) && _topMap.IsAncestorOf(node))
+            return __exception;
+        if (_pointExitFailures++ == 0)
+            DsLog.Info("a map copy room left after the game's map; ignored");
+        return null;
+    }
+
+    // Travel is the top map's. A room on the copy shows its tip and nothing
+    // more when let go of.
+    private static bool MapPointReleasePrefix(object __instance) =>
+        __instance is not Node node || DsBottomScreen.Instance?.IsBottom(node) != true;
+
+    private static void QueueRebuild()
+    {
+        if (_rebuildQueued)
+            return;
+        _rebuildQueued = true;
+        Callable.From(RebuildCopy).CallDeferred();
+    }
+
+    /// <summary>
+    /// Makes the copy (once per run) and brings it level with the top map:
+    /// run state, act map, marker, travel state. A new copy also takes the
+    /// top map's drawings.
+    /// </summary>
+    private static void RebuildCopy()
+    {
+        _rebuildQueued = false;
+        var screen = DsBottomScreen.Instance;
+        if (screen == null || _topMap == null || !GodotObject.IsInstanceValid(_topMap))
+            return;
+        var runState = _mapRunState?.GetValue(_topMap);
+        if (runState == null)
+            return;
+        var created = false;
+        if (!MapValid())
+        {
+            if (!CreateCopy(screen))
+                return;
+            created = true;
+        }
+        TryMap(() =>
+        {
+            if (!ReferenceEquals(_mapRunState.GetValue(_map), runState))
+                _mapInitialize?.Invoke(_map, new[] { runState });
+            var actMap = _mapActMap?.GetValue(_topMap);
+            if (actMap != null && actMap.GetType().Name != "NullActMap" && SeedOf(runState) is { } seed)
+            {
+                _mapSetMap?.Invoke(_map, new[] { actMap, seed, (object)false });
+                var coord = AccessTools.Property(runState.GetType(), "CurrentMapCoord")?.GetValue(runState) ?? _markerCoord;
+                if (coord != null)
+                    _mapInitMarker?.Invoke(_map, new[] { coord });
+            }
+        }, "bring it up to date");
+        CopyTravelState();
+        if (created)
+            CopyAllDrawings();
+        // To the current room, as the game's map opens, unless a finger is
+        // on it: it would jump out from under it.
+        if (screen.Ready)
+            RevealMap(_map, scrollToCurrent: !screen.Touching);
+        UpdateMapPlaceholder();
+        screen.MarkChanged();
+    }
+
+    private static object SeedOf(object runState)
+    {
+        if (_mapSeed != null)
+            return _mapSeed;
         try
         {
-            if (!GodotObject.IsInstanceValid(map))
-                return;
-            var page = screen.Page("map");
-            if (map.GetParent() != page)
+            // What SetMap takes, converted from the run's seed.
+            var type = _mapSetMap?.GetParameters() is { Length: > 1 } parameters ? parameters[1].ParameterType : null;
+            var rng = AccessTools.Property(runState.GetType(), "Rng")?.GetValue(runState);
+            var seed = rng == null ? null : AccessTools.Property(rng.GetType(), "Seed")?.GetValue(rng);
+            return seed == null || type == null ? null : Convert.ChangeType(seed, type);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static bool CreateCopy(DsBottomScreen screen)
+    {
+        try
+        {
+            var path = string.IsNullOrEmpty(_topMap.SceneFilePath) ? MapScenePath : _topMap.SceneFilePath;
+            var scene = ResourceLoader.Load<PackedScene>(path);
+            if (scene?.Instantiate() is not Control copy)
             {
-                map.Reparent(page, false);
-                map.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-                map.OffsetLeft = map.OffsetTop = map.OffsetRight = map.OffsetBottom = 0;
+                DsLog.Info($"map scene not found ({path}); no map on the bottom screen");
+                return false;
             }
-            _map = map;
-            if (screen.Ready && !IsMapOpen())
-                RevealMap(map, scrollToCurrent: true);
-            UpdateMapPlaceholder();
+            copy.Name = "DsMap";
+            copy.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            copy.OffsetLeft = copy.OffsetTop = copy.OffsetRight = copy.OffsetBottom = 0;
+            // Always shown down here: SetMap works out which rooms are
+            // reachable only on a visible map, and _Ready only processes one.
+            copy.Visible = true;
+            // Known as the copy before its _Ready runs.
+            _map = copy;
+            screen.Page("map").AddChild(copy);
             StyleText(screen);
-            DsLog.Info("map screen moved to the bottom screen");
+            DsLog.Info($"map copy made for the bottom screen ({path})");
+            return true;
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not move the map: {e.Message}");
+            DsLog.Info($"could not make the map copy: {e.InnerException?.Message ?? e.Message}");
+            if (MapValid())
+                _map.QueueFree();
+            _map = null;
+            _copyDrawings = null;
+            return false;
         }
     }
 
-    private static void MapOpenPostfix(object __instance)
+    // In mouse mode, as touches on it are: in controller mode the game's
+    // map would give one of its rooms controller focus (TryGrabFocus).
+    private static void TryMap(Action action, string what)
     {
-        if (__instance != _map)
-            return;
-        UpdateMapPlaceholder();
-        var screen = DsBottomScreen.Instance;
-        if (screen?.Ready != true)
-            return;
-        screen.Show("map");
-        ScaleMapTools(_map);
-        screen.Dock.SetTraveling(true);
-        screen.SetTopHint(true);
-        screen.ReleaseTopFocus();
-    }
-
-    private static void MapClosePostfix(object __instance)
-    {
-        if (__instance != _map)
-            return;
-        var screen = DsBottomScreen.Instance;
-        if (screen == null)
-            return;
-        screen.SetTopHint(false);
-        screen.Dock.SetTraveling(false);
-        screen.ReleaseBottomFocus();
-        // Close(animateOut: false) hides it directly.
-        if (screen.Ready)
-            RevealMap(_map, scrollToCurrent: false);
-        UpdateMapPlaceholder();
-        if (_inCombat && screen.ActiveTab == "map")
-            screen.Show("draw");
-        // Opening the map let go of top-screen focus; the screen under it
-        // (rewards, say) does not take it back by itself.
-        if (PressFromController())
-            RestoreTopFocus("map closed");
-    }
-
-    private static bool MapAnimClosePrefix(object __instance, ref System.Threading.Tasks.Task __result)
-    {
-        if (__instance != _map || DsBottomScreen.Instance?.Ready != true)
-            return true;
-        __result = System.Threading.Tasks.Task.CompletedTask;
-        return false;
-    }
-
-    // A travelable point on the closed map opens the map first, so the
-    // journey starts from the open state the game expects.
-    private static void MapPointReleasePrefix(object __instance)
-    {
-        if (!MapValid() || IsMapOpen() || DsBottomScreen.Instance?.Ready != true)
-            return;
-        if (AccessTools.Property(__instance.GetType(), "IsTravelable")?.GetValue(__instance) is true)
-            OpenMap();
+        var mode = BeginTouchDispatch();
+        try
+        {
+            action();
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"map copy: could not {what}: {e.InnerException?.Message ?? e.Message}");
+        }
+        finally
+        {
+            EndTouchDispatch(mode);
+        }
     }
 
     private static bool MapValid() => _map != null && GodotObject.IsInstanceValid(_map);
-
-    private static bool IsMapOpen() => MapValid() && _mapIsOpen?.GetValue(_map) is true;
 
     private static void ResolveMap()
     {
         if (_mapType == null)
             return;
-        _mapIsOpen = AccessTools.Property(_mapType, "IsOpen");
         _mapContainer = AccessTools.Field(_mapType, "_mapContainer");
         _mapTargetDrag = AccessTools.Field(_mapType, "_targetDragPos");
         _mapDragging = AccessTools.Field(_mapType, "_isDragging");
@@ -621,8 +988,20 @@ internal static class DsGameHooks
         _mapPoints = AccessTools.Field(_mapType, "_points");
         _mapRunState = AccessTools.Field(_mapType, "_runState");
         _mapDistY = AccessTools.Field(_mapType, "_distY");
+        _mapActMap = AccessTools.Field(_mapType, "_map");
+        _mapBackButton = AccessTools.Field(_mapType, "_backButton");
+        _mapLegendHotkey = AccessTools.Field(_mapType, "_legendHotkeyIcon");
+        _mapToolsHotkey = AccessTools.Field(_mapType, "_drawingToolsHotkeyIcon");
+        _mapTravelEnabled = AccessTools.Property(_mapType, "IsTravelEnabled");
+        _mapDebugTravelEnabled = AccessTools.Property(_mapType, "IsDebugTravelEnabled");
+        _mapDrawings = AccessTools.Property(_mapType, "Drawings");
         _mapCanScroll = AccessTools.Method(_mapType, "CanScroll");
         _mapCancelActAnim = AccessTools.Method(_mapType, "TryCancelStartOfActAnim");
+        _mapInitialize = AccessTools.Method(_mapType, "Initialize");
+        _mapSetMap = AccessTools.Method(_mapType, "SetMap");
+        _mapInitMarker = AccessTools.Method(_mapType, "InitMarker");
+        _mapRefreshVotes = AccessTools.Method(_mapType, "RefreshAllMapPointVotes");
+        _mapRefreshVisuals = AccessTools.Method(_mapType, "RefreshAllPointVisuals");
         // Consts; the literals are what v0.107.1 has.
         if (AccessTools.Field(_mapType, "_scrollLimitBottom") is { IsLiteral: true } low && low.GetRawConstantValue() is float l)
             _mapScrollLow = l;
@@ -630,6 +1009,16 @@ internal static class DsGameHooks
             _mapScrollHigh = h;
         if (_mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
             DsLog.Info("map scroll fields not found; the map scrolls its own way");
+        var missing = new List<string>();
+        if (_mapRunState == null) missing.Add("_runState");
+        if (_mapActMap == null) missing.Add("_map");
+        if (_mapInitialize == null) missing.Add("Initialize");
+        if (_mapSetMap == null) missing.Add("SetMap");
+        if (_mapInitMarker == null) missing.Add("InitMarker");
+        if (_mapTravelEnabled?.CanWrite != true) missing.Add("a settable IsTravelEnabled");
+        if (_mapDrawings == null) missing.Add("Drawings");
+        if (missing.Count > 0)
+            DsLog.Info($"map screen has no {string.Join(", ", missing)}; the bottom map may lag behind the top one");
     }
 
     private static void UpdateMapPlaceholder()
@@ -796,79 +1185,166 @@ internal static class DsGameHooks
         _mapTargetDrag?.SetValue(map, target);
     }
 
-    // The game's own on-screen notice (the controller toast) is the closest
-    // match for our top-screen hint. The map legend's header is a game label
-    // with the game's font set on it, for the dock and placeholders.
+    // The map legend's header is a game label with the game's font set on
+    // it, for the dock and placeholders.
     private static void StyleText(DsBottomScreen screen)
     {
         if (MapValid() && _map.GetNodeOrNull("MapLegend/Header") is Label header && header.HasThemeFontOverride("font"))
             screen.ApplyGameFont(header.GetThemeFont("font"));
-        if (ControllerManager() is Node manager && manager.GetNodeOrNull("Label") is Label label)
-            screen.ApplyGameTextStyle(label);
     }
 
     // ── map drawing ────────────────────────────────────────────────────────
 
     // The draw button picks a mouse or a controller drawing tool from the
-    // game's input mode. Touches on the lower screen never reach the game's
-    // controller manager, so after any controller use it would hand a finger
-    // the stick-driven cursor. A button just pressed by touch gets the mouse tool.
-    private static void DrawingInputCreatePrefix(bool stopOnMouseRelease, out bool __state)
+    // game's input mode. The bottom screen is for touch: its tool is always
+    // the mouse one, even made outside a touch push (BeginTouchDispatch).
+    // The top map's tool is the game's choice.
+    private static void DrawingInputCreatePrefix(object drawings, out object __state)
     {
-        __state = false;
-        if (stopOnMouseRelease || DsBottomScreen.Instance?.TouchRecent != true)
-            return;
-        var manager = ControllerManager();
-        var usingController = manager == null ? null : AccessTools.Property(_controllerManagerType, "IsUsingController");
-        if (usingController?.GetValue(manager) is not true)
-            return;
-        usingController.SetValue(manager, false);
-        __state = true;
+        __state = drawings is Node node && DsBottomScreen.Instance?.IsBottom(node) == true ? BeginTouchDispatch() : null;
     }
 
-    private static void DrawingInputCreatePostfix(bool __state)
+    private static void DrawingInputCreatePostfix(object __state) => EndTouchDispatch(__state);
+
+    // Shared drawings. Each map keeps its own lines (a node renders in one
+    // place only); every line the local player starts, extends, ends or
+    // clears on one is done on the other too. Positions go through the
+    // game's network form (centred, scaled to each drawing area), as a
+    // peer's lines do. Only the top map sends to the network or changes the
+    // mouse cursor: the copy's lines reach peers and the save as the top's.
+    private static MethodInfo _drawBegin, _drawUpdate, _drawStop, _drawClear, _drawIsDrawing, _drawMode;
+    private static MethodInfo _drawToNet, _drawFromNet, _drawLoad, _drawSave, _drawClearAll;
+    private static object _topDrawings, _copyDrawings;
+    private static bool _mirroring;
+    private static int _mirrorFailures;
+
+    private static void ApplyDrawingHooks(Harmony harmony)
     {
-        if (__state)
-            AccessTools.Property(_controllerManagerType, "IsUsingController")?.SetValue(ControllerManager(), true);
+        var type = FindType(MapDrawingsType);
+        if (type == null)
+        {
+            DsLog.Info("no map drawings type; the two maps draw separately");
+            return;
+        }
+        _drawBegin = AccessTools.Method(type, "BeginLineLocal");
+        _drawUpdate = AccessTools.Method(type, "UpdateCurrentLinePositionLocal");
+        _drawStop = AccessTools.Method(type, "StopLineLocal");
+        _drawClear = AccessTools.Method(type, "ClearDrawnLinesLocal");
+        _drawIsDrawing = AccessTools.Method(type, "IsLocalDrawing");
+        _drawMode = AccessTools.Method(type, "GetLocalDrawingMode");
+        _drawToNet = AccessTools.Method(type, "ToNetPosition");
+        _drawFromNet = AccessTools.Method(type, "FromNetPosition");
+        _drawLoad = AccessTools.Method(type, "LoadDrawings");
+        _drawSave = AccessTools.Method(type, "GetSerializableMapDrawings");
+        _drawClearAll = AccessTools.Method(type, "ClearAllLines");
+        Patch(harmony, type, "QueueOrSendEvent", prefix: nameof(TopDrawingsOnlyPrefix));
+        Patch(harmony, type, "UpdateLocalCursor", prefix: nameof(DrawingCursorPrefix));
+        if (_drawIsDrawing == null || _drawMode == null || _drawToNet == null || _drawFromNet == null)
+        {
+            DsLog.Info("map drawings can't be mirrored on this version; the two maps draw separately");
+            return;
+        }
+        Patch(harmony, type, "BeginLineLocal", postfix: nameof(DrawBeginPostfix));
+        Patch(harmony, type, "UpdateCurrentLinePositionLocal", postfix: nameof(DrawUpdatePostfix));
+        Patch(harmony, type, "StopLineLocal", postfix: nameof(DrawStopPostfix));
+        Patch(harmony, type, "ClearDrawnLinesLocal", postfix: nameof(DrawClearPostfix));
+        Patch(harmony, type, "LoadDrawings", postfix: nameof(DrawLoadPostfix));
     }
 
-    // The controller drawing cursor clamps itself to the top screen's game
-    // rect. On the lower screen, clamp to the bottom canvas instead.
-    private static void ControllerDrawingProcessPrefix(object __instance, out Vector2? __state)
+    private static bool TopDrawingsOnlyPrefix(object __instance) => !ReferenceEquals(__instance, _copyDrawings);
+
+    private static bool DrawingCursorPrefix(object __instance) => !_mirroring && !ReferenceEquals(__instance, _copyDrawings);
+
+    private static object OtherDrawings(object drawings)
     {
-        __state = null;
-        if (__instance is Node node && node.GetViewport() is SubViewport
-            && AccessTools.Field(__instance.GetType(), "_cursor")?.GetValue(__instance) is Control cursor)
-            __state = cursor.GlobalPosition;
+        if (_mirroring || _topDrawings == null || _copyDrawings == null || !MapValid())
+            return null;
+        return ReferenceEquals(drawings, _topDrawings) ? _copyDrawings
+            : ReferenceEquals(drawings, _copyDrawings) ? _topDrawings
+            : null;
     }
 
-    private static void ControllerDrawingProcessPostfix(object __instance, double delta, Vector2? __state)
+    private static void Mirror(object source, Action<object> action)
     {
-        if (__state is not { } before || DsBottomScreen.Instance is not { } screen)
+        if (OtherDrawings(source) is not { } other)
             return;
-        var type = __instance.GetType();
-        if (AccessTools.Field(type, "_direction")?.GetValue(__instance) is not Vector2 direction || direction.Length() <= 0f
-            || AccessTools.Field(type, "_cursor")?.GetValue(__instance) is not Control cursor)
-            return;
-        cursor.GlobalPosition = (before + direction * 700f * (float)delta).Clamp(Vector2.Zero, screen.CanvasSize);
-        var drawings = AccessTools.Field(type, "_drawings")?.GetValue(__instance);
-        if (drawings is CanvasItem item && AccessTools.Method(drawings.GetType(), "IsLocalDrawing")?.Invoke(drawings, null) is true)
-            AccessTools.Method(drawings.GetType(), "UpdateCurrentLinePositionLocal")
-                ?.Invoke(drawings, new object[] { item.GetGlobalTransform().AffineInverse() * cursor.GlobalPosition });
-    }
-
-    private static void OpenMap()
-    {
-        if (!MapValid() || IsMapOpen())
-            return;
+        _mirroring = true;
         try
         {
-            AccessTools.Method(_mapType, "Open")?.Invoke(_map, new object[] { true });
+            action(other);
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not open the map: {e.InnerException?.Message ?? e.Message}");
+            if (_mirrorFailures++ < 5)
+                DsLog.Info($"could not mirror a map line: {e.InnerException?.Message ?? e.Message}");
         }
+        finally
+        {
+            _mirroring = false;
+        }
+        DsBottomScreen.Instance?.MarkChanged();
+    }
+
+    private static object Translate(object from, object to, object position) =>
+        _drawFromNet.Invoke(to, new[] { _drawToNet.Invoke(from, new[] { position }) });
+
+    private static bool IsDrawing(object drawings) => _drawIsDrawing.Invoke(drawings, null) is true;
+
+    private static void DrawBeginPostfix(object __instance, object[] __args) =>
+        Mirror(__instance, other =>
+        {
+            // The line's own mode (drawing or erasing), so the other map's
+            // drawing tool, on or off, doesn't matter.
+            var mode = _drawMode.Invoke(__instance, new object[] { true });
+            if (IsDrawing(other))
+                _drawStop.Invoke(other, null);
+            _drawBegin.Invoke(other, new[] { Translate(__instance, other, __args[0]), mode });
+        });
+
+    private static void DrawUpdatePostfix(object __instance, object[] __args) =>
+        Mirror(__instance, other =>
+        {
+            if (IsDrawing(other))
+                _drawUpdate.Invoke(other, new[] { Translate(__instance, other, __args[0]) });
+        });
+
+    private static void DrawStopPostfix(object __instance) =>
+        Mirror(__instance, other =>
+        {
+            if (IsDrawing(other))
+                _drawStop.Invoke(other, null);
+        });
+
+    private static void DrawClearPostfix(object __instance) => Mirror(__instance, other => _drawClear?.Invoke(other, null));
+
+    // A save's drawings were loaded into the top map.
+    private static void DrawLoadPostfix(object __instance)
+    {
+        if (!_mirroring && ReferenceEquals(__instance, _topDrawings))
+            CopyAllDrawings();
+    }
+
+    /// <summary>The copy's lines replaced by the top map's.</summary>
+    private static void CopyAllDrawings()
+    {
+        if (_topDrawings == null || _copyDrawings == null || _drawSave == null || _drawLoad == null || _drawClearAll == null)
+            return;
+        _mirroring = true;
+        try
+        {
+            _drawClearAll.Invoke(_copyDrawings, null);
+            if (_drawSave.Invoke(_topDrawings, null) is { } saved)
+                _drawLoad.Invoke(_copyDrawings, new[] { saved });
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not copy the map drawings: {e.InnerException?.Message ?? e.Message}");
+        }
+        finally
+        {
+            _mirroring = false;
+        }
+        DsBottomScreen.Instance?.MarkChanged();
     }
 
     // ── piles ──────────────────────────────────────────────────────────────
@@ -878,12 +1354,16 @@ internal static class DsGameHooks
         if (player == null)
             return;
         var changed = !ReferenceEquals(player, _player) || !_inCombat;
+        var started = !_inCombat;
         _player = player;
-        if (!_inCombat)
+        if (started)
             SetCombatTabs(true);
         _inCombat = true;
         if (changed)
             ResetPiles("draw", "discard", "exhaust");
+        // A fight starts on the discard pile.
+        if (started && DsBottomScreen.Instance is { Ready: true } screen)
+            screen.Show("discard");
         // The dock takes the button's own icon (draw and exhaust have no
         // path the code names) and its count.
         if (DsBottomScreen.Instance?.Dock is not { } dock || PileButtonTab(__instance) is not { } tab)
@@ -907,6 +1387,9 @@ internal static class DsGameHooks
             return;
         _inCombat = false;
         SetCombatTabs(false);
+        // Its piles are gone with it: back to the map, for the next room.
+        if (DsBottomScreen.Instance is { } screen && Array.IndexOf(CombatTabs, screen.ActiveTab) >= 0)
+            screen.Show("map");
     }
 
     private static void DeckCountPostfix(object __instance)
@@ -963,20 +1446,6 @@ internal static class DsGameHooks
         ResetPiles("deck");
     }
 
-    // An empty pile shows a thought bubble instead of opening; switch the
-    // bottom tab anyway, so the pile button and its hotkey always do.
-    private static void CombatPileReleasePostfix(object __instance)
-    {
-        var screen = DsBottomScreen.Instance;
-        if (screen?.Ready != true || !_inCombat)
-            return;
-        var pile = AccessTools.Field(__instance.GetType(), "_pile")?.GetValue(__instance);
-        if (pile == null || AccessTools.Property(pile.GetType(), "IsEmpty")?.GetValue(pile) is not true)
-            return;
-        if (TabForPile(pile) is { } tab)
-            screen.Show(tab);
-    }
-
     // A pile screen rebuilds its whole grid of card nodes on every change to
     // its pile. On PC only an open one exists; here all four live on, so a
     // hand draw would rebuild each of them once per card. Down here a hidden
@@ -1013,34 +1482,6 @@ internal static class DsGameHooks
             _refreshingPile = false;
         }
         DsBottomScreen.Instance?.MarkChanged();
-    }
-
-    // Instead of an overlay on the top screen, show the pile on the bottom one.
-    // Callers ignore the returned screen, so it is left null.
-    private static bool ShowPileScreenPrefix(object pile)
-    {
-        var screen = DsBottomScreen.Instance;
-        if (screen?.Ready != true || pile == null)
-            return true;
-        var tab = TabForPile(pile);
-        if (tab == null)
-            return true;
-        screen.Show(tab);
-        return false;
-    }
-
-    private static bool ShowDeckScreenPrefix(object player)
-    {
-        var screen = DsBottomScreen.Instance;
-        if (screen?.Ready != true)
-            return true;
-        if (player != null && !ReferenceEquals(player, _player))
-        {
-            _player = player;
-            ResetPiles("deck");
-        }
-        screen.Show("deck");
-        return false;
     }
 
     // ── hover tips ─────────────────────────────────────────────────────────
@@ -1267,6 +1708,11 @@ internal static class DsGameHooks
             : grid;
     }
 
+    /// <summary>The bottom map has a drawing tool on: a finger there draws.</summary>
+    public static bool IsDrawing(string tab) =>
+        tab == "map" && MapValid() && _mapDrawingInput?.GetValue(_map) is Node drawing
+        && GodotObject.IsInstanceValid(drawing) && !drawing.IsQueuedForDeletion();
+
     /// <summary>A finger on this tab can scroll it: a pile with a grid, or the map when not drawing.</summary>
     public static bool CanScroll(string tab) => tab == "map" ? MapCanScroll() : PileGrid(tab) != null;
 
@@ -1278,17 +1724,19 @@ internal static class DsGameHooks
 
     // The map eases toward its drag target every frame; down here it is put
     // straight on it, so it stays under the finger, and the game's ease only
-    // pulls it back from past either end. Drawing tools keep the finger.
+    // pulls it back from past either end. With a drawing tool on, one finger
+    // draws (CanScroll says no) and two still scroll.
     private static bool MapCanScroll()
     {
         if (!MapValid() || _mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
             return false;
-        return _mapDrawingInput?.GetValue(_map) is not Node drawing || !GodotObject.IsInstanceValid(drawing) || drawing.IsQueuedForDeletion();
+        return !IsDrawing("map");
     }
 
+    // Two fingers scroll even with a drawing tool on; only one finger draws.
     private static bool HoldMap(bool held)
     {
-        if (!MapCanScroll())
+        if (!MapValid() || _mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
             return false;
         try
         {
@@ -1425,15 +1873,16 @@ internal static class DsGameHooks
 
     // Made for a full screen under the top bar: the grid starts below where
     // the bar would be, and fades cards to black at its top and bottom
-    // edges. Down here that is a black band over the cards; drop both. The
-    // caption box stays only where there is a caption (none for the deck).
+    // edges. Down here that is a black band over the cards; drop both, and
+    // start it below the corner tabs instead. The caption box stays only
+    // where there is a caption (none for the deck).
     private static void FitPileChrome(Node pileScreen)
     {
         if (pileScreen.GetNodeOrNull("CardGrid") is Control grid)
         {
             if (grid.GetNodeOrNull("BorderGradient") is CanvasItem gradient)
                 gradient.Visible = false;
-            grid.OffsetTop = 0;
+            grid.OffsetTop = DsDock.CornerPlateHeight / PileScale;
             AccessTools.Method(grid.GetType(), "ReflowColumns")?.Invoke(grid, null);
         }
         if (pileScreen.GetNodeOrNull("BottomText") is CanvasItem caption

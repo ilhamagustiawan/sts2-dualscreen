@@ -59,11 +59,6 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_DUAL_SCREEN_TAB, "map") ?: "map"
         set(value) { prefs.edit().putString(KEY_DUAL_SCREEN_TAB, value).apply() }
 
-    /** "Choose your path on the lower screen" on the top screen while the map is open below. */
-    var dualScreenTopHint: Boolean
-        get() = prefs.getBoolean(KEY_DUAL_SCREEN_HINT, true)
-        set(value) { prefs.edit().putBoolean(KEY_DUAL_SCREEN_HINT, value).apply() }
-
     /**
      * The Steam branch the game is downloaded from: [BRANCH_STABLE] or
      * [BRANCH_BETA]. A change takes effect with the next download, which only
@@ -131,7 +126,6 @@ class SettingsStore(context: Context) {
         private const val KEY_DUAL_SCREEN = "dual_screen"
         private const val KEY_DUAL_SCREEN_FPS = "dual_screen_fps"
         private const val KEY_DUAL_SCREEN_TAB = "dual_screen_default_tab"
-        private const val KEY_DUAL_SCREEN_HINT = "dual_screen_top_hint"
         private const val KEY_PENDING_PUSH = "pending_push"
         private const val KEY_LAST_SYNC_AT = "last_sync_at"
         private const val KEY_LAST_SYNC_ERROR = "last_sync_error"

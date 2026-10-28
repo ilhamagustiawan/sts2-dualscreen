@@ -146,7 +146,6 @@ object GamePrep {
                 .put("enabled", dualScreen)
                 .put("fps", settings.dualScreenFps)
                 .put("default_tab", settings.dualScreenDefaultTab)
-                .put("show_top_hint", settings.dualScreenTopHint)
                 .put("particle_amount", settings.particleAmount / 100.0)
                 .toString(2)
         )
