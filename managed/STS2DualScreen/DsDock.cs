@@ -57,10 +57,11 @@ internal sealed class DsDock
         public Label Label;
         public Control Badge;
         public Label BadgeLabel;
+        public Label BadgeOld;   // the number rolling out
         public string Title;
         public int Count = -1;
         public bool Enabled = true;
-        public Tween State, Press, Bump, Rock;
+        public Tween State, Press, Bump, Roll, Rock;
     }
 
     private readonly Control _root;
@@ -290,12 +291,17 @@ internal sealed class DsDock
             badge.OffsetTop = 2;
             badge.OffsetBottom = 2 + BadgeSize;
             badge.PivotOffset = new Vector2(BadgeSize / 2, BadgeSize / 2);
+            var old = DsStyle.Text(27, 6);
+            old.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+            old.Visible = false;
+            badge.AddChild(old);
             var count = DsStyle.Text(27, 6);
             count.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             badge.AddChild(count);
             button.AddChild(badge);
             tab.Badge = badge;
             tab.BadgeLabel = count;
+            tab.BadgeOld = old;
         }
 
         button.ButtonDown += () => OnDown(tab);
@@ -345,6 +351,7 @@ internal sealed class DsDock
         {
             tab.Label.AddThemeFontOverride("font", font);
             tab.BadgeLabel?.AddThemeFontOverride("font", font);
+            tab.BadgeOld?.AddThemeFontOverride("font", font);
         }
     }
 
@@ -377,27 +384,137 @@ internal sealed class DsDock
         ApplyState(tab, animate: true);
     }
 
-    /// <summary>The pile's card count; it bumps when it grows, as the game's does. Negative hides it.</summary>
+    // How far a changing number rolls, and the game's pile button's
+    // pressed colour (NCombatCardPile._downColor), for a count going down.
+    private const float RollDistance = 8f;
+    private static readonly Color DownColor = Colors.DarkGray;
+
+    /// <summary>
+    /// The pile's card count. It bumps when it grows, as the game's does,
+    /// dips like the pressed button when it shrinks, and the number rolls
+    /// between the two. It pops in when shown; negative shrinks it away.
+    /// </summary>
     public void SetCount(string key, int count)
     {
         if (!_tabs.TryGetValue(key, out var tab) || tab.Badge == null || tab.Count == count)
             return;
-        var grew = tab.Count >= 0 && count > tab.Count;
+        var previous = tab.Count;
         tab.Count = count;
-        tab.Badge.Visible = count >= 0;
         if (count >= 0)
             tab.BadgeLabel.Text = count.ToString();
-        if (!grew)
+        if (!_live)
         {
+            DsStyle.Kill(ref tab.Bump);
+            DsStyle.Kill(ref tab.Roll);
+            RestBadge(tab);
+            tab.Badge.Visible = count >= 0;
             DsBottomScreen.Instance?.MarkChanged(_root, 0.1);
             return;
         }
+        if (count < 0)
+            HideBadge(tab);
+        else if (previous < 0 || !tab.Badge.Visible)
+            ShowBadge(tab);
+        else
+        {
+            var grew = count > previous;
+            RollCount(tab, previous.ToString(), grew);
+            if (grew)
+                BumpBadge(tab);
+            else
+                DipBadge(tab);
+        }
+    }
+
+    private static void RestBadge(Tab tab)
+    {
+        tab.Badge.Scale = Vector2.One;
+        tab.Badge.Modulate = Colors.White;
+        tab.Rocker.Scale = Vector2.One;
+        tab.BadgeLabel.Position = Vector2.Zero;
+        tab.BadgeLabel.Modulate = Colors.White;
+        tab.BadgeOld.Visible = false;
+    }
+
+    // NCombatCardPile.AddCard: icon and count at hover scale, easing back.
+    private static void BumpBadge(Tab tab)
+    {
         DsStyle.Kill(ref tab.Bump);
         tab.Bump = DsStyle.Animate(tab.Rocker, 0.5).SetParallel(true);
         tab.Rocker.Scale = Vector2.One * 1.25f;
         tab.Badge.Scale = Vector2.One * 1.25f;
+        tab.Badge.Modulate = Colors.White;
         tab.Bump.TweenProperty(tab.Rocker, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
         tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+    }
+
+    // The game's counter only bumps; a card leaving gets its button's
+    // pressed look instead, smaller and darker, easing back.
+    private static void DipBadge(Tab tab)
+    {
+        DsStyle.Kill(ref tab.Bump);
+        tab.Bump = DsStyle.Animate(tab.Badge, 0.5).SetParallel(true);
+        tab.Rocker.Scale = Vector2.One;
+        tab.Badge.Scale = Vector2.One * 0.85f;
+        tab.Badge.Modulate = DownColor;
+        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.Bump.TweenProperty(tab.Badge, "modulate", Colors.White, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+    }
+
+    // The old number leaves as the new one arrives: upward when the count
+    // grows (the new one flashing gold), downward when it shrinks. The game
+    // counts one card at a time, so a burst reads as a counter ticking.
+    private static void RollCount(Tab tab, string from, bool up)
+    {
+        DsStyle.Kill(ref tab.Roll);
+        var dy = up ? -RollDistance : RollDistance;
+        var old = tab.BadgeOld;
+        var now = tab.BadgeLabel;
+        old.Text = from;
+        old.Visible = true;
+        old.Position = Vector2.Zero;
+        old.Modulate = Colors.White;
+        now.Position = new Vector2(0f, -dy);
+        var arrive = up ? DsStyle.Gold : Colors.White;
+        now.Modulate = arrive with { A = 0f };
+        tab.Roll = DsStyle.Animate(tab.Badge, 0.55).SetParallel(true);
+        tab.Roll.TweenProperty(old, "position:y", dy, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(old, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(now, "position:y", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(now, "modulate", arrive, 0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        if (up)
+            tab.Roll.TweenProperty(now, "modulate", Colors.White, 0.4).SetDelay(0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.Chain().TweenCallback(Callable.From(() => old.Visible = false));
+    }
+
+    private static void ShowBadge(Tab tab)
+    {
+        DsStyle.Kill(ref tab.Bump);
+        DsStyle.Kill(ref tab.Roll);
+        RestBadge(tab);
+        tab.Badge.Visible = true;
+        tab.Badge.Scale = Vector2.Zero;
+        tab.Bump = DsStyle.Animate(tab.Badge, 0.3);
+        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+    }
+
+    private static void HideBadge(Tab tab)
+    {
+        DsStyle.Kill(ref tab.Roll);
+        if (!tab.Badge.Visible)
+            return;
+        DsStyle.Kill(ref tab.Bump);
+        tab.BadgeOld.Visible = false;
+        tab.Bump = DsStyle.Animate(tab.Badge, 0.2).SetParallel(true);
+        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One * 0.6f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.TweenProperty(tab.Badge, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.Chain().TweenCallback(Callable.From(() =>
+        {
+            if (tab.Count >= 0)
+                return;
+            tab.Badge.Visible = false;
+            RestBadge(tab);
+        }));
     }
 
     /// <summary>The map is open, so a room can be chosen: the map icon rocks until it closes.</summary>

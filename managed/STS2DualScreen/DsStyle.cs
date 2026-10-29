@@ -23,6 +23,11 @@ internal static class DsStyle
     public const string DiscardIcon = "res://images/packed/combat_ui/discard_pile.png";
     private const string HsvShader = "res://shaders/hsv.gdshader";
     private const string ClickSfx = "event:/sfx/ui/clicks/ui_click";
+    // What the game plays as it opens these screens: its map
+    // (NMapScreen.Open) and a card pile (NCardPileScreen.ShowScreen, one of
+    // its placeholder sounds, played by NDebugAudioManager).
+    private const string MapOpenSfx = "event:/sfx/ui/map/map_open";
+    private const string PileOpenSound = "map_open.mp3";
 
     private static readonly Dictionary<string, Texture2D> Icons = new();
     private static readonly HashSet<string> Logged = new();
@@ -133,9 +138,25 @@ internal static class DsStyle
 
     private static MethodInfo _sfxPlay;
     private static bool _sfxLooked;
+    private static PropertyInfo _debugAudio;
+    private static MethodInfo _debugPlay;
+    private static object _noPitchVariance;
+    private static bool _debugAudioLooked;
 
     /// <summary>The game's button click.</summary>
-    public static void Click()
+    public static void Click() => Sfx(ClickSfx);
+
+    /// <summary>The sound the game makes opening this tab's screen: the map, or a card pile.</summary>
+    public static void OpenSound(string tab)
+    {
+        if (tab == "map")
+            Sfx(MapOpenSfx);
+        else
+            DebugSound(PileOpenSound);
+    }
+
+    // A sound event, through the game's SfxCmd (its volume settings apply).
+    private static void Sfx(string path)
     {
         try
         {
@@ -146,12 +167,42 @@ internal static class DsStyle
                 _sfxPlay = sfx == null ? null : AccessTools.Method(sfx, "Play", new[] { typeof(string), typeof(float) });
                 DsLog.Info(_sfxPlay != null ? "ui sounds found" : "ui sounds not found; tabs are silent");
             }
-            _sfxPlay?.Invoke(null, new object[] { ClickSfx, 1f });
+            _sfxPlay?.Invoke(null, new object[] { path, 1f });
         }
         catch (Exception e)
         {
             _sfxPlay = null;
-            DsLog.Info($"click sound failed, tabs are silent: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Info($"ui sound failed, tabs are silent: {e.InnerException?.Message ?? e.Message}");
+        }
+    }
+
+    // One of the game's placeholder sounds (res://debug_audio), played as it
+    // plays them, through NGame's NDebugAudioManager.
+    private static void DebugSound(string name)
+    {
+        try
+        {
+            if (!_debugAudioLooked)
+            {
+                _debugAudioLooked = true;
+                var manager = AccessTools.TypeByName("MegaCrit.Sts2.Core.Audio.Debug.NDebugAudioManager");
+                _debugAudio = manager == null ? null : AccessTools.Property(manager, "Instance");
+                _debugPlay = manager == null ? null : AccessTools.Method(manager, "Play");
+                var variance = _debugPlay?.GetParameters() is { Length: 3 } parameters ? parameters[2].ParameterType : null;
+                _noPitchVariance = variance is { IsEnum: true } ? Enum.ToObject(variance, 0) : null;
+                if (_debugAudio == null || _debugPlay == null || _noPitchVariance == null)
+                {
+                    _debugPlay = null;
+                    DsLog.Info("game placeholder sounds not found; pile tabs open silently");
+                }
+            }
+            if (_debugPlay != null && _debugAudio.GetValue(null) is { } instance)
+                _debugPlay.Invoke(instance, new[] { name, 1f, _noPitchVariance });
+        }
+        catch (Exception e)
+        {
+            _debugPlay = null;
+            DsLog.Info($"placeholder sound failed, pile tabs open silently: {e.InnerException?.Message ?? e.Message}");
         }
     }
 

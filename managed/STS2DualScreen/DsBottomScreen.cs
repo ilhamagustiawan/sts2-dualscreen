@@ -89,6 +89,9 @@ internal sealed class DsBottomScreen
     // In a fight every card move redraws a pile grid while the top screen is
     // busiest; half the rate there is still smooth enough for cards moving.
     private const int CombatFps = 15;
+    // Until then a one-shot animation is playing on the pages (cards moving
+    // in a pile): those caps give way to the set rate while it runs.
+    private ulong _pageMotionUntilUsec;
     private Control _idle;
     private Control _idleArt;
     private bool _idleArtLoading;
@@ -300,7 +303,7 @@ internal sealed class DsBottomScreen
             Viewport = viewport,
             Root = root,
             Region = region,
-            Dock = new DsDock(root, tabs, Show, shape),
+            Dock = new DsDock(root, tabs, OnTabPressed, shape),
             Capture = new DsCapture(name, viewport, rd) { Enabled = false },
         };
     }
@@ -401,9 +404,16 @@ internal sealed class DsBottomScreen
     {
         var viewport = owner != null && GodotObject.IsInstanceValid(owner) && owner.IsInsideTree() ? owner.GetViewport() : null;
         if (PartOf(viewport) is { } part)
+        {
             part.Capture.MarkChanged(seconds);
+        }
         else if (viewport == _viewport || viewport == null)
+        {
             _page.MarkChanged(seconds);
+            // Loops only keep their part awake (0.1 s); anything longer is a one-shot.
+            if (seconds > 0.1)
+                _pageMotionUntilUsec = Math.Max(_pageMotionUntilUsec, Time.GetTicksUsec() + (ulong)(seconds * 1_000_000));
+        }
     }
 
     private bool Scrolling(ulong now) => _scrollDrag || _twoFinger || _fling != 0 || now < _scrollingUntilUsec;
@@ -436,9 +446,20 @@ internal sealed class DsBottomScreen
 
     public string ActiveTab => _active;
 
+    // A tab tapped (after the dock's click): a page opening sounds as the
+    // game's own screen does. Switches the game makes itself (a fight
+    // starting or ending) stay quiet; the top screen has its own sounds then.
+    private void OnTabPressed(string tab)
+    {
+        if (tab != _active && _inRun && _pages.ContainsKey(tab))
+            DsStyle.OpenSound(tab);
+        Show(tab);
+    }
+
     // The pile screens' backdrop and the card library's grid: the page fades
-    // in and a pile rises into place, its cards following one after another.
-    // The map only fades; moving it would fight its own scroll.
+    // in and a pile's cards rise into place one after another. The page
+    // itself only fades, so the cards aren't moved twice (and the map's
+    // scroll is never fought).
     private void AnimatePageIn(string previous, string tab)
     {
         DsStyle.Kill(ref _pageTween);
@@ -452,11 +473,8 @@ internal sealed class DsBottomScreen
         page.Modulate = page.Modulate with { A = 0f };
         _pageTween = DsStyle.Animate(page, 0.4).SetParallel(true);
         _pageTween.TweenProperty(page, "modulate:a", 1f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        if (tab == "map")
-            return;
-        page.Position = new Vector2(0f, 40f);
-        _pageTween.TweenProperty(page, "position:y", 0f, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        Callable.From(() => DsGameHooks.StaggerPile(tab)).CallDeferred();
+        if (tab != "map")
+            Callable.From(() => DsGameHooks.StaggerPile(tab)).CallDeferred();
     }
 
     // ── text style ─────────────────────────────────────────────────────────
@@ -652,7 +670,7 @@ internal sealed class DsBottomScreen
             var scrolling = Scrolling(now);
             var fps = scrolling ? Math.Max(_config.Fps, ScrollFps)
                 : !_inRun ? Math.Min(_config.Fps, IdleArtFps)
-                : _active == "map" || TouchRecent ? _config.Fps
+                : _active == "map" || TouchRecent || now < _pageMotionUntilUsec ? _config.Fps
                 : Math.Min(_config.Fps, DsGameHooks.InCombat ? CombatFps : PileFps);
             var defer = DeferCapture(now, scrolling);
             // Booting: one black frame, then nothing.

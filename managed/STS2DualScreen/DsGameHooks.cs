@@ -60,6 +60,7 @@ internal static class DsGameHooks
     private const string PlatformUtilType = "MegaCrit.Sts2.Core.Platform.PlatformUtil";
     private const string HoverTipSetType = "MegaCrit.Sts2.Core.Nodes.HoverTips.NHoverTipSet";
     private const string MainMenuType = "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu";
+    private const string CardHolderType = "MegaCrit.Sts2.Core.Nodes.Cards.Holders.NCardHolder";
 
     // The game's UI is sized for 1080p; on the small lower panel its cards
     // and map tools read small. These scale them up there only.
@@ -218,6 +219,14 @@ internal static class DsGameHooks
         Patch(harmony, FindType(TopBarDeckButtonType), "Initialize", postfix: nameof(DeckButtonInitializePostfix));
         Patch(harmony, FindType(TopBarDeckButtonType), "OnPileContentsChanged", postfix: nameof(DeckCountPostfix));
         Patch(harmony, _pileScreenType, "OnPileContentsChanged", prefix: nameof(PileContentsChangedPrefix));
+        var cardHolder = FindType(CardHolderType);
+        if (cardHolder != null)
+        {
+            _holderHoverTween = AccessTools.Field(cardHolder, "_hoverTween");
+            _holderHoverScale = AccessTools.Property(cardHolder, "HoverScale");
+            _holderSmallScale = AccessTools.Property(cardHolder, "SmallScale");
+        }
+        Patch(harmony, cardHolder, "DoCardHoverEffects", postfix: nameof(CardHoverPostfix));
         Patch(harmony, FindType(MainMenuType), "_Ready", postfix: nameof(MainMenuReadyPostfix));
     }
 
@@ -1460,14 +1469,46 @@ internal static class DsGameHooks
         if (_refreshingPile || DsBottomScreen.Instance is not { } screen || __instance is not CanvasItem node || !screen.IsBottom(node))
             return true;
         if (StalePiles.Add(node) && node.IsVisibleInTree())
-            node.GetTree().CreateTimer(PileRefreshDelay).Timeout += () => RefreshPile(node);
+            node.GetTree().CreateTimer(PileRefreshDelay).Timeout += () => RefreshPile(node, animate: true);
         return false;
     }
 
-    private static void RefreshPile(Node node)
+    // A visible pile animates the change, as below; a hidden one (and one
+    // brought up to date as its tab opens, which plays the entrance) just
+    // rebuilds. Either way it keeps its scroll.
+    private static void RefreshPile(Node node, bool animate = false)
+    {
+        if (!GodotObject.IsInstanceValid(node))
+        {
+            StalePiles.Remove(node);
+            return;
+        }
+        // Cards are leaving: it rebuilds, with whatever else changed, once they are gone.
+        if (!StalePiles.Contains(node) || ExitingPiles.Contains(node))
+            return;
+        var tab = TabOf(node);
+        animate = animate && tab != null && node is CanvasItem { } item && item.IsVisibleInTree();
+        if (animate && AnimateExits(tab, node))
+            return;
+        RebuildPile(node, tab, animate);
+    }
+
+    private static void RebuildPile(Node node, string tab, bool animate)
     {
         if (!StalePiles.Remove(node) || !GodotObject.IsInstanceValid(node))
             return;
+        PileSnapshot before = null;
+        try
+        {
+            var grid = tab == null ? null : PileGrid(tab);
+            before = grid == null ? null : Snapshot(grid, animate);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not note a pile's layout: {e.InnerException?.Message ?? e.Message}");
+        }
+        // Its cards are about to go back to the game's pool: at rest first.
+        SettleCards(tab);
         _refreshingPile = true;
         try
         {
@@ -1481,7 +1522,265 @@ internal static class DsGameHooks
         {
             _refreshingPile = false;
         }
+        // The grid sizes its scroll area deferred; its limits are known after that.
+        if (before != null)
+            Callable.From(() => AfterRebuild(tab, node, before)).CallDeferred();
         DsBottomScreen.Instance?.MarkChanged();
+    }
+
+    private static string TabOf(Node pileScreen)
+    {
+        foreach (var (tab, node) in PileScreens)
+        {
+            if (node == pileScreen)
+                return tab;
+        }
+        return null;
+    }
+
+    // ── pile motion ────────────────────────────────────────────────────────
+
+    // The game rebuilds a pile's whole grid on every change, and animates
+    // only the card library's. Down here a change moves like that library:
+    // cards that left drop and fade (NCardGrid.AnimateOut), then the grid is
+    // rebuilt; cards still shown slide from where they were to their new
+    // place, and new ones rise and fade in one after another
+    // (NCardGrid.AnimateIn). All of it moves the card inside its holder,
+    // never the holder, whose place is the grid's own (its scrolling moves
+    // holders and swaps the cards in them). The game pools its cards, so
+    // every one of these tweens is run to its end before the grid lets its
+    // cards go (SettleCards), and when a finger takes the pile.
+    private const float CardRise = 40f;
+    private static readonly Dictionary<string, Tween> CardTweens = new();
+    private static readonly HashSet<Node> ExitingPiles = new();
+    private static PropertyInfo _gridHolders;
+    private static Type _holderType;
+    private static PropertyInfo _holderCard, _holderModel;
+
+    private sealed class PileSnapshot
+    {
+        public float ScrollY;
+        public bool AtTop;
+        // Where each card shown was on screen, and how opaque; empty when not animating.
+        public readonly Dictionary<object, (Vector2 Position, float Alpha)> Cards = new(ReferenceEqualityComparer.Instance);
+    }
+
+    // The grid's live holders (the rows in and near view), each with its
+    // card and that card's model.
+    private static List<(Control Holder, Control Card, object Model)> Displayed(Control grid, bool inViewOnly)
+    {
+        var shown = new List<(Control, Control, object)>();
+        if (_gridHolders?.GetValue(grid) is not System.Collections.IEnumerable holders)
+            return shown;
+        var area = grid.GetGlobalRect();
+        foreach (var item in holders)
+        {
+            if (item is not Control { Visible: true } holder)
+                continue;
+            var type = holder.GetType();
+            if (type != _holderType)
+            {
+                _holderType = type;
+                _holderCard = AccessTools.Property(type, "CardNode");
+                _holderModel = AccessTools.Property(type, "CardModel");
+            }
+            if (_holderCard?.GetValue(holder) is not Control card || !GodotObject.IsInstanceValid(card))
+                continue;
+            if (inViewOnly && !card.GetGlobalRect().Intersects(area) && !holder.GetGlobalRect().Intersects(area))
+                continue;
+            shown.Add((holder, card, _holderModel?.GetValue(holder)));
+        }
+        return shown;
+    }
+
+    private static PileSnapshot Snapshot(Control grid, bool withCards)
+    {
+        if (_gridContainer.GetValue(grid) is not Control container)
+            return null;
+        var top = (float)_gridLimitTop.GetValue(grid);
+        var snapshot = new PileSnapshot { ScrollY = container.Position.Y, AtTop = Math.Abs(container.Position.Y - top) < 1f };
+        if (withCards)
+        {
+            foreach (var (_, card, model) in Displayed(grid, inViewOnly: true))
+            {
+                if (model != null)
+                    snapshot.Cards[model] = (card.GlobalPosition, card.Modulate.A);
+            }
+        }
+        return snapshot;
+    }
+
+    /// <summary>Runs this pile's card animation to its end: every card at rest in its holder.</summary>
+    private static void SettleCards(string tab)
+    {
+        if (tab == null || !CardTweens.Remove(tab, out var tween) || !GodotObject.IsInstanceValid(tween))
+            return;
+        try
+        {
+            if (tween.IsValid())
+                tween.CustomStep(1000.0);
+            tween.Kill();
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not settle a pile's cards: {e.Message}");
+        }
+    }
+
+    // One animation per pile at a time; a new one first ends the last.
+    private static Tween CardTween(string tab, Control container, double seconds)
+    {
+        SettleCards(tab);
+        var tween = DsStyle.Animate(container, seconds).SetParallel(true);
+        CardTweens[tab] = tween;
+        return tween;
+    }
+
+    // A card's move, in its own units (its holder is scaled, and the grid with it).
+    private static Vector2 ToCardUnits(Control card, Vector2 globalDelta)
+    {
+        var scale = card.GetParent() is Control parent ? parent.GetGlobalTransform().Scale : Vector2.One;
+        return new Vector2(
+            Math.Abs(scale.X) > 0.01f ? globalDelta.X / scale.X : globalDelta.X,
+            Math.Abs(scale.Y) > 0.01f ? globalDelta.Y / scale.Y : globalDelta.Y);
+    }
+
+    // Cards shown that are no longer in the pile drop and fade; the rebuild
+    // waits for them. False if none left.
+    private static bool AnimateExits(string tab, Node node)
+    {
+        var grid = PileGrid(tab);
+        if (grid == null || _gridContainer.GetValue(grid) is not Control container
+            || PileBindings.GetValueOrDefault(tab) is not { } pile
+            || AccessTools.Property(pile.GetType(), "Cards")?.GetValue(pile) is not System.Collections.IEnumerable cards)
+            return false;
+        try
+        {
+            var inPile = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            foreach (var model in cards)
+                inPile.Add(model);
+            List<Control> leaving = null;
+            foreach (var (_, card, model) in Displayed(grid, inViewOnly: true))
+            {
+                if (model != null && !inPile.Contains(model))
+                    (leaving ??= new List<Control>()).Add(card);
+            }
+            if (leaving == null)
+                return false;
+            var tween = CardTween(tab, container, 0.2);
+            foreach (var card in leaving)
+            {
+                var drop = ToCardUnits(card, new Vector2(0f, CardRise)).Y;
+                tween.TweenProperty(card, "position:y", card.Position.Y + drop, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+                tween.TweenProperty(card, "modulate:a", 0f, 0.2);
+            }
+            ExitingPiles.Add(node);
+            tween.Chain().TweenCallback(Callable.From(() =>
+            {
+                ExitingPiles.Remove(node);
+                Callable.From(() => RebuildPile(node, TabOf(node), animate: true)).CallDeferred();
+            }));
+            return true;
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not animate cards out: {e.InnerException?.Message ?? e.Message}");
+            ExitingPiles.Remove(node);
+            return false;
+        }
+    }
+
+    // After a rebuild: back to where it was scrolled, then the new layout
+    // moves in from the old one.
+    private static void AfterRebuild(string tab, Node node, PileSnapshot before)
+    {
+        if (!GodotObject.IsInstanceValid(node) || TabOf(node) != tab)
+            return;
+        var grid = PileGrid(tab);
+        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
+            return;
+        try
+        {
+            // At the top it stays at the top, which moves as rows come and go.
+            var top = (float)_gridLimitTop.GetValue(grid);
+            var bottom = (float)_gridLimitBottom.GetValue(grid);
+            var y = before.AtTop ? top : Math.Clamp(before.ScrollY, Math.Min(top, bottom), Math.Max(top, bottom));
+            SetPileScroll(grid, container, y, bottom, settle: true);
+            if (before.Cards.Count == 0 || !node.IsInsideTree() || !((CanvasItem)node).IsVisibleInTree())
+                return;
+            var shown = Displayed(grid, inViewOnly: true);
+            var arriving = 0;
+            foreach (var (_, _, model) in shown)
+            {
+                if (model == null || !before.Cards.ContainsKey(model))
+                    arriving++;
+            }
+            Tween tween = null;
+            var next = 0;
+            foreach (var (_, card, model) in shown)
+            {
+                if (model != null && before.Cards.TryGetValue(model, out var was))
+                {
+                    var offset = ToCardUnits(card, was.Position - card.GlobalPosition);
+                    if (offset.LengthSquared() < 1f && was.Alpha >= 0.99f)
+                        continue;
+                    tween ??= CardTween(tab, container, 0.6);
+                    card.Position = offset;
+                    card.Modulate = card.Modulate with { A = was.Alpha };
+                    tween.TweenProperty(card, "position", Vector2.Zero, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+                    if (was.Alpha < 0.99f)
+                        tween.TweenProperty(card, "modulate:a", 1f, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+                }
+                else
+                {
+                    tween ??= CardTween(tab, container, 0.6);
+                    RiseIn(tween, card, next++ / (double)arriving * 0.2);
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not animate a pile change: {e.InnerException?.Message ?? e.Message}");
+            SettleCards(tab);
+        }
+    }
+
+    // NCardGrid.AnimateIn, on the card: up from below as it fades in.
+    private static void RiseIn(Tween tween, Control card, double delay)
+    {
+        card.Position = new Vector2(0f, ToCardUnits(card, new Vector2(0f, CardRise)).Y);
+        card.Modulate = card.Modulate with { A = 0f };
+        tween.TweenProperty(card, "position:y", 0f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+        tween.TweenProperty(card, "modulate:a", 1f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+    }
+
+    // ── card touch ─────────────────────────────────────────────────────────
+
+    // A card hovered by a finger down here: the game snaps its holder up to
+    // hover size; here it pops there instead, so the touch is felt. Kept as
+    // the holder's own hover tween, so the game's unhover replaces it and
+    // eases back as usual. Cards on the top screen are left alone.
+    private static FieldInfo _holderHoverTween;
+    private static PropertyInfo _holderHoverScale, _holderSmallScale;
+
+    private static void CardHoverPostfix(object __instance, bool isHovered)
+    {
+        if (!isHovered || __instance is not Control holder || DsBottomScreen.Instance is not { } screen || !screen.IsBottom(holder))
+            return;
+        try
+        {
+            if (_holderHoverTween == null || _holderHoverScale?.GetValue(holder) is not Vector2 hover
+                || _holderSmallScale?.GetValue(holder) is not Vector2 small)
+                return;
+            holder.Scale = small;
+            var tween = DsStyle.Animate(holder, 0.2);
+            tween.TweenProperty(holder, "scale", hover, 0.18).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+            _holderHoverTween.SetValue(holder, tween);
+        }
+        catch (Exception e)
+        {
+            DsLog.Info($"could not animate a card touch: {e.Message}");
+        }
     }
 
     // ── hover tips ─────────────────────────────────────────────────────────
@@ -1576,6 +1875,7 @@ internal static class DsGameHooks
         StalePiles.RemoveWhere(n => !GodotObject.IsInstanceValid(n));
         foreach (var tab in tabs)
         {
+            SettleCards(tab);
             if (PileScreens.Remove(tab, out var old) && GodotObject.IsInstanceValid(old))
                 old.QueueFree();
             PileBindings.Remove(tab);
@@ -1701,6 +2001,7 @@ internal static class DsGameHooks
             _gridLimitTop = AccessTools.Property(type, "ScrollLimitTop");
             _gridLimitBottom = AccessTools.Property(type, "ScrollLimitBottom");
             _gridAllocate = AccessTools.Method(type, "AllocateCardHolders");
+            _gridHolders = AccessTools.Property(type, "CurrentlyDisplayedCardHolders");
             _scrollbarSet = null;
         }
         return _gridDragging == null || _gridTarget == null || _gridContainer == null || _gridLimitTop == null || _gridLimitBottom == null
@@ -1789,6 +2090,9 @@ internal static class DsGameHooks
             return false;
         try
         {
+            // Scrolling swaps cards between holders: nothing may be mid-move.
+            if (held)
+                SettleCards(tab);
             _gridDragging.SetValue(grid, held);
             if (_gridContainer.GetValue(grid) is Control container)
                 _gridTarget.SetValue(grid, container.Position.Y);
@@ -1816,14 +2120,10 @@ internal static class DsGameHooks
             var next = y + dy;
             if (next < low || next > high)
                 next = y + dy * OverscrollGive;
-            _gridTarget.SetValue(grid, next);
-            container.Position = container.Position with { Y = next };
-            _gridAllocate?.Invoke(grid, null);
-            if (_gridScrollbar.GetValue(grid) is Node bar && Math.Abs(bottom) > 0.01f)
-            {
-                _scrollbarSet ??= AccessTools.Method(bar.GetType(), "SetValueWithoutAnimation");
-                _scrollbarSet?.Invoke(bar, new object[] { (double)(Math.Clamp(next / bottom, 0f, 1f) * 100f) });
-            }
+            // A change landing mid-fling: its cards stop moving rather than drift onto others.
+            if (CardTweens.ContainsKey(tab))
+                SettleCards(tab);
+            SetPileScroll(grid, container, next, bottom, settle: false);
             return next >= low && next <= high;
         }
         catch (Exception e)
@@ -1833,41 +2133,54 @@ internal static class DsGameHooks
         }
     }
 
+    // Puts the grid at y, its window of holders and its scrollbar with it.
+    // The grid moves its window a row per call (once a frame as it scrolls);
+    // settle: as many calls as it takes to catch up with a jump.
+    private static void SetPileScroll(Control grid, Control container, float y, float bottom, bool settle)
+    {
+        _gridTarget.SetValue(grid, y);
+        container.Position = container.Position with { Y = y };
+        if (_gridAllocate != null)
+        {
+            for (var i = 0; i < (settle ? 64 : 1); i++)
+            {
+                var first = settle && _gridHolders?.GetValue(grid) is IEnumerable<object> holders ? holders.FirstOrDefault() : null;
+                _gridAllocate.Invoke(grid, null);
+                if (!settle || first == null || ReferenceEquals(first, (_gridHolders.GetValue(grid) as IEnumerable<object>)?.FirstOrDefault()))
+                    break;
+            }
+        }
+        if (_gridScrollbar.GetValue(grid) is Node bar && Math.Abs(bottom) > 0.01f)
+        {
+            _scrollbarSet ??= AccessTools.Method(bar.GetType(), "SetValueWithoutAnimation");
+            _scrollbarSet?.Invoke(bar, new object[] { (double)(Math.Clamp(y / bottom, 0f, 1f) * 100f) });
+        }
+    }
+
     /// <summary>
-    /// The card library's entrance, alpha only: the cards in view fade in one
-    /// after another. Their positions are the grid's, so it is never fought.
+    /// The pile's entrance as the card library's (NCardGrid.AnimateIn): the
+    /// cards in view rise and fade in one after another. Each card moves in
+    /// its holder; the holders' places are the grid's, so it is never fought.
     /// </summary>
     public static void StaggerPile(string tab)
     {
         var grid = PileGrid(tab);
-        if (grid == null || _gridContainer.GetValue(grid) is not Control container || DsBottomScreen.Instance is not { } screen)
+        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
             return;
         try
         {
-            var area = grid.GetGlobalRect();
-            var holders = new List<CanvasItem>();
-            foreach (var child in container.GetChildren())
-            {
-                if (child is Control { Visible: true } holder && holder.GetGlobalRect().Intersects(area))
-                    holders.Add(holder);
-                if (holders.Count == 40)
-                    break;
-            }
-            if (holders.Count == 0)
+            var shown = Displayed(grid, inViewOnly: true);
+            var count = Math.Min(shown.Count, 40);
+            if (count == 0)
                 return;
-            var tween = DsStyle.Animate(container, 0.6).SetParallel(true);
-            for (var i = 0; i < holders.Count; i++)
-            {
-                var holder = holders[i];
-                holder.Modulate = holder.Modulate with { A = 0f };
-                tween.TweenProperty(holder, "modulate:a", 1f, 0.4).SetDelay(i / (double)holders.Count * 0.2)
-                    .SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-            }
-            screen.MarkChanged(container, 0.6);
+            var tween = CardTween(tab, container, 0.6);
+            for (var i = 0; i < count; i++)
+                RiseIn(tween, shown[i].Card, i / (double)count * 0.2);
         }
         catch (Exception e)
         {
             DsLog.Info($"could not animate the pile in: {e.Message}");
+            SettleCards(tab);
         }
     }
 
@@ -1895,6 +2208,7 @@ internal static class DsGameHooks
         if (!PileScreens.TryGetValue(tab, out var node) || node is not Control control || !GodotObject.IsInstanceValid(control)
             || DsBottomScreen.Instance is not { } screen)
             return;
+        SettleCards(tab);
         control.Size = screen.Page(tab).Size / PileScale;
         // See EnsurePileScreen: the grid won't reflow by itself.
         if (AccessTools.Field(_pileScreenType, "_grid")?.GetValue(control) is Node grid)
@@ -1903,6 +2217,7 @@ internal static class DsGameHooks
 
     private static void ResetIfStale(string tab, object pile)
     {
+        SettleCards(tab);
         if (PileScreens.Remove(tab, out var old) && GodotObject.IsInstanceValid(old))
             old.QueueFree();
         PileBindings.Remove(tab);
