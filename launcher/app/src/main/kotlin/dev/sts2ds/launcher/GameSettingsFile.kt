@@ -144,6 +144,15 @@ class GameSettingsFile(val file: File) {
         val VSYNC_MODES = listOf("off", "on", "adaptive")
 
         /**
+         * The game's FPS cap (Engine.MaxFps; 0 is none). 60 is the Balanced
+         * preset; 0 leaves pacing to vsync and Swappy alone, without Godot's
+         * own limiter sleeping on top of it, which can miss a vsync. The game
+         * applies 0 as is (NGame.InitializeGraphicsPreferences); its own
+         * settings page, which lists 24 to 500, shows it as 60 until changed.
+         */
+        val FPS_LIMITS = listOf(60, 0, 30)
+
+        /**
          * Fills in missing performance keys. [firstTime] also applies the
          * Balanced preset and turns the warmups on over whatever is there.
          * [animWarmup] configures creature Spine animation pre-warming ("safe" or "off");

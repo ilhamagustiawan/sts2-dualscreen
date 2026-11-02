@@ -24,6 +24,16 @@ class EngineOverridesTest {
     @Test
     fun nothingToOverrideMeansNoFile() {
         assertNull(EngineOverrides.render(savePipelinesOften = false))
+        assertNull(EngineOverrides.render(savePipelinesOften = false, framePacing = EngineOverrides.PACING_STEADY))
+    }
+
+    @Test
+    fun framePacingGoesUnderDisplay() {
+        val adaptive = EngineOverrides.render(false, EngineOverrides.PACING_ADAPTIVE)!!.lines()
+        assertTrue(adaptive.indexOf("window/frame_pacing/android/swappy_mode=1") > adaptive.indexOf("[display]"))
+        val off = EngineOverrides.render(true, EngineOverrides.PACING_OFF)!!.lines()
+        assertTrue(off.indexOf("window/frame_pacing/android/enable_frame_pacing=false") > off.indexOf("[display]"))
+        assertTrue(off.indexOf("[rendering]") > off.indexOf("[display]"))
     }
 
     @Test

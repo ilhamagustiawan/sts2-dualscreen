@@ -147,6 +147,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_SAVE_PIPELINES, true)
         set(value) { prefs.edit().putBoolean(KEY_SAVE_PIPELINES, value).apply() }
 
+    /**
+     * Swappy frame pacing: EngineOverrides.PACING_STEADY (the engine's own,
+     * one frame per refresh), PACING_ADAPTIVE (may halve the rate after slow
+     * frames) or PACING_OFF (plain vsync). Steady by default, as before.
+     */
+    var framePacing: String
+        get() = prefs.getString(KEY_FRAME_PACING, EngineOverrides.PACING_STEADY) ?: EngineOverrides.PACING_STEADY
+        set(value) { prefs.edit().putString(KEY_FRAME_PACING, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -184,6 +193,7 @@ class SettingsStore(context: Context) {
         private const val KEY_GC_NURSERY = "gc_nursery"
         private const val KEY_PERF_HINT = "perf_hint"
         private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
+        private const val KEY_FRAME_PACING = "frame_pacing"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

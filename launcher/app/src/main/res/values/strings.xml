@@ -113,6 +113,14 @@
     <string name="settings_warmups_subtitle">As each room loads, plays its hit effects and visual effects once out of sight, so the first attack of a fight does not stutter. Uses more memory and a little load time.</string>
     <string name="settings_anim_warmup">Pre-warm creature animations (Experimental)</string>
     <string name="settings_anim_warmup_subtitle">Steps creature animations once as each fight loads, to smooth the first few moves. Can crash the game on some fights; if it does, it turns itself off.</string>
+    <string name="settings_fps_limit">FPS limit</string>
+    <string name="settings_fps_limit_none">None (vsync only)</string>
+    <string name="settings_fps_limit_subtitle">60 is the usual. None leaves the pace to vsync and the frame pacer, without the game\'s own limiter waiting on top, which can now and then skip a frame. Try both if fights look uneven.</string>
+    <string name="settings_frame_pacing">Frame pacing</string>
+    <string name="settings_pacing_steady">Steady (default)</string>
+    <string name="settings_pacing_adaptive">Adaptive</string>
+    <string name="settings_pacing_off">Off</string>
+    <string name="settings_frame_pacing_subtitle">Steady shows a new frame every refresh. Adaptive may drop to half rate after slow frames, to keep the pace even. Off hands frames straight to the screen. Applies on the next launch.</string>
     <string name="settings_save_pipelines">Keep compiled shaders</string>
     <string name="settings_save_pipelines_subtitle">Saves the graphics pipelines the game compiles as it goes, instead of only when it closes cleanly, which Android seldom allows. Effects then stutter only the first time ever, not every session. Vulkan only.</string>
     <string name="settings_perf_hint">CPU boost hint</string>

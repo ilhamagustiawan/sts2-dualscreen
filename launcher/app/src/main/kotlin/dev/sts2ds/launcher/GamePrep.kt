@@ -166,7 +166,12 @@ object GamePrep {
         )
         applyPerformanceSettings(context, files, settings)
         try {
-            EngineOverrides.apply(gameDir, EngineOverrides.render(settings.savePipelinesOften))
+            EngineOverrides.apply(gameDir, EngineOverrides.render(settings.savePipelinesOften, settings.framePacing))
+            LauncherLog.log(
+                "Engine overrides: frame pacing ${settings.framePacing}, " +
+                    "pipeline cache saved ${if (settings.savePipelinesOften) "every ${EngineOverrides.PIPELINE_SAVE_CHUNK_MB} MB" else "at engine default"}, " +
+                    "perf hint ${settings.perfHint}"
+            )
         } catch (e: Exception) {
             LauncherLog.log("Could not write engine overrides: ${e.message}")
         }

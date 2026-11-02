@@ -77,6 +77,16 @@
             </LinearLayout>
             <TextView style="@style/SettingsNote" android:text="@string/settings_vsync_subtitle" />
             <LinearLayout style="@style/SettingsChoiceRow">
+                <TextView style="@style/SettingsChoiceLabel" android:text="@string/settings_fps_limit" />
+                <Spinner android:id="@+id/sp_fps_limit" style="@style/SettingsChoice" />
+            </LinearLayout>
+            <TextView style="@style/SettingsNote" android:text="@string/settings_fps_limit_subtitle" />
+            <LinearLayout style="@style/SettingsChoiceRow">
+                <TextView style="@style/SettingsChoiceLabel" android:text="@string/settings_frame_pacing" />
+                <Spinner android:id="@+id/sp_frame_pacing" style="@style/SettingsChoice" />
+            </LinearLayout>
+            <TextView style="@style/SettingsNote" android:text="@string/settings_frame_pacing_subtitle" />
+            <LinearLayout style="@style/SettingsChoiceRow">
                 <TextView style="@style/SettingsChoiceLabel" android:text="@string/settings_msaa" />
                 <Spinner android:id="@+id/sp_msaa" style="@style/SettingsChoice" />
             </LinearLayout>

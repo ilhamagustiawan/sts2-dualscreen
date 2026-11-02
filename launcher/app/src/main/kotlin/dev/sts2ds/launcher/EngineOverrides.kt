@@ -25,15 +25,36 @@ object EngineOverrides {
      */
     const val PIPELINE_SAVE_CHUNK_MB = 0.25
 
+    /**
+     * Swappy, the frame pacer the engine presents through on Android, read
+     * once as the renderer starts (display/window/frame_pacing/android).
+     * [PACING_STEADY] leaves the engine default, swappy_mode 2: in 4.5.1's
+     * Vulkan driver that turns Swappy's auto swap interval OFF, so it holds
+     * one frame per refresh. [PACING_ADAPTIVE] is swappy_mode 1, auto swap
+     * interval on: after a run of slow frames Swappy may switch to every
+     * other refresh (30 FPS at 60 Hz) to keep pacing even. [PACING_OFF]
+     * presents straight to the swapchain (plain FIFO vsync).
+     */
+    const val PACING_STEADY = "steady"
+    const val PACING_ADAPTIVE = "adaptive"
+    const val PACING_OFF = "off"
+
     /** override.cfg's text for these settings, or null when nothing differs from the engine. */
-    fun render(savePipelinesOften: Boolean): String? {
-        val rendering = mutableListOf<String>()
-        if (savePipelinesOften) rendering += "rendering_device/pipeline_cache/save_chunk_size_mb=$PIPELINE_SAVE_CHUNK_MB"
-        if (rendering.isEmpty()) return null
+    fun render(savePipelinesOften: Boolean, framePacing: String = PACING_STEADY): String? {
+        val sections = linkedMapOf<String, MutableList<String>>()
+        fun put(section: String, line: String) = sections.getOrPut(section) { mutableListOf() }.add(line)
+        when (framePacing) {
+            PACING_ADAPTIVE -> put("display", "window/frame_pacing/android/swappy_mode=1")
+            PACING_OFF -> put("display", "window/frame_pacing/android/enable_frame_pacing=false")
+        }
+        if (savePipelinesOften) put("rendering", "rendering_device/pipeline_cache/save_chunk_size_mb=$PIPELINE_SAVE_CHUNK_MB")
+        if (sections.isEmpty()) return null
         return buildString {
             append(MARKER).append('\n')
-            append("\n[rendering]\n\n")
-            rendering.forEach { append(it).append('\n') }
+            for ((section, lines) in sections) {
+                append("\n[").append(section).append("]\n\n")
+                lines.forEach { append(it).append('\n') }
+            }
         }
     }
 
