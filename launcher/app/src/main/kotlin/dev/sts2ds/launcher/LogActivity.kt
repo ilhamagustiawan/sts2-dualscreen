@@ -57,6 +57,7 @@ class LogActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(buildUi())
+        Backdrop.apply(this, Backdrop.Scrim.HEAVY)
 
         // Off the main thread, and not only out of tidiness: the log is a
         // quarter of a megabyte read from a filesystem that may be busy with

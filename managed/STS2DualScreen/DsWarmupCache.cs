@@ -13,6 +13,7 @@ namespace STS2DualScreen;
 /// On repeat launches when nothing has changed, it skips the heavy tree warmup
 /// ("Rendering combat effects...") while keeping the scene asset preload
 /// ("Compiling combat effects..."), cutting startup time down to ~1 second.
+/// On a HIT that runs with no loading screen at all (see DsDeferredPreload).
 /// </summary>
 internal static class DsWarmupCache
 {

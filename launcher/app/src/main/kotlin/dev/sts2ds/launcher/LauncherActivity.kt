@@ -169,6 +169,8 @@ class LauncherActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // The game may have shot a new backdrop since onCreate.
+        Backdrop.apply(this, Backdrop.Scrim.LIGHT)
         if (settings.animWarmupCrashed) {
             settings.animWarmupCrashed = false
             Toast.makeText(this, R.string.settings_anim_warmup_crashed_notice, Toast.LENGTH_LONG).show()

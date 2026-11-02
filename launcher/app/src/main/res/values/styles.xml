@@ -5,15 +5,19 @@
         <item name="android:colorAccent">@color/accent</item>
     </style>
 
-    <!-- The game activity. Godot draws everything; the window just needs to be black. -->
+    <!--
+      The game activity. Godot draws everything once it is up; until then the
+      launcher's backdrop shows (here, then GodotApp's boot cover).
+    -->
     <style name="GodotAppMainTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowSwipeToDismiss">false</item>
         <item name="android:windowIsTranslucent">false</item>
-        <item name="android:windowBackground">#000000</item>
+        <item name="android:windowBackground">@drawable/bg_spire</item>
+        <item name="android:windowFullscreen">true</item>
     </style>
 
     <style name="GodotAppSplashTheme" parent="Theme.SplashScreen">
-        <item name="windowSplashScreenBackground">#000000</item>
+        <item name="windowSplashScreenBackground">@color/sky_top</item>
         <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
         <item name="postSplashScreenTheme">@style/GodotAppMainTheme</item>
     </style>

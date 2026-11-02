@@ -27,6 +27,7 @@ public final class DualScreenController implements DisplayManager.DisplayListene
     private DsPresentation presentation;
     private boolean started;
     private boolean destroyed;
+    private boolean coverLifted;
     private float lastTopHz;
     private int topRateChanges;
     private String refreshMode;
@@ -36,6 +37,14 @@ public final class DualScreenController implements DisplayManager.DisplayListene
         this.activity = activity;
         this.displays = (DisplayManager) activity.getSystemService(Context.DISPLAY_SERVICE);
         this.refreshMode = refreshMode;
+    }
+
+    /** Lifts the boot backdrop on the bottom screen, now and for any later presentation. Main thread. */
+    public void liftCover() {
+        coverLifted = true;
+        if (presentation != null) {
+            presentation.liftCover();
+        }
     }
 
     public void setRefreshMode(String mode) {
@@ -122,7 +131,8 @@ public final class DualScreenController implements DisplayManager.DisplayListene
         }
         if (target == null) return;
         try {
-            presentation = new DsPresentation(activity, target, refreshMode);
+            presentation = new DsPresentation(activity, target, refreshMode,
+                coverLifted ? DsPresentation.Cover.LIFTED : DsPresentation.Cover.SHOWN);
             presentation.setOnDismissListener(dialog -> {
                 if (presentation == dialog) presentation = null;
                 DsNative.nativeSetVisible(false);

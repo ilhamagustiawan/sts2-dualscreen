@@ -73,6 +73,7 @@ class LoginActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_login)
+        Backdrop.apply(this, Backdrop.Scrim.HEAVY)
 
         imgQr = findViewById(R.id.img_qr)
         progress = findViewById(R.id.login_progress)

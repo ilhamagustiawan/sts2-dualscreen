@@ -12,10 +12,15 @@ import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 
 import com.godot.game.RefreshRate;
+
+import dev.sts2ds.launcher.Backdrop;
 
 /**
  * The window on the bottom screen: one SurfaceView, filled by the game through
@@ -23,14 +28,21 @@ import com.godot.game.RefreshRate;
  */
 final class DsPresentation extends Presentation implements SurfaceHolder.Callback {
     private static final String TAG = "STS2DualScreen";
+    private static final long COVER_FADE_MS = 250;
+
+    /** Whether the boot backdrop starts over the surface. */
+    enum Cover { SHOWN, LIFTED }
 
     private SurfaceView surface;
+    private View cover;
+    private final Cover startCover;
     private boolean discardGesture;
     private String refreshMode;
 
-    DsPresentation(Context outerContext, Display display, String refreshMode) {
+    DsPresentation(Context outerContext, Display display, String refreshMode, Cover startCover) {
         super(outerContext, display);
         this.refreshMode = refreshMode;
+        this.startCover = startCover;
     }
 
     /**
@@ -100,8 +112,30 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
         surface.setOnTouchListener((view, event) -> onTouch(event, view.getWidth(), view.getHeight()));
         surface.setOnGenericMotionListener((view, event) ->
             (event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0);
-        setContentView(surface);
+        FrameLayout content = new FrameLayout(getContext());
+        content.addView(surface);
+        if (startCover == Cover.SHOWN) {
+            // Not clickable, so touches fall through to the surface.
+            cover = new View(getContext());
+            cover.setBackground(Backdrop.drawable(getContext(), Backdrop.Scrim.NONE));
+            content.addView(cover);
+        }
+        setContentView(content);
         applyRefreshRate(refreshMode);
+    }
+
+    /** Fades out the boot backdrop; the game has something of its own to show here now. */
+    void liftCover() {
+        View old = cover;
+        if (old == null) {
+            return;
+        }
+        cover = null;
+        old.animate().alpha(0f).setDuration(COVER_FADE_MS).withEndAction(() -> {
+            if (old.getParent() instanceof ViewGroup) {
+                ((ViewGroup) old.getParent()).removeView(old);
+            }
+        });
     }
 
     @Override
