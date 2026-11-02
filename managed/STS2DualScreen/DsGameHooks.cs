@@ -1426,11 +1426,13 @@ internal static class DsGameHooks
     private static readonly string[] CombatTabs = { "draw", "discard", "exhaust" };
 
     // In combat the pile tabs light up (exhaust once it has a card, as the
-    // game shows its button); out of it they dim and lose their counts.
+    // game shows its button); out of it they dim and lose their counts. The
+    // dock's idle loops calm down for the fight (DsDock.SetCombat).
     private static void SetCombatTabs(bool inCombat)
     {
         if (DsBottomScreen.Instance?.Dock is not { } dock)
             return;
+        dock.SetCombat(inCombat);
         foreach (var tab in CombatTabs)
         {
             dock.SetEnabled(tab, inCombat && tab != "exhaust");

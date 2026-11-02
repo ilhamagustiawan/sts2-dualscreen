@@ -15,7 +15,8 @@ namespace STS2DualScreen;
 // press and elastic settle, the combat piles' count bump, and, forever while
 // it applies, the top-bar map button's rocking when travel is possible and
 // the deck button's rocking while its screen is open. A gold marker slides to
-// the selected tab and breathes.
+// the selected tab and breathes. In a fight the selected tab's rock and the
+// marker's breath play once as the tab is selected, then rest.
 internal enum DockShape
 {
     Strip,
@@ -65,6 +66,7 @@ internal sealed class DsDock
         public bool Grew;        // the tick under way: up and bump, or down and dip
         public bool Enabled = true;
         public Tween State, Press, Bump, Tick, Rock;
+        public bool RockLoops;   // Rock repeats, rather than playing once
         public Callable TickStep, BadgeHidden;   // made once
     }
 
@@ -74,9 +76,11 @@ internal sealed class DsDock
     private readonly Dictionary<string, Tab> _tabs = new();
     private readonly Panel _marker;
     private Tween _markerMove, _markerBreath;
+    private bool _breathLoops;
     private string _selected;
     private bool _traveling;
     private bool _live;
+    private bool _combat;
     private readonly Callable _flushCounts;
     private bool _flushQueued;
 
@@ -570,6 +574,15 @@ internal sealed class DsDock
         RestartLoops();
     }
 
+    /// <summary>A fight is on: the selection's loops play once instead of forever.</summary>
+    public void SetCombat(bool combat)
+    {
+        if (_combat == combat)
+            return;
+        _combat = combat;
+        RestartLoops();
+    }
+
     // ── selection ──────────────────────────────────────────────────────────
 
     public void Select(string key, bool animate)
@@ -578,7 +591,7 @@ internal sealed class DsDock
         foreach (var tab in _tabs.Values)
             ApplyState(tab, animate);
         PlaceMarker(animate);
-        RestartLoops();
+        RestartLoops(selecting: true);
     }
 
     // NSettingsTab and NCardPoolFilter: selected is cream, full colour and a
@@ -682,7 +695,12 @@ internal sealed class DsDock
 
     // ── forever ────────────────────────────────────────────────────────────
 
-    private void RestartLoops()
+    // Out of a fight the selected tab rocks and the marker breathes for as
+    // long as the tab is selected. In a fight the strip is on screen
+    // throughout, and loops would keep it captured at the ambient rate all
+    // fight long (and add to the top screen's busiest frames): there both
+    // play once when a tab is selected, then rest.
+    private void RestartLoops(bool selecting = false)
     {
         if (!_live)
         {
@@ -697,40 +715,69 @@ internal sealed class DsDock
             DsStyle.Kill(ref _markerBreath);
             _marker.Modulate = Colors.White;
         }
-        else if (!DsStyle.Running(_markerBreath))
+        else if (_combat)
         {
-            _markerBreath = DsStyle.Loop(_marker);
-            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
-            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            if (selecting || _breathLoops)
+                Breathe(loop: false, settleOnly: !selecting);
+        }
+        else if (!_breathLoops || !DsStyle.Running(_markerBreath))
+        {
+            Breathe(loop: true, settleOnly: false);
         }
         foreach (var tab in _tabs.Values)
         {
             var rock = tab.Key == "map" ? _traveling : tab.Key == _selected;
-            if (rock)
-                StartRock(tab);
-            else
+            if (!rock)
+                StopRock(tab, animate: true);
+            else if (tab.Key == "map" || !_combat)
+                StartRock(tab, loop: true, restart: false);
+            else if (selecting)
+                StartRock(tab, loop: false, restart: true);
+            else if (tab.RockLoops)
                 StopRock(tab, animate: true);
         }
     }
 
-    private static void StartRock(Tab tab)
+    // settleOnly: back to full, from a loop cut short by a fight.
+    private void Breathe(bool loop, bool settleOnly)
     {
-        if (DsStyle.Running(tab.Rock))
+        DsStyle.Kill(ref _markerBreath);
+        _breathLoops = loop;
+        if (settleOnly)
+        {
+            _markerBreath = DsStyle.Animate(_marker, 0.4);
+            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 0.4).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Sine);
+            return;
+        }
+        _markerBreath = loop ? DsStyle.Loop(_marker) : DsStyle.Animate(_marker, 2.4);
+        _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+        _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+    }
+
+    private static void StartRock(Tab tab, bool loop, bool restart)
+    {
+        if (!restart && DsStyle.Running(tab.Rock) && tab.RockLoops == loop)
             return;
         DsStyle.Kill(ref tab.Rock);
+        tab.RockLoops = loop;
         var rocker = tab.Rocker;
+        // One deck-style cycle is a quarter turn of 4t: pi/2 s.
+        tab.Rock = loop ? DsStyle.Loop(rocker) : DsStyle.Animate(rocker, Mathf.Pi / 2f);
         if (tab.Key == "map")
         {
             // NTopBarMapButton.StartOscillation.
-            tab.Rock = DsStyle.Loop(rocker);
             tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, -0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
             tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
         }
         else
         {
-            // NTopBarDeckButton while its screen is open: 0.12 * sin(4t).
-            tab.Rock = DsStyle.Loop(rocker);
-            tab.Rock.TweenMethod(Callable.From<float>(t => rocker.Rotation = 0.12f * Mathf.Sin(t)), 0f, Mathf.Tau, Mathf.Tau / 4f);
+            // NTopBarDeckButton while its screen is open: 0.12 * sin(4t). Its
+            // quarter, half and quarter swings are exactly the sine curves
+            // below, so the engine runs it with no managed code per frame.
+            var quarter = Mathf.Pi / 8f;
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0.12f, quarter).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, -0.12f, 2 * quarter).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0f, quarter).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Sine);
         }
     }
 
@@ -740,7 +787,8 @@ internal sealed class DsDock
         if (tab.Rock == null)
             return;
         DsStyle.Kill(ref tab.Rock);
-        if (!animate)
+        tab.RockLoops = false;
+        if (!animate || Math.Abs(tab.Rocker.Rotation) < 0.001f)
         {
             tab.Rocker.Rotation = 0;
             return;
@@ -797,6 +845,12 @@ internal sealed class DsDockSet
     {
         foreach (var dock in _docks)
             dock.SetTraveling(traveling);
+    }
+
+    public void SetCombat(bool combat)
+    {
+        foreach (var dock in _docks)
+            dock.SetCombat(combat);
     }
 
     public void Select(string key, bool animate)

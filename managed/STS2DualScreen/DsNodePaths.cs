@@ -22,10 +22,6 @@ internal static class DsNodePaths
 internal enum DsCurve : byte
 {
     Linear,
-    SineIn,
-    SineOut,
-    SineInOut,
-    CubicIn,
     CubicOut,
     ExpoOut,
     BackOut,
@@ -41,14 +37,6 @@ internal static class DsEase
     {
         switch (curve)
         {
-            case DsCurve.SineIn:
-                return 1f - MathF.Cos(x * MathF.PI / 2f);
-            case DsCurve.SineOut:
-                return MathF.Sin(x * MathF.PI / 2f);
-            case DsCurve.SineInOut:
-                return -0.5f * (MathF.Cos(MathF.PI * x) - 1f);
-            case DsCurve.CubicIn:
-                return x * x * x;
             case DsCurve.CubicOut:
             {
                 var t = x - 1f;
