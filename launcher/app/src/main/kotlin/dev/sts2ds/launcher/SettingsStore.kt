@@ -156,6 +156,28 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_FRAME_PACING, EngineOverrides.PACING_STEADY) ?: EngineOverrides.PACING_STEADY
         set(value) { prefs.edit().putString(KEY_FRAME_PACING, value).apply() }
 
+    /**
+     * The lower screen's capture switches, written into dualscreen.json (a
+     * key in files/dualscreen_overrides.json still wins). All on by default,
+     * as in the game side's DsConfig; each is here to rule it out on device.
+     *
+     * [presentThread]: libsts2ds compares, composes and posts frames on its
+     * own thread, not in the game's frame.
+     */
+    var presentThread: Boolean
+        get() = prefs.getBoolean(KEY_PRESENT_THREAD, true)
+        set(value) { prefs.edit().putBoolean(KEY_PRESENT_THREAD, value).apply() }
+
+    /** At most one lower-screen part renders, and one is copied out, per game frame. */
+    var staggerCaptures: Boolean
+        get() = prefs.getBoolean(KEY_STAGGER_CAPTURES, true)
+        set(value) { prefs.edit().putBoolean(KEY_STAGGER_CAPTURES, value).apply() }
+
+    /** Lower-screen pages not shown don't process (the map's pulsing rooms, the piles' tweens). */
+    var pauseHiddenPages: Boolean
+        get() = prefs.getBoolean(KEY_PAUSE_HIDDEN_PAGES, true)
+        set(value) { prefs.edit().putBoolean(KEY_PAUSE_HIDDEN_PAGES, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -194,6 +216,9 @@ class SettingsStore(context: Context) {
         private const val KEY_PERF_HINT = "perf_hint"
         private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
         private const val KEY_FRAME_PACING = "frame_pacing"
+        private const val KEY_PRESENT_THREAD = "present_thread"
+        private const val KEY_STAGGER_CAPTURES = "stagger_captures"
+        private const val KEY_PAUSE_HIDDEN_PAGES = "pause_hidden_pages"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

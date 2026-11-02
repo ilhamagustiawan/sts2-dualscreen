@@ -162,6 +162,7 @@ object GamePrep {
                 .put("build_time_ms", maxOf(pck.lastModified(), gameDll.lastModified()))
                 .put("perf_hint", settings.perfHint)
                 .put("compat", "${compat.packId}/${compat.targetId}")
+                .let { putCaptureSwitches(it, settings.presentThread, settings.staggerCaptures, settings.pauseHiddenPages) }
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
@@ -457,6 +458,15 @@ object GamePrep {
      * "sgen (concurrent by default)", so major=marksweep-conc only says
      * explicitly what it already does.
      */
+    /**
+     * The lower screen's capture switches, under the keys DsConfig reads
+     * (dualscreen_overrides.json, laid over this file, still wins).
+     */
+    fun putCaptureSwitches(json: JSONObject, presentThread: Boolean, stagger: Boolean, pauseHidden: Boolean): JSONObject =
+        json.put("present_thread", presentThread)
+            .put("stagger_captures", stagger)
+            .put("pause_hidden_pages", pauseHidden)
+
     fun gcParams(nursery: String): String? = when (nursery) {
         SettingsStore.GC_16M -> "nursery-size=16m,major=marksweep-conc"
         SettingsStore.GC_32M -> "nursery-size=32m,major=marksweep-conc"

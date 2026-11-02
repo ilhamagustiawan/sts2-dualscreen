@@ -123,6 +123,12 @@
             <TextView style="@style/SettingsSection" android:text="@string/settings_section_lower_more" />
             <Switch android:id="@+id/sw_dual_screen_60" style="@style/SettingsSwitch" android:text="@string/settings_dual_screen_60" />
             <TextView style="@style/SettingsNote" android:text="@string/settings_dual_screen_60_subtitle" />
+            <Switch android:id="@+id/sw_present_thread" style="@style/SettingsSwitch" android:text="@string/settings_present_thread" />
+            <TextView style="@style/SettingsNote" android:text="@string/settings_present_thread_subtitle" />
+            <Switch android:id="@+id/sw_stagger_captures" style="@style/SettingsSwitch" android:text="@string/settings_stagger_captures" />
+            <TextView style="@style/SettingsNote" android:text="@string/settings_stagger_captures_subtitle" />
+            <Switch android:id="@+id/sw_pause_hidden_pages" style="@style/SettingsSwitch" android:text="@string/settings_pause_hidden_pages" />
+            <TextView style="@style/SettingsNote" android:text="@string/settings_pause_hidden_pages_subtitle" />
 
             <TextView style="@style/SettingsSection" android:text="@string/settings_section_troubleshooting" />
             <Button

@@ -40,6 +40,19 @@ class SettingsActivity : Activity() {
             settings.dualScreenFps = if (it) 60 else 30
             LauncherLog.log("Settings: lower screen ${settings.dualScreenFps} FPS")
         }
+        // Into dualscreen.json (GamePrep), for trying each off on device.
+        bind(R.id.sw_present_thread, settings.presentThread) {
+            settings.presentThread = it
+            LauncherLog.log("Settings: lower screen present thread → $it")
+        }
+        bind(R.id.sw_stagger_captures, settings.staggerCaptures) {
+            settings.staggerCaptures = it
+            LauncherLog.log("Settings: lower screen staggered captures → $it")
+        }
+        bind(R.id.sw_pause_hidden_pages, settings.pauseHiddenPages) {
+            settings.pauseHiddenPages = it
+            LauncherLog.log("Settings: lower screen pause hidden pages → $it")
+        }
         // One switch for both directions; they were rarely wanted apart.
         bind(R.id.sw_cloud_sync, settings.autoPull && settings.autoPush) {
             settings.autoPull = it
