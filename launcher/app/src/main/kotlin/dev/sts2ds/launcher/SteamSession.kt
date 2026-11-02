@@ -112,8 +112,35 @@ class SteamSession : Closeable {
     /**
      * Connects to a CM and blocks until ConnectedCallback fires.
      * Throws on disconnect or timeout. Safe to call once per session.
+     *
+     * Most CMs answer in well under a second, but now and then the one
+     * picked takes 15 s or more. So each try gets [attemptSeconds], and a
+     * try that runs out (or drops) is abandoned for a fresh connect(),
+     * which picks another server, until [timeoutSeconds] is spent.
      */
-    fun connectAndWait(timeoutSeconds: Long = 20) {
+    fun connectAndWait(timeoutSeconds: Long = 20, attemptSeconds: Long = 5) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+        var attempt = 1
+        while (true) {
+            val leftMs = TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime())
+            if (leftMs <= 0) throw RuntimeException("timeout waiting for ConnectedCallback")
+            val waitMs = minOf(leftMs, TimeUnit.SECONDS.toMillis(attemptSeconds))
+            when (connectOnce(attempt, waitMs)) {
+                ConnectTry.CONNECTED -> return
+                ConnectTry.TIMED_OUT -> LauncherLog.log("Steam CM slow to answer after ${waitMs} ms; trying another")
+                ConnectTry.DROPPED -> try { Thread.sleep(minOf(500L, leftMs)) } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw RuntimeException("connect interrupted")
+                }
+            }
+            try { client.disconnect() } catch (_: Throwable) { }
+            attempt++
+        }
+    }
+
+    private enum class ConnectTry { CONNECTED, TIMED_OUT, DROPPED }
+
+    private fun connectOnce(attempt: Int, waitMs: Long): ConnectTry {
         val connected = CountDownLatch(1)
         val gotConnect = AtomicBoolean(false)
 
@@ -129,13 +156,12 @@ class SteamSession : Closeable {
         }
 
         try {
-            LauncherLog.log("Connecting to Steam CM…")
+            LauncherLog.log(if (attempt == 1) "Connecting to Steam CM…" else "Connecting to Steam CM (attempt $attempt)…")
             client.connect()
-            if (!connected.await(timeoutSeconds, TimeUnit.SECONDS))
-                throw RuntimeException("timeout waiting for ConnectedCallback")
-            if (!gotConnect.get())
-                throw RuntimeException("disconnected before connect")
+            if (!connected.await(waitMs, TimeUnit.MILLISECONDS)) return ConnectTry.TIMED_OUT
+            if (!gotConnect.get()) return ConnectTry.DROPPED
             LauncherLog.log("Connected to Steam CM")
+            return ConnectTry.CONNECTED
         } finally {
             onConnect.close()
             onDisconnect.close()

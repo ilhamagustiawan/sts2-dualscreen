@@ -2,9 +2,12 @@ package com.godot.game;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
 
 import androidx.core.splashscreen.SplashScreen;
 
@@ -17,7 +20,9 @@ import java.util.List;
 
 import org.json.JSONObject;
 
+import dev.sts2ds.R;
 import dev.sts2ds.dualscreen.DualScreenController;
+import dev.sts2ds.launcher.Backdrop;
 import dev.sts2ds.launcher.GamePrep;
 import dev.sts2ds.launcher.GameSettingsFile;
 import dev.sts2ds.launcher.LauncherActivity;
@@ -38,6 +43,8 @@ import dev.sts2ds.launcher.SettingsStore;
  */
 public class GodotApp extends GodotActivity {
     private static final String TAG = "GameActivity";
+    private static final long BOOT_COVER_TIMEOUT_MS = 60_000;
+    private static final long BOOT_COVER_FADE_MS = 250;
     private static volatile GodotApp current;
 
     static {
@@ -50,6 +57,7 @@ public class GodotApp extends GodotActivity {
     }
 
     private DualScreenController dualScreen;
+    private View bootCover;
     private GamePrep.Prepared prepared;
     private String refreshRate = RefreshRate.SYSTEM;
     private final Runnable applyRefreshRate = () -> RefreshRate.apply(this, refreshRate);
@@ -83,10 +91,50 @@ public class GodotApp extends GodotActivity {
         super.onCreate(savedInstanceState);
         current = this;
         refreshRate = prepared.getRefreshRate();
+        showBootCover();
         if (prepared.getDualScreen()) {
             dualScreen = new DualScreenController(this, refreshRate);
             dualScreen.onCreate();
         }
+    }
+
+    // Godot draws nothing for its first several seconds; this covers that with
+    // the launcher's backdrop until the mod says the game has drawn (see
+    // liftBootCoverFromGame), or the timeout, whichever comes first.
+    private void showBootCover() {
+        bootCover = getLayoutInflater().inflate(R.layout.boot_cover, null);
+        bootCover.setBackground(Backdrop.drawable(this, Backdrop.Scrim.LIGHT));
+
+        // The game's painted logo replaces the plain title once it exists.
+        Bitmap logo = Backdrop.logo(this);
+        if (logo != null) {
+            ImageView image = bootCover.findViewById(R.id.boot_logo);
+            image.setImageBitmap(logo);
+            image.setVisibility(View.VISIBLE);
+            bootCover.findViewById(R.id.boot_title).setVisibility(View.GONE);
+        }
+        addContentView(bootCover, new ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        bootCover.postDelayed(() -> {
+            liftBootCover("timeout");
+            if (dualScreen != null) {
+                dualScreen.liftCover();
+            }
+        }, BOOT_COVER_TIMEOUT_MS);
+    }
+
+    private void liftBootCover(String why) {
+        View cover = bootCover;
+        if (cover == null) {
+            return;
+        }
+        bootCover = null;
+        Log.i(TAG, "Boot cover lifted (" + why + ")");
+        cover.animate().alpha(0f).setDuration(BOOT_COVER_FADE_MS).withEndAction(() -> {
+            if (cover.getParent() instanceof ViewGroup) {
+                ((ViewGroup) cover.getParent()).removeView(cover);
+            }
+        });
     }
 
     @Override
@@ -156,6 +204,32 @@ public class GodotApp extends GodotActivity {
         super.onDestroy();
     }
 
+    // ── Called from the dual-screen mod (JavaClassWrapper) ─────────────────
+
+    /** The main menu has drawn on the top screen. */
+    public static boolean liftBootCoverFromGame() {
+        GodotApp activity = current;
+        if (activity == null) {
+            return false;
+        }
+        activity.runOnUiThread(() -> activity.liftBootCover("main menu"));
+        return true;
+    }
+
+    /** The bottom screen has its own picture now (menu art or a run). */
+    public static boolean liftBottomCoverFromGame() {
+        GodotApp activity = current;
+        if (activity == null) {
+            return false;
+        }
+        activity.runOnUiThread(() -> {
+            if (activity.dualScreen != null) {
+                activity.dualScreen.liftCover();
+            }
+        });
+        return true;
+    }
+
     // ── Called from the compatibility pack (JavaClassWrapper) ──────────────
 
     /** The activity is locked landscape; nothing to apply. */
@@ -180,6 +254,8 @@ public class GodotApp extends GodotActivity {
         });
     }
 
+    // ── Called from the compatibility pack (JavaClassWrapper) ──────────────
+
     public static boolean launchGameSettingsFromGame() {
         Activity activity = current;
         if (activity == null) return false;
@@ -187,12 +263,16 @@ public class GodotApp extends GodotActivity {
         return true;
     }
 
+    /**
+     * The compat pack's replacement for the game's Quit. Despite the name, it
+     * goes back to the launcher, which then uploads the saves (auto-push).
+     */
     public static boolean restartToSettingsFromGame() {
         Activity activity = current;
         if (activity == null) return false;
         activity.runOnUiThread(() -> {
-            activity.startActivity(new Intent(activity, SettingsActivity.class)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK));
+            activity.startActivity(new Intent(activity, LauncherActivity.class)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
             activity.finish();
             // Godot cannot be restarted inside one process.
             android.os.Process.killProcess(android.os.Process.myPid());

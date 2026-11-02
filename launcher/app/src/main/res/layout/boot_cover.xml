@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Over the game while Godot boots, so Play leads to the launcher's own dusk
+  rather than a black screen. GodotApp adds it; the mod lifts it once the game
+  has drawn something of its own. Never clickable or focusable: touches and
+  keys go straight through to the game underneath.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_spire"
+    android:clickable="false"
+    android:focusable="false"
+    android:importantForAccessibility="noHideDescendants">
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center_horizontal"
+        android:orientation="vertical">
+
+        <!-- The game's own logo, once the mod has shot it (Backdrop.logo); the plain title until then. -->
+        <ImageView
+            android:id="@+id/boot_logo"
+            android:layout_width="wrap_content"
+            android:layout_height="190dp"
+            android:adjustViewBounds="true"
+            android:contentDescription="@null"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/boot_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="serif"
+                android:shadowColor="@color/title_shadow"
+                android:shadowDx="2"
+                android:shadowDy="3"
+                android:shadowRadius="2"
+                android:text="@string/launcher_title_words"
+                android:textColor="@color/title_gold"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:fontFamily="serif"
+                android:shadowColor="#CC0B2A30"
+                android:shadowDx="2"
+                android:shadowDy="3"
+                android:shadowRadius="2"
+                android:text="@string/launcher_title_numeral"
+                android:textColor="@color/teal"
+                android:textSize="40sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <dev.sts2ds.launcher.LoadingBar
+            android:layout_width="480dp"
+            android:layout_height="14dp"
+            android:layout_marginTop="24dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="serif"
+            android:shadowColor="#E6000000"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:text="@string/boot_cover_loading"
+            android:textColor="@color/text_muted"
+            android:textSize="16sp"
+            android:textStyle="italic" />
+    </LinearLayout>
+</FrameLayout>

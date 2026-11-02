@@ -77,13 +77,15 @@ internal sealed class DsBottomScreen
     private int _surfaceW = 1240, _surfaceH = 1080;
     private int _pagePx = 1080;
 
-    // The main menu's backdrop scene (Spine art, particles, the logo), drawn
-    // for 1920x1080 and scaled to cover the canvas. Loaded on a thread while
+    // The main menu's backdrop scene (Spine art, particles; its logo hidden),
+    // drawn for 1920x1080 and scaled to cover the canvas. Loaded on a thread while
     // outside a run and freed when one starts, so its textures don't stay
     // resident during play. It keeps playing, rendered at half resolution
     // and captured at the ambient rate.
     private const string IdleArtScene = "res://scenes/backgrounds/main_menu_bg.tscn";
     private static readonly Vector2 IdleArtSize = new(1920, 1080);
+    // The spire and its island, as a fraction of the art's width.
+    private const float IdleArtFocusX = 0.81f;
     private const int IdleArtFps = 24;
     private const int PileFps = 30;
     // In a fight every card move redraws a pile grid while the top screen is
@@ -556,6 +558,7 @@ internal sealed class DsBottomScreen
                 {
                     _idleArtFailed = true;
                     DsLog.Info($"menu art not available ({IdleArtScene}); lower screen stays black outside a run");
+                    DsBootCover.LiftBottom();
                     return;
                 }
                 _idleArtLoading = true;
@@ -569,9 +572,15 @@ internal sealed class DsBottomScreen
             {
                 _idleArtFailed = true;
                 DsLog.Info($"menu art failed to load ({status})");
+                DsBootCover.LiftBottom();
                 return;
             }
             var art = scene.Instantiate<Control>();
+            // The title belongs on the top screen; the game only fades it, never shows it.
+            if (art.GetNodeOrNull<CanvasItem>("BgContainer/Control/Logo") is { } logo)
+                logo.Visible = false;
+            else
+                DsLog.Info("menu art: no logo node to hide");
             var holder = new Control { Name = "MenuArt", MouseFilter = Control.MouseFilterEnum.Ignore, Size = IdleArtSize };
             holder.AddChild(art);
             art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -582,6 +591,7 @@ internal sealed class DsBottomScreen
             holder.Modulate = holder.Modulate with { A = 0f };
             var fade = DsStyle.Animate(holder, 0.6);
             fade.TweenProperty(holder, "modulate:a", 1f, 0.6).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+            fade.Finished += DsBootCover.LiftBottom;
             DsLog.Info("menu art shown on the lower screen");
         }
         catch (Exception e)
@@ -589,18 +599,22 @@ internal sealed class DsBottomScreen
             _idleArtFailed = true;
             _idleArtLoading = false;
             DsLog.Info($"menu art failed: {e.Message}");
+            DsBootCover.LiftBottom();
         }
     }
 
-    // Cover the canvas, centred: the art's middle is what matters.
+    // Cover the canvas, with the spire as near the middle as the art's edges
+    // allow: centring the art itself crops the island off the right.
     private void LayoutIdleArt()
     {
         if (_idleArt == null || !GodotObject.IsInstanceValid(_idleArt))
             return;
         var canvas = CanvasSize;
         var scale = Math.Max(canvas.X / IdleArtSize.X, canvas.Y / IdleArtSize.Y);
+        var size = IdleArtSize * scale;
+        var x = Math.Clamp(canvas.X / 2f - IdleArtFocusX * size.X, canvas.X - size.X, 0f);
         _idleArt.Scale = new Vector2(scale, scale);
-        _idleArt.Position = (canvas - IdleArtSize * scale) / 2f;
+        _idleArt.Position = new Vector2(x, (canvas.Y - size.Y) / 2f);
     }
 
     private void FreeIdleArt()
@@ -696,6 +710,7 @@ internal sealed class DsBottomScreen
         catch (Exception e)
         {
             DsLog.Info($"frame failed, bottom screen stopped: {e}");
+            DsBootCover.LiftBottom();
             _tree.ProcessFrame -= OnProcessFrame;
         }
     }
@@ -783,6 +798,7 @@ internal sealed class DsBottomScreen
         }
         _runTween = DsStyle.Animate(_root, 0.5).SetParallel(true);
         _runTween.TweenProperty(_root, "modulate:a", 1f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        DsBootCover.LiftBottom();
         DsGameHooks.OnSurfaceReady();
     }
 

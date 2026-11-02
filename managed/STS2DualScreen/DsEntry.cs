@@ -24,13 +24,17 @@ public static class DsEntry
         // run on single- and dual-screen configs alike.
         DsStartup.Apply(Harmony);
         DsWarmupCache.Apply(Harmony);
+        DsDeferredPreload.Apply(Harmony);
         DsStartupLoadingScreenStyle.Apply(Harmony);
         DsAnimWarmup.Apply(Harmony);
         DsShakeGuard.Apply(Harmony);
+        DsBootCover.Apply(Harmony);
+        DsBackdrop.Apply(Harmony);
 
         if (!Config.Enabled)
         {
             DsLog.Info("bottom screen disabled in settings; startup patches active");
+            DsBootCover.LiftBottom();
             return;
         }
 
@@ -57,6 +61,7 @@ public static class DsEntry
         catch (Exception e)
         {
             DsLog.Info($"bottom screen failed: {e}");
+            DsBootCover.LiftBottom();
         }
     }
 }

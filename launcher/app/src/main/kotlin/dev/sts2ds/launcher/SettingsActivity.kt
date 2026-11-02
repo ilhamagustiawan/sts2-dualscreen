@@ -29,6 +29,7 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
+        Backdrop.apply(this, Backdrop.Scrim.HEAVY)
         settings = SettingsStore(this)
 
         bind(R.id.sw_dual_screen, settings.dualScreen) {

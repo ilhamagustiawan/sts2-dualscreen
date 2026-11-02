@@ -37,8 +37,17 @@ internal static class DsStartup
     private static ulong _warmStartUsec;
     private static int _warmed;
 
+    private static readonly TaskCompletionSource CommonDone = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     /// <summary>The game's Common preload has finished (or can't be watched).</summary>
-    public static bool CommonPreloaded { get; private set; }
+    public static bool CommonPreloaded
+    {
+        get => CommonDone.Task.IsCompleted;
+        private set { if (value) CommonDone.TrySetResult(); }
+    }
+
+    /// <summary>Completes with <see cref="CommonPreloaded"/>.</summary>
+    public static Task CommonPreloadTask => CommonDone.Task;
 
     public static void Apply(Harmony harmony)
     {

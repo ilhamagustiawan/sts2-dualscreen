@@ -8,6 +8,7 @@
     <string name="launcher_title_words">Slay the Spire</string>
     <string name="launcher_title_numeral">II</string>
     <string name="launcher_subtitle">Dual Screen · the map and your piles below</string>
+    <string name="boot_cover_loading">Loading…</string>
     <string name="launcher_status_idle">Ready.</string>
     <string name="launcher_status_need_login">Sign in to Steam to download your copy of the game.</string>
     <string name="launcher_status_need_download">Signed in as %1$s. Download the game to continue.</string>
