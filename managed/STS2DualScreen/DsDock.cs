@@ -444,8 +444,8 @@ internal sealed class DsDock
         tab.Rocker.Scale = Vector2.One * 1.25f;
         tab.Badge.Scale = Vector2.One * 1.25f;
         tab.Badge.Modulate = Colors.White;
-        tab.Bump.TweenProperty(tab.Rocker, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.Bump.TweenProperty(tab.Rocker, DsNodePaths.Scale, Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
     }
 
     // The game's counter only bumps; a card leaving gets its button's
@@ -457,8 +457,8 @@ internal sealed class DsDock
         tab.Rocker.Scale = Vector2.One;
         tab.Badge.Scale = Vector2.One * 0.85f;
         tab.Badge.Modulate = DownColor;
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.Bump.TweenProperty(tab.Badge, "modulate", Colors.White, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Modulate, Colors.White, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
     }
 
     // The old number leaves as the new one arrives: upward when the count
@@ -478,12 +478,12 @@ internal sealed class DsDock
         var arrive = up ? DsStyle.Gold : Colors.White;
         now.Modulate = arrive with { A = 0f };
         tab.Roll = DsStyle.Animate(tab.Badge, 0.55).SetParallel(true);
-        tab.Roll.TweenProperty(old, "position:y", dy, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(old, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(now, "position:y", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(now, "modulate", arrive, 0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(old, DsNodePaths.PositionY, dy, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(old, DsNodePaths.ModulateA, 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(now, DsNodePaths.PositionY, 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Roll.TweenProperty(now, DsNodePaths.Modulate, arrive, 0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
         if (up)
-            tab.Roll.TweenProperty(now, "modulate", Colors.White, 0.4).SetDelay(0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+            tab.Roll.TweenProperty(now, DsNodePaths.Modulate, Colors.White, 0.4).SetDelay(0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
         tab.Roll.Chain().TweenCallback(Callable.From(() => old.Visible = false));
     }
 
@@ -495,7 +495,7 @@ internal sealed class DsDock
         tab.Badge.Visible = true;
         tab.Badge.Scale = Vector2.Zero;
         tab.Bump = DsStyle.Animate(tab.Badge, 0.3);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
     }
 
     private static void HideBadge(Tab tab)
@@ -506,8 +506,8 @@ internal sealed class DsDock
         DsStyle.Kill(ref tab.Bump);
         tab.BadgeOld.Visible = false;
         tab.Bump = DsStyle.Animate(tab.Badge, 0.2).SetParallel(true);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One * 0.6f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
-        tab.Bump.TweenProperty(tab.Badge, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One * 0.6f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.ModulateA, 0f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
         tab.Bump.Chain().TweenCallback(Callable.From(() =>
         {
             if (tab.Count >= 0)
@@ -563,16 +563,16 @@ internal sealed class DsDock
         }
         tab.State = DsStyle.Animate(tab.Holder, 0.5).SetParallel(true);
         if (selected)
-            tab.State.TweenProperty(tab.Holder, "scale", scale, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+            tab.State.TweenProperty(tab.Holder, DsNodePaths.Scale, scale, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
         else
-            tab.State.TweenProperty(tab.Holder, "scale", scale, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.State.TweenProperty(tab.Label, "modulate", color, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.State.TweenProperty(tab.Button, "modulate", modulate, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.State.TweenProperty(tab.Icon, "modulate", iconModulate, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Holder, DsNodePaths.Scale, scale, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.State.TweenProperty(tab.Label, DsNodePaths.Modulate, color, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.State.TweenProperty(tab.Button, DsNodePaths.Modulate, modulate, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.State.TweenProperty(tab.Icon, DsNodePaths.Modulate, iconModulate, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
         if (tab.Hsv != null)
         {
-            tab.State.TweenProperty(tab.Hsv, "shader_parameter/s", s, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-            tab.State.TweenProperty(tab.Hsv, "shader_parameter/v", v, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Hsv, DsNodePaths.ShaderS, s, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Hsv, DsNodePaths.ShaderV, v, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
         }
     }
 
@@ -582,18 +582,18 @@ internal sealed class DsDock
     {
         DsStyle.Kill(ref tab.Press);
         tab.Press = DsStyle.Animate(tab.Holder, 0.25).SetParallel(true);
-        tab.Press.TweenProperty(tab.Holder, "rotation", Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Press.TweenProperty(tab.Label, "modulate", DsStyle.Gold, 0.05);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Press.TweenProperty(tab.Label, DsNodePaths.Modulate, DsStyle.Gold, 0.05);
         if (tab.Hsv != null)
-            tab.Press.TweenProperty(tab.Hsv, "shader_parameter/v", 0.4f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+            tab.Press.TweenProperty(tab.Hsv, DsNodePaths.ShaderV, 0.4f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
     }
 
     private void OnUp(Tab tab)
     {
         DsStyle.Kill(ref tab.Press);
         tab.Press = DsStyle.Animate(tab.Holder, 1.25);
-        tab.Press.TweenProperty(tab.Holder, "rotation", -Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        tab.Press.TweenProperty(tab.Holder, "rotation", 0f, 1.0).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Elastic);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, -Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, 0f, 1.0).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Elastic);
         // Back to its state's colour and brightness (Select may have just changed it).
         ApplyState(tab, animate: true);
     }
@@ -632,8 +632,8 @@ internal sealed class DsDock
             return;
         }
         _markerMove = DsStyle.Animate(_marker, 0.3).SetParallel(true);
-        _markerMove.TweenProperty(_marker, "position", position, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        _markerMove.TweenProperty(_marker, "size", size, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        _markerMove.TweenProperty(_marker, DsNodePaths.Position, position, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        _markerMove.TweenProperty(_marker, DsNodePaths.Size, size, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
     }
 
     // ── forever ────────────────────────────────────────────────────────────
@@ -656,8 +656,8 @@ internal sealed class DsDock
         else if (!DsStyle.Running(_markerBreath))
         {
             _markerBreath = DsStyle.Loop(_marker);
-            _markerBreath.TweenProperty(_marker, "modulate:a", 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
-            _markerBreath.TweenProperty(_marker, "modulate:a", 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
         }
         foreach (var tab in _tabs.Values)
         {
@@ -679,8 +679,8 @@ internal sealed class DsDock
         {
             // NTopBarMapButton.StartOscillation.
             tab.Rock = DsStyle.Loop(rocker);
-            tab.Rock.TweenProperty(rocker, "rotation", -0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
-            tab.Rock.TweenProperty(rocker, "rotation", 0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, -0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
         }
         else
         {
@@ -702,7 +702,7 @@ internal sealed class DsDock
             return;
         }
         var settle = DsStyle.Animate(tab.Rocker, 0.5);
-        settle.TweenProperty(tab.Rocker, "rotation", 0f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Spring);
+        settle.TweenProperty(tab.Rocker, DsNodePaths.Rotation, 0f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Spring);
     }
 
     private static GradientTexture2D Gradient(Color top, Color bottom) =>
