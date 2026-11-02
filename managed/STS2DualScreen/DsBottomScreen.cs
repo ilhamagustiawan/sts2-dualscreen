@@ -266,6 +266,7 @@ internal sealed class DsBottomScreen
         _viewport.AddChild(_hoverLayer);
 
         _createdUsec = Time.GetTicksUsec();
+        DsCapture.Stagger = config.StaggerCaptures;
         _page = new DsCapture("page", _viewport, rd);
         DsLog.Info(rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
         ApplyLayout(_surfaceW, _surfaceH);
@@ -655,6 +656,9 @@ internal sealed class DsBottomScreen
     {
         try
         {
+            // One frame may go out to libsts2ds again (DsCapture.Stagger),
+            // even in a frame that renders nothing.
+            DsCapture.BeginFrame();
             var now = Time.GetTicksUsec();
             TrackFramePacing(now);
             var state = DsNative.State();
@@ -705,19 +709,8 @@ internal sealed class DsBottomScreen
                 : _active == "map" || TouchRecent ? _config.Fps
                 : PileRate(now);
             var defer = DeferCapture(now, scrolling);
-            // Booting: one black frame, then nothing.
-            if (!defer && !(booting && _bootFrameShown))
-            {
-                _page.Tick(now, fps, pageAmbient ? PageAmbientFps[_budget] : 0, idleChecks: !booting);
-                if (booting)
-                    _bootFrameShown = true;
-            }
-            // The dock changes only by its own animations, which say so.
             if (!defer)
-            {
-                foreach (var part in _parts)
-                    part.Capture.Tick(now, _config.Fps, _inRun && part.Dock.Animating ? DockAmbientFps[_budget] : 0, idleChecks: false);
-            }
+                RunCaptures(now, fps, booting, pageAmbient, urgent: scrolling || TouchRecent && _pointerPart == null);
 
             if (now - _lastStatsUsec > 10_000_000)
             {
@@ -743,6 +736,68 @@ internal sealed class DsBottomScreen
             ? Math.Min(_config.Fps, motion ? Math.Max(CombatFps, _config.CombatMotionFps) : CombatFps)
             : motion ? _config.Fps : Math.Min(_config.Fps, PileFps);
         return _budget > 0 ? Math.Min(fps, PageAmbientFps[_budget]) : fps;
+    }
+
+    // Each part renders only when its capture is due, and each render costs
+    // the game's GPU in the game's frame, then a full copy when it comes
+    // back. So at most one part starts a render a game frame (the one that
+    // has waited longest; the pages first while a finger is on them), and at
+    // most one copy goes out (DsCapture.Stagger): bursts are spread over
+    // frames instead of landing in one.
+    private void RunCaptures(ulong now, int fps, bool booting, bool pageAmbient, bool urgent)
+    {
+        if (DsCapture.Stagger)
+        {
+            // A frame held back last game frame goes out first, oldest first.
+            DsCapture held = _page.HasPending ? _page : null;
+            foreach (var part in _parts)
+            {
+                if (part.Capture.HasPending && (held == null || part.Capture.PendingSeq < held.PendingSeq))
+                    held = part.Capture;
+            }
+            held?.SubmitPending();
+        }
+        _page.Tick(now);
+        foreach (var part in _parts)
+            part.Capture.Tick(now);
+
+        var stagger = _config.StaggerCaptures;
+        DsCapture next = null;
+        var nextSince = ulong.MaxValue;
+        // Booting: one black frame, then nothing.
+        if (!(booting && _bootFrameShown))
+        {
+            if (_page.Due(now, fps, pageAmbient ? PageAmbientFps[_budget] : 0, idleChecks: !booting, out var since))
+            {
+                if (stagger)
+                {
+                    next = _page;
+                    nextSince = urgent ? 0 : since;
+                }
+                else
+                {
+                    _page.Start(now);
+                }
+            }
+            if (booting)
+                _bootFrameShown = true;
+        }
+        // The dock changes only by its own animations, which say so.
+        foreach (var part in _parts)
+        {
+            if (!part.Capture.Due(now, _config.Fps, _inRun && part.Dock.Animating ? DockAmbientFps[_budget] : 0, idleChecks: false, out var since))
+                continue;
+            if (!stagger)
+            {
+                part.Capture.Start(now);
+            }
+            else if (since < nextSince)
+            {
+                next = part.Capture;
+                nextSince = since;
+            }
+        }
+        next?.Start(now);
     }
 
     private bool IsBooting()
