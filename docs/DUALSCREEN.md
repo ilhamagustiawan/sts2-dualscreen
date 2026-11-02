@@ -21,13 +21,11 @@ bottom screen is not a Godot window at all:
    grids scroll by wheel. Two fingers always scroll: the first finger's press is
    released, and the midpoint's vertical movement becomes pan gestures on the
    map (which also scrolls in draw mode) or wheel steps on the piles.
-5. Controller and keyboard input only reaches the root window. The game turns
-   controller buttons into `ui_*` actions with `Input.ParseInputEvent`. While
-   the open map is the game's current screen (`ActiveScreenContext`), every
-   non-pointer event the root gets (`Window.WindowInput`) is also pushed into
-   the SubViewport. Map focus, A to travel, and the controller drawing cursor
-   then work as on one screen. Top-screen focus is released while the map has
-   the controller.
+5. Controller and keyboard input stays with the game on the top screen. The
+   lower screen is touch only: each touch runs with the game in touch mode,
+   even while the top is in controller mode (`BeginTouchDispatch`). The root's
+   events (`Window.WindowInput`) are only noted, to tell a controller press
+   from a touch.
 
 The tab bar is docked along the bottom edge of the lower screen.
 
@@ -63,10 +61,13 @@ The tab bar is docked along the bottom edge of the lower screen.
   pipeline compiles, GC, callback and present times, pile rebuilds), and a
   `hitch` line for any game frame over 20 ms (rate-limited). libsts2ds and
   `DsBottomScreen.TraceBegin`/`TraceEnd` add app trace sections for Perfetto.
-- **Switches.** The launcher rewrites `dualscreen.json` on every launch. The
-  capture switches it has no setting for go in `files/dualscreen_overrides.json`
-  (same keys, laid over it): `present_thread`, `stagger_captures`,
-  `pause_hidden_pages`, `combat_motion_fps`. For example:
+- **Switches.** The launcher rewrites `dualscreen.json` on every launch.
+  `present_thread`, `stagger_captures` and `pause_hidden_pages` (all on by
+  default) are launcher settings, under Advanced > Lower screen.
+  `files/dualscreen_overrides.json`, if there, is laid over `dualscreen.json`
+  (same keys; it wins) by both `DsConfig` and `DsRuntimeConfig`, for keys
+  with no setting (`combat_motion_fps`, `canvas_scale`) or to force one
+  (`perf_hint`, the switches above). For example:
 
   ```sh
   echo '{"present_thread": false}' > overrides.json
@@ -78,9 +79,9 @@ The tab bar is docked along the bottom edge of the lower screen.
 
 | Tab | Content | Hook |
 |---|---|---|
-| Map | the game's own `NMapScreen`, moved here, always shown | `NMapScreen._Ready` (reparent), `Open`/`Close` (switch tab, hint, controller), `AnimClose` skipped |
-| Draw / Discard / Exhaust | a fresh `NCardPileScreen` bound to the live `CardPile` | `NCombatCardPile.Initialize(Player)`; `NCardPileScreen.ShowScreen` redirected |
-| Deck | same, with `PileType.Deck` | `NTopBarDeckButton.Initialize(Player)`; `NDeckViewScreen.ShowScreen` redirected |
+| Map | a second `NMapScreen` from the game's scene, always shown; the top map's state (run, act map, marker, travel state, drawings) is mirrored into it | `NMapScreen._Ready`/`Initialize`/`SetMap`/`InitMarker`/`SetTravelEnabled` (mirror), `NMapPoint.OnRelease` (no travel from the copy) |
+| Draw / Discard / Exhaust | a fresh `NCardPileScreen` bound to the live `CardPile` | `NCombatCardPile.Initialize(Player)`; the top's pile buttons open the game's own overlays as usual |
+| Deck | same, with `PileType.Deck` | `NTopBarDeckButton.Initialize(Player)` |
 
 Every game type is looked up by name. A missing type or method logs
 `hook skipped` and leaves that feature on the top screen.
@@ -94,14 +95,15 @@ Every game type is looked up by name. A missing type or method logs
 - Pages not shown don't process (`pause_hidden_pages`): the map copy's
   pulsing rooms and the grids' `_Process` and tweens wait until their tab is
   shown again. Mirroring into the map copy is plain calls and signals, which
-  still reach it.
+  still reach it. A pile's card motion is run to its end as its tab is left,
+  and a pile changed while hidden rebuilds when its tab opens.
 
 ## Known limits / next
 
-- The closed map stays visible on the Map tab. Its close fade-out is skipped,
-  and `Close(false)` is undone. Touch can scroll it. Tapping a travelable point
-  opens the map first, then travels. The controller stays on the top screen
-  until the game opens the map.
+- The map tab is a copy: touch scrolls it, shows room tips and draws, but
+  tapping a travelable room doesn't travel (`MapPointReleasePrefix` skips the
+  copy's `NMapPoint.OnRelease`). Travel is the top map's, by touch or
+  controller there.
 - Map drawing: the draw button picks a mouse or controller tool from the game's
   input mode. Touches on the lower screen don't reach `NControllerManager`, so
   a button pressed by touch gets the mouse tool (`NMapDrawingInput.Create`).
