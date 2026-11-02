@@ -95,6 +95,8 @@ typedef struct {
     // What drawing its frames gave, for the game: 1 changed since it last
     // asked, else the last result.
     int32_t changed, last;
+    // The sampled hash of the frame the game last sent (0: none yet).
+    uint64_t sent_hash;
 } ds_mailbox;
 static ds_mailbox g_mail[SOURCE_COUNT] = {[0 ... SOURCE_COUNT - 1] = {.write = 0, .ready = 1, .work = 2}};
 static pthread_cond_t g_wake = PTHREAD_COND_INITIALIZER;
@@ -561,8 +563,9 @@ static void *present_main(void *arg) {
 
 // The game's side of a mailbox: copies the frame into its own slot (no lock
 // held: only the game touches it) and hands it over. Returns, for the game's
-// pacing, what drawing the earlier frames from this source gave: 1 if any
-// changed since the last call. 0 if there's no surface to draw to.
+// pacing, 1 if this frame's sampled hash differs from the last one sent, or
+// if drawing the earlier frames from this source changed anything since the
+// last call; else the last result. 0 if there's no surface to draw to.
 static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_t h, int32_t stride,
                           int32_t x, int32_t y) {
     ds_mailbox *m = &g_mail[source];
@@ -573,6 +576,14 @@ static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_
     ds_slot *slot = &m->slot[m->write];
     pthread_mutex_unlock(&g_lock);
     if (!live) return 0;
+
+    // What the thread reports is about older frames. A change nobody
+    // announced (found by an idle check) would wait for the next capture to
+    // be noticed, which for an idle part is a second away. The sampled hash
+    // tells now; the thread still compares exactly, band by band.
+    TRACE_BEGIN("ds hash");
+    uint64_t hash = frame_hash(rgba, w, h, stride) ^ ((uint64_t)x << 48 | (uint64_t)y << 32);
+    TRACE_END();
 
     size_t need = (size_t)w * h * 4;
     if (need > slot->capacity) {
@@ -595,6 +606,10 @@ static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_
     slot->y = y;
 
     pthread_mutex_lock(&g_lock);
+    if (hash != m->sent_hash) {
+        m->sent_hash = hash;
+        result = 1;
+    }
     int32_t ready = m->ready;
     m->ready = m->write;
     m->write = ready;
@@ -633,7 +648,10 @@ Java_dev_sts2ds_dualscreen_DsNative_nativeSetSurface(JNIEnv *env, jclass cls, jo
     g_height = next ? height : 0;
     reset_touches_locked();
     // Frames waiting to be drawn were for the old surface.
-    for (int32_t s = 0; s < SOURCE_COUNT; s++) g_mail[s].full = 0;
+    for (int32_t s = 0; s < SOURCE_COUNT; s++) {
+        g_mail[s].full = 0;
+        g_mail[s].sent_hash = 0;
+    }
     g_render_reset = 0;
     g_generation++;
     pthread_mutex_unlock(&g_lock);
@@ -750,7 +768,7 @@ EXPORT int32_t ds_present_thread(int32_t on) {
 
 // Posts one RGBA8 frame to the bottom screen. Returns 1 if posted, 0 if
 // skipped (unchanged or no surface), negative on error. With the present
-// thread on, it is posted soon after, and the result is the last frame's.
+// thread on, it is posted soon after, and the result is send_frame's.
 EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_t stride) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4) return -1;
     TRACE_BEGIN("ds submit frame");
@@ -775,7 +793,7 @@ EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_
 // card moving in a pile is a small part of the page). Regions FIRST_OVERLAY
 // and up are premultiplied overlays, blended over the rest. Returns 1 if it
 // changed, 0 if skipped, negative on error; with the present thread on, the
-// result is for the frames before this one.
+// result is send_frame's.
 EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32_t stride,
                                 int32_t x, int32_t y, int32_t region) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4 || x < 0 || y < 0
