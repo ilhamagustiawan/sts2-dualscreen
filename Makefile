@@ -5,6 +5,8 @@
 #   make managed   build the entry shim and the dual-screen layer (C#)
 #   make apk       build dist/sts2-dualscreen-<version>.apk
 #   make install   adb install it
+#   make prod      build dist/sts2-dualscreen-<version>-prod.apk (not debuggable)
+#   make install-prod  adb install that
 #   make dev       apk + install + launch + follow the log
 #   make test      unit tests
 
@@ -22,7 +24,7 @@ ASSETS := launcher/app/src/main/assets
 RUNTIME_STAMP := $(ASSETS)/runtime_manifest.json
 PACKAGE := dev.sts2ds
 
-.PHONY: setup runtime managed apk install dev test clean logcat
+.PHONY: setup runtime managed apk install prod install-prod dev test clean logcat
 
 setup:
 	./tools/setup-mac.sh
@@ -51,6 +53,18 @@ apk: managed launcher/local.properties
 
 install:
 	adb install -r $(DIST)
+
+PROD_APK := launcher/app/build/outputs/apk/prod/sts2-dualscreen-$(VERSION)-prod.apk
+PROD_DIST := dist/sts2-dualscreen-$(VERSION)-prod.apk
+
+prod: managed launcher/local.properties
+	cd launcher && ./gradlew --no-daemon -q assembleProd
+	mkdir -p dist
+	cp $(PROD_APK) $(PROD_DIST)
+	@echo "Built $(PROD_DIST)"
+
+install-prod:
+	adb install -r $(PROD_DIST)
 
 logcat:
 	adb logcat -v time -s STS2DualScreen Sts2Launcher GameActivity godot FMOD AndroidRuntime DEBUG

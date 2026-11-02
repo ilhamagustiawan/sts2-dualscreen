@@ -46,6 +46,13 @@ android {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
+        // For playing: not debuggable, so ART compiles it fully; `run-as` no
+        // longer works. No R8: Godot and JavaSteam look classes up by name.
+        create("prod") {
+            initWith(getByName("release"))
+            isDebuggable = false
+            matchingFallbacks += "release"
+        }
     }
 
     compileOptions {
