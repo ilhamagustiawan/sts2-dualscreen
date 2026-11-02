@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using Godot;
 using HarmonyLib;
+using Expr = System.Linq.Expressions.Expression;
 
 namespace STS2DualScreen;
 
@@ -90,7 +91,9 @@ internal static class DsGameHooks
     private static MethodInfo _rewardSelectPrefix;
     private static MethodInfo _chooseSelectPrefix;
     private static PropertyInfo _runInstance;
+    private static Func<object, object> _runInstanceGet;
     private static MethodInfo _overlayOpen;
+    private static Func<object, bool> _overlayOpenCall;
     private static PropertyInfo _contextInstance;
     private static MethodInfo _contextFocusDefault;
 
@@ -99,6 +102,7 @@ internal static class DsGameHooks
     private static FieldInfo _mapBackstop, _mapLegend, _mapTools, _mapPoints, _mapRunState, _mapDistY;
     private static FieldInfo _mapActMap, _mapBackButton, _mapLegendHotkey, _mapToolsHotkey;
     private static PropertyInfo _mapTravelEnabled, _mapDebugTravelEnabled, _mapDrawings;
+    private static Func<object, bool> _mapTravelGet;
     private static MethodInfo _mapCanScroll, _mapCancelActAnim;
     private static MethodInfo _mapInitialize, _mapSetMap, _mapInitMarker, _mapRefreshVotes, _mapRefreshVisuals;
     private static float _mapScrollLow = -600f, _mapScrollHigh = 1800f;
@@ -165,6 +169,7 @@ internal static class DsGameHooks
         _pileTypeEnum = FindType(PileTypeType);
         var extensions = FindType(PileTypeExtensionsType);
         _getPile = extensions == null ? null : AccessTools.Method(extensions, "GetPile");
+        ResolvePileScreen();
 
         Patch(harmony, _mapType, "_Ready", postfix: nameof(MapReadyPostfix));
         Patch(harmony, _mapType, "Initialize", postfix: nameof(MapInitializePostfix));
@@ -205,7 +210,9 @@ internal static class DsGameHooks
         // game drops every hotkey and controller action while unfocused.
         Patch(harmony, FindType(GameType), "IsGameFocusedWindow", postfix: nameof(GameFocusedPostfix));
         _overlayOpen = FindType(PlatformUtilType) is { } platform ? AccessTools.Method(platform, "IsPlatformOverlayOpen") : null;
+        _overlayOpenCall = Calling<bool>(_overlayOpen);
         _runInstance = FindType(RunType) is { } run ? AccessTools.Property(run, "Instance") : null;
+        _runInstanceGet = Getter<object>(_runInstance);
         var hoverTips = FindType(HoverTipSetType);
         // The single-tip overload calls this one.
         var createAndShow = hoverTips == null ? null : AccessTools.GetDeclaredMethods(hoverTips)
@@ -314,16 +321,16 @@ internal static class DsGameHooks
     }
 
     /// <summary>While travel is on, the map's rooms you can reach pulse forever (NNormalMapPoint).</summary>
-    public static bool MapAmbient() => MapValid() && _mapTravelEnabled?.GetValue(_map) is true;
+    public static bool MapAmbient() => MapValid() && _mapTravelGet?.Invoke(_map) == true;
 
     /// <summary>A run is loaded (NRun exists). True when that can't be told, so nothing goes missing.</summary>
     public static bool InRun()
     {
-        if (_runInstance == null)
+        if (_runInstanceGet == null)
             return true;
         try
         {
-            return _runInstance.GetValue(null) != null;
+            return _runInstanceGet(null) != null;
         }
         catch (Exception)
         {
@@ -351,7 +358,7 @@ internal static class DsGameHooks
             return;
         try
         {
-            if (_overlayOpen?.Invoke(null, null) is true)
+            if (_overlayOpenCall?.Invoke(null) == true)
                 return;
         }
         catch (Exception)
@@ -811,7 +818,7 @@ internal static class DsGameHooks
         if (!IsTopMap(__instance))
             return;
         CopyTravelState();
-        DsBottomScreen.Instance?.Dock.SetTraveling(_mapTravelEnabled?.GetValue(_topMap) is true);
+        DsBottomScreen.Instance?.Dock.SetTraveling(_mapTravelGet?.Invoke(_topMap) == true);
         DsBottomScreen.Instance?.MarkChanged();
     }
 
@@ -1002,6 +1009,7 @@ internal static class DsGameHooks
         _mapLegendHotkey = AccessTools.Field(_mapType, "_legendHotkeyIcon");
         _mapToolsHotkey = AccessTools.Field(_mapType, "_drawingToolsHotkeyIcon");
         _mapTravelEnabled = AccessTools.Property(_mapType, "IsTravelEnabled");
+        _mapTravelGet = Getter<bool>(_mapTravelEnabled);
         _mapDebugTravelEnabled = AccessTools.Property(_mapType, "IsDebugTravelEnabled");
         _mapDrawings = AccessTools.Property(_mapType, "Drawings");
         _mapCanScroll = AccessTools.Method(_mapType, "CanScroll");
@@ -1405,9 +1413,8 @@ internal static class DsGameHooks
     {
         try
         {
-            var pile = AccessTools.Field(__instance.GetType(), "_pile")?.GetValue(__instance);
-            var cards = pile == null ? null : AccessTools.Property(pile.GetType(), "Cards")?.GetValue(pile);
-            if (cards != null && AccessTools.Property(cards.GetType(), "Count")?.GetValue(cards) is int count)
+            if (ButtonPile.TryRead(__instance, out var pile) && PileCards.TryRead(pile, out var cards)
+                && CardsCount.TryRead(cards, out var count))
                 DsBottomScreen.Instance?.Dock.SetCount("deck", count);
         }
         catch (Exception e)
@@ -1419,11 +1426,13 @@ internal static class DsGameHooks
     private static readonly string[] CombatTabs = { "draw", "discard", "exhaust" };
 
     // In combat the pile tabs light up (exhaust once it has a card, as the
-    // game shows its button); out of it they dim and lose their counts.
+    // game shows its button); out of it they dim and lose their counts. The
+    // dock's idle loops calm down for the fight (DsDock.SetCombat).
     private static void SetCombatTabs(bool inCombat)
     {
         if (DsBottomScreen.Instance?.Dock is not { } dock)
             return;
+        dock.SetCombat(inCombat);
         foreach (var tab in CombatTabs)
         {
             dock.SetEnabled(tab, inCombat && tab != "exhaust");
@@ -1432,15 +1441,18 @@ internal static class DsGameHooks
         }
     }
 
-    private static string PileButtonTab(object button)
-    {
-        var pile = button == null ? null : AccessTools.Field(button.GetType(), "_pile")?.GetValue(button);
-        return pile == null ? null : TabForPile(pile);
-    }
+    // The pile buttons' and the piles' members, per type: each card moved reads them.
+    private static readonly MemberReader<object> ButtonPile = new("_pile", field: true);
+    private static readonly MemberReader<int> ButtonCount = new("_currentCount", field: true);
+    private static readonly MemberReader<object> PileCards = new("Cards", field: false);
+    private static readonly MemberReader<int> CardsCount = new("Count", field: false);
+
+    private static string PileButtonTab(object button) =>
+        ButtonPile.TryRead(button, out var pile) && pile != null ? TabForPile(pile) : null;
 
     private static void UpdatePileCount(object button, string tab)
     {
-        if (DsBottomScreen.Instance?.Dock is not { } dock || AccessTools.Field(button.GetType(), "_currentCount")?.GetValue(button) is not int count)
+        if (DsBottomScreen.Instance?.Dock is not { } dock || !ButtonCount.TryRead(button, out var count))
             return;
         dock.SetCount(tab, count);
         if (tab == "exhaust")
@@ -1459,42 +1471,143 @@ internal static class DsGameHooks
     // its pile. On PC only an open one exists; here all four live on, so a
     // hand draw would rebuild each of them once per card. Down here a hidden
     // one only notes it is stale and rebuilds when its tab is shown, and the
-    // visible one rebuilds once a burst of changes settles.
-    private const double PileRefreshDelay = 0.12;
+    // visible one rebuilds once a burst of changes settles: each change
+    // pushes the rebuild a little later, never past a cap from the burst's
+    // first change, and never while that pile's cards are still moving (a
+    // rebuild would cut their motion short). One pile per frame at most.
+    private const ulong PileQuietUsec = 120_000;
+    private const ulong PileMaxWaitUsec = 350_000;
     private static readonly HashSet<Node> StalePiles = new();
     private static bool _refreshingPile;
+
+    private struct PendingPile
+    {
+        public ulong First, Due;
+        // Its leaving cards are gone: rebuild now, without animating them out again.
+        public bool ExitsDone;
+    }
+
+    private static readonly Dictionary<Node, PendingPile> PendingPiles = new();
+    private static readonly List<Node> PendingGone = new();
+    private static readonly Action PileFrame = OnPileFrame;
+    private static SceneTree _pileTree;
 
     private static bool PileContentsChangedPrefix(object __instance)
     {
         if (_refreshingPile || DsBottomScreen.Instance is not { } screen || __instance is not CanvasItem node || !screen.IsBottom(node))
             return true;
-        if (StalePiles.Add(node) && node.IsVisibleInTree())
-            node.GetTree().CreateTimer(PileRefreshDelay).Timeout += () => RefreshPile(node, animate: true);
+        // Already stale and not pending: its cards are on their way out, and
+        // the rebuild after that takes this change too.
+        if ((StalePiles.Add(node) || PendingPiles.ContainsKey(node)) && node.IsVisibleInTree())
+            SchedulePile(node, exitsDone: false);
         return false;
     }
+
+    private static void SchedulePile(Node node, bool exitsDone)
+    {
+        var now = Time.GetTicksUsec();
+        if (!PendingPiles.TryGetValue(node, out var pending))
+            pending = new PendingPile { First = now, Due = now + PileQuietUsec };
+        else if (!pending.ExitsDone)
+            pending.Due = Math.Min(now + PileQuietUsec, pending.First + PileMaxWaitUsec);
+        if (exitsDone)
+        {
+            pending.ExitsDone = true;
+            pending.Due = now;
+        }
+        PendingPiles[node] = pending;
+        // Polled only while something is pending.
+        if (_pileTree == null && node.IsInsideTree() && node.GetTree() is { } tree)
+        {
+            _pileTree = tree;
+            tree.ProcessFrame += PileFrame;
+        }
+    }
+
+    private static void OnPileFrame()
+    {
+        try
+        {
+            var now = Time.GetTicksUsec();
+            Node next = null;
+            var nextPending = default(PendingPile);
+            PendingGone.Clear();
+            foreach (var (node, pending) in PendingPiles)
+            {
+                if (!GodotObject.IsInstanceValid(node) || !StalePiles.Contains(node))
+                {
+                    PendingGone.Add(node);
+                    continue;
+                }
+                // Due, not mid-exit, and its last motion has played out.
+                if (next != null || now < pending.Due || ExitingPiles.Contains(node) || CardsMoving(TabOf(node)))
+                    continue;
+                next = node;
+                nextPending = pending;
+            }
+            foreach (var node in PendingGone)
+            {
+                PendingPiles.Remove(node);
+                if (!GodotObject.IsInstanceValid(node))
+                    StalePiles.Remove(node);
+            }
+            PendingGone.Clear();
+            if (next != null)
+            {
+                PendingPiles.Remove(next);
+                RefreshPile(next, animate: true, exitsDone: nextPending.ExitsDone);
+            }
+        }
+        catch (Exception e)
+        {
+            // Dropped, not left stale: the next change schedules them afresh.
+            DsLog.Info($"pile refresh failed: {e.Message}");
+            foreach (var node in PendingPiles.Keys)
+                StalePiles.Remove(node);
+            PendingPiles.Clear();
+        }
+        if (PendingPiles.Count == 0 && _pileTree != null)
+        {
+            _pileTree.ProcessFrame -= PileFrame;
+            _pileTree = null;
+        }
+    }
+
+    private static bool CardsMoving(string tab) =>
+        tab != null && CardTweens.TryGetValue(tab, out var tween) && DsStyle.Running(tween);
 
     // A visible pile animates the change, as below; a hidden one (and one
     // brought up to date as its tab opens, which plays the entrance) just
     // rebuilds. Either way it keeps its scroll.
-    private static void RefreshPile(Node node, bool animate = false)
+    private static void RefreshPile(Node node, bool animate = false, bool exitsDone = false)
     {
-        if (!GodotObject.IsInstanceValid(node))
+        TraceBegin("RefreshPile");
+        try
         {
-            StalePiles.Remove(node);
-            return;
+            if (!GodotObject.IsInstanceValid(node))
+            {
+                StalePiles.Remove(node);
+                PendingPiles.Remove(node);
+                return;
+            }
+            // Cards are leaving: it rebuilds, with whatever else changed, once they are gone.
+            if (!StalePiles.Contains(node) || ExitingPiles.Contains(node))
+                return;
+            var tab = TabOf(node);
+            animate = animate && tab != null && node is CanvasItem { } item && item.IsVisibleInTree();
+            if (animate && !exitsDone && AnimateExits(tab, node))
+                return;
+            RebuildPile(node, tab, animate);
         }
-        // Cards are leaving: it rebuilds, with whatever else changed, once they are gone.
-        if (!StalePiles.Contains(node) || ExitingPiles.Contains(node))
-            return;
-        var tab = TabOf(node);
-        animate = animate && tab != null && node is CanvasItem { } item && item.IsVisibleInTree();
-        if (animate && AnimateExits(tab, node))
-            return;
-        RebuildPile(node, tab, animate);
+        finally
+        {
+            TraceEnd();
+        }
     }
 
     private static void RebuildPile(Node node, string tab, bool animate)
     {
+        PendingPiles.Remove(node);
         if (!StalePiles.Remove(node) || !GodotObject.IsInstanceValid(node))
             return;
         PileSnapshot before = null;
@@ -1512,7 +1625,11 @@ internal static class DsGameHooks
         _refreshingPile = true;
         try
         {
-            AccessTools.Method(_pileScreenType, "OnPileContentsChanged")?.Invoke(node, null);
+            if (_pileRefresh != null)
+            {
+                _pileRefresh(node);
+                NotePileRebuild();
+            }
         }
         catch (Exception e)
         {
@@ -1526,6 +1643,49 @@ internal static class DsGameHooks
         if (before != null)
             Callable.From(() => AfterRebuild(tab, node, before)).CallDeferred();
         DsBottomScreen.Instance?.MarkChanged();
+    }
+
+    // The lower screen's stats and trace markers (DsBottomScreen), found by
+    // name so this builds before they exist; nothing happens without them.
+    private static Action _notePileRebuild, _traceEnd;
+    private static Action<string> _traceBegin;
+    private static bool _statsLooked;
+
+    private static void NotePileRebuild()
+    {
+        LookUpStats();
+        _notePileRebuild?.Invoke();
+    }
+
+    private static void TraceBegin(string name)
+    {
+        LookUpStats();
+        _traceBegin?.Invoke(name);
+    }
+
+    private static void TraceEnd() => _traceEnd?.Invoke();
+
+    private static void LookUpStats()
+    {
+        if (_statsLooked)
+            return;
+        _statsLooked = true;
+        _notePileRebuild = ScreenHook<Action>("NotePileRebuild");
+        _traceBegin = ScreenHook<Action<string>>("TraceBegin", typeof(string));
+        _traceEnd = ScreenHook<Action>("TraceEnd");
+    }
+
+    private static T ScreenHook<T>(string name, params Type[] args) where T : Delegate
+    {
+        try
+        {
+            var method = typeof(DsBottomScreen).GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, args, null);
+            return method == null || method.ReturnType != typeof(void) ? null : (T)method.CreateDelegate(typeof(T));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static string TabOf(Node pileScreen)
@@ -1550,12 +1710,18 @@ internal static class DsGameHooks
     // holders and swaps the cards in them). The game pools its cards, so
     // every one of these tweens is run to its end before the grid lets its
     // cards go (SettleCards), and when a finger takes the pile.
+    //
+    // A change's cards all move in one tween: one method tweener steps every
+    // card from arrays made up front (PileMotion), rather than two property
+    // tweeners per card. The curves are Godot's own (DsEase).
     private const float CardRise = 40f;
     private static readonly Dictionary<string, Tween> CardTweens = new();
+    private static readonly Dictionary<string, PileMotion> Motions = new();
     private static readonly HashSet<Node> ExitingPiles = new();
     private static PropertyInfo _gridHolders;
+    private static Func<object, object> _gridHoldersGet;
     private static Type _holderType;
-    private static PropertyInfo _holderCard, _holderModel;
+    private static Func<object, object> _holderCardGet, _holderModelGet;
 
     private sealed class PileSnapshot
     {
@@ -1570,7 +1736,7 @@ internal static class DsGameHooks
     private static List<(Control Holder, Control Card, object Model)> Displayed(Control grid, bool inViewOnly)
     {
         var shown = new List<(Control, Control, object)>();
-        if (_gridHolders?.GetValue(grid) is not System.Collections.IEnumerable holders)
+        if (_gridHoldersGet?.Invoke(grid) is not System.Collections.IEnumerable holders)
             return shown;
         var area = grid.GetGlobalRect();
         foreach (var item in holders)
@@ -1581,23 +1747,23 @@ internal static class DsGameHooks
             if (type != _holderType)
             {
                 _holderType = type;
-                _holderCard = AccessTools.Property(type, "CardNode");
-                _holderModel = AccessTools.Property(type, "CardModel");
+                _holderCardGet = Getter<object>(AccessTools.Property(type, "CardNode"));
+                _holderModelGet = Getter<object>(AccessTools.Property(type, "CardModel"));
             }
-            if (_holderCard?.GetValue(holder) is not Control card || !GodotObject.IsInstanceValid(card))
+            if (_holderCardGet?.Invoke(holder) is not Control card || !GodotObject.IsInstanceValid(card))
                 continue;
             if (inViewOnly && !card.GetGlobalRect().Intersects(area) && !holder.GetGlobalRect().Intersects(area))
                 continue;
-            shown.Add((holder, card, _holderModel?.GetValue(holder)));
+            shown.Add((holder, card, _holderModelGet?.Invoke(holder)));
         }
         return shown;
     }
 
     private static PileSnapshot Snapshot(Control grid, bool withCards)
     {
-        if (_gridContainer.GetValue(grid) is not Control container)
+        if (_gridContainerGet(grid) is not Control container)
             return null;
-        var top = (float)_gridLimitTop.GetValue(grid);
+        var top = _gridTopGet(grid);
         var snapshot = new PileSnapshot { ScrollY = container.Position.Y, AtTop = Math.Abs(container.Position.Y - top) < 1f };
         if (withCards)
         {
@@ -1613,13 +1779,19 @@ internal static class DsGameHooks
     /// <summary>Runs this pile's card animation to its end: every card at rest in its holder.</summary>
     private static void SettleCards(string tab)
     {
-        if (tab == null || !CardTweens.Remove(tab, out var tween) || !GodotObject.IsInstanceValid(tween))
+        if (tab == null)
             return;
         try
         {
-            if (tween.IsValid())
-                tween.CustomStep(1000.0);
-            tween.Kill();
+            if (CardTweens.Remove(tab, out var tween) && GodotObject.IsInstanceValid(tween))
+            {
+                if (tween.IsValid())
+                    tween.CustomStep(1000.0);
+                tween.Kill();
+            }
+            // Cards set up for a motion whose tween never ran (it failed midway) too.
+            if (Motions.TryGetValue(tab, out var motion))
+                motion.Settle();
         }
         catch (Exception e)
         {
@@ -1628,12 +1800,120 @@ internal static class DsGameHooks
     }
 
     // One animation per pile at a time; a new one first ends the last.
-    private static Tween CardTween(string tab, Control container, double seconds)
+    private static PileMotion BeginMotion(string tab)
     {
         SettleCards(tab);
-        var tween = DsStyle.Animate(container, seconds).SetParallel(true);
+        if (!Motions.TryGetValue(tab, out var motion))
+            Motions[tab] = motion = new PileMotion();
+        motion.Clear();
+        return motion;
+    }
+
+    // exiting: the pile whose rebuild waits for these cards to be gone.
+    private static void PlayMotion(string tab, PileMotion motion, Control container, Node exiting = null)
+    {
+        if (motion.Count == 0)
+            return;
+        var tween = DsStyle.Animate(container, motion.Length);
+        tween.TweenMethod(motion.Step, 0f, motion.Length, motion.Length);
+        if (exiting != null)
+        {
+            motion.Exiting = exiting;
+            ExitingPiles.Add(exiting);
+            tween.TweenCallback(motion.ExitsDone);
+        }
         CardTweens[tab] = tween;
-        return tween;
+    }
+
+    private struct CardMove
+    {
+        public Control Card;    // null once at rest
+        public Color Tint;      // its modulate but for alpha, which may fade
+        public Vector2 From, To;
+        public float AlphaFrom, AlphaTo;
+        public float Delay, Duration;
+        public DsCurve Move, Fade;
+        public bool Fades;
+    }
+
+    // One pile's cards in motion. Its two callables are made once per pile.
+    private sealed class PileMotion
+    {
+        private CardMove[] _moves = new CardMove[16];
+        public int Count;
+        public float Length;
+        public Node Exiting;
+        public readonly Callable Step;
+        public readonly Callable ExitsDone;
+
+        public PileMotion()
+        {
+            Step = Callable.From<float>(StepTo);
+            ExitsDone = Callable.From(OnExitsDone);
+        }
+
+        public void Clear()
+        {
+            Array.Clear(_moves, 0, Count);
+            Count = 0;
+            Length = 0f;
+            Exiting = null;
+        }
+
+        // The card takes its first frame now: held there through its delay,
+        // as a delayed property tween leaves it as it was set.
+        public void Add(Control card, Vector2 from, Vector2 to, float alphaFrom, float alphaTo, bool fades,
+            float delay, float duration, DsCurve move, DsCurve fade)
+        {
+            if (Count == _moves.Length)
+                Array.Resize(ref _moves, Count * 2);
+            var tint = card.Modulate;
+            _moves[Count++] = new CardMove
+            {
+                Card = card, Tint = tint, From = from, To = to, AlphaFrom = alphaFrom, AlphaTo = alphaTo,
+                Delay = delay, Duration = duration, Move = move, Fade = fade, Fades = fades,
+            };
+            card.Position = from;
+            if (fades)
+                card.Modulate = tint with { A = alphaFrom };
+            Length = Math.Max(Length, delay + duration);
+        }
+
+        public void Settle() => StepTo(1e6f);
+
+        private void StepTo(float t)
+        {
+            for (var i = 0; i < Count; i++)
+            {
+                ref var move = ref _moves[i];
+                if (move.Card == null)
+                    continue;
+                var x = move.Duration > 0f ? (t - move.Delay) / move.Duration : 1f;
+                if (x <= 0f)
+                    continue;
+                if (!GodotObject.IsInstanceValid(move.Card))
+                {
+                    move.Card = null;
+                    continue;
+                }
+                x = Math.Min(x, 1f);
+                move.Card.Position = move.From + (move.To - move.From) * DsEase.Apply(move.Move, x);
+                if (move.Fades)
+                    move.Card.Modulate = move.Tint with { A = move.AlphaFrom + (move.AlphaTo - move.AlphaFrom) * DsEase.Apply(move.Fade, x) };
+                if (x >= 1f)
+                    move.Card = null;
+            }
+        }
+
+        private void OnExitsDone()
+        {
+            var node = Exiting;
+            Exiting = null;
+            if (node == null)
+                return;
+            ExitingPiles.Remove(node);
+            SchedulePile(node, exitsDone: true);
+        }
     }
 
     // A card's move, in its own units (its holder is scaled, and the grid with it).
@@ -1650,9 +1930,9 @@ internal static class DsGameHooks
     private static bool AnimateExits(string tab, Node node)
     {
         var grid = PileGrid(tab);
-        if (grid == null || _gridContainer.GetValue(grid) is not Control container
+        if (grid == null || _gridContainerGet(grid) is not Control container
             || PileBindings.GetValueOrDefault(tab) is not { } pile
-            || AccessTools.Property(pile.GetType(), "Cards")?.GetValue(pile) is not System.Collections.IEnumerable cards)
+            || !PileCards.TryRead(pile, out var read) || read is not System.Collections.IEnumerable cards)
             return false;
         try
         {
@@ -1667,19 +1947,15 @@ internal static class DsGameHooks
             }
             if (leaving == null)
                 return false;
-            var tween = CardTween(tab, container, 0.2);
+            var motion = BeginMotion(tab);
             foreach (var card in leaving)
             {
                 var drop = ToCardUnits(card, new Vector2(0f, CardRise)).Y;
-                tween.TweenProperty(card, "position:y", card.Position.Y + drop, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-                tween.TweenProperty(card, "modulate:a", 0f, 0.2);
+                var at = card.Position;
+                motion.Add(card, at, at with { Y = at.Y + drop }, card.Modulate.A, 0f, fades: true,
+                    0f, 0.2f, DsCurve.ExpoOut, DsCurve.Linear);
             }
-            ExitingPiles.Add(node);
-            tween.Chain().TweenCallback(Callable.From(() =>
-            {
-                ExitingPiles.Remove(node);
-                Callable.From(() => RebuildPile(node, TabOf(node), animate: true)).CallDeferred();
-            }));
+            PlayMotion(tab, motion, container, exiting: node);
             return true;
         }
         catch (Exception e)
@@ -1697,13 +1973,13 @@ internal static class DsGameHooks
         if (!GodotObject.IsInstanceValid(node) || TabOf(node) != tab)
             return;
         var grid = PileGrid(tab);
-        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
+        if (grid == null || _gridContainerGet(grid) is not Control container)
             return;
         try
         {
             // At the top it stays at the top, which moves as rows come and go.
-            var top = (float)_gridLimitTop.GetValue(grid);
-            var bottom = (float)_gridLimitBottom.GetValue(grid);
+            var top = _gridTopGet(grid);
+            var bottom = _gridBottomGet(grid);
             var y = before.AtTop ? top : Math.Clamp(before.ScrollY, Math.Min(top, bottom), Math.Max(top, bottom));
             SetPileScroll(grid, container, y, bottom, settle: true);
             if (before.Cards.Count == 0 || !node.IsInsideTree() || !((CanvasItem)node).IsVisibleInTree())
@@ -1715,7 +1991,8 @@ internal static class DsGameHooks
                 if (model == null || !before.Cards.ContainsKey(model))
                     arriving++;
             }
-            Tween tween = null;
+            // The last motion ends before the new layout is read.
+            var motion = BeginMotion(tab);
             var next = 0;
             foreach (var (_, card, model) in shown)
             {
@@ -1724,19 +2001,16 @@ internal static class DsGameHooks
                     var offset = ToCardUnits(card, was.Position - card.GlobalPosition);
                     if (offset.LengthSquared() < 1f && was.Alpha >= 0.99f)
                         continue;
-                    tween ??= CardTween(tab, container, 0.6);
-                    card.Position = offset;
                     card.Modulate = card.Modulate with { A = was.Alpha };
-                    tween.TweenProperty(card, "position", Vector2.Zero, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-                    if (was.Alpha < 0.99f)
-                        tween.TweenProperty(card, "modulate:a", 1f, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+                    motion.Add(card, offset, Vector2.Zero, was.Alpha, 1f, fades: was.Alpha < 0.99f,
+                        0f, 0.3f, DsCurve.CubicOut, DsCurve.ExpoOut);
                 }
                 else
                 {
-                    tween ??= CardTween(tab, container, 0.6);
-                    RiseIn(tween, card, next++ / (double)arriving * 0.2);
+                    RiseIn(motion, card, next++ / (float)arriving * 0.2f);
                 }
             }
+            PlayMotion(tab, motion, container);
         }
         catch (Exception e)
         {
@@ -1746,13 +2020,9 @@ internal static class DsGameHooks
     }
 
     // NCardGrid.AnimateIn, on the card: up from below as it fades in.
-    private static void RiseIn(Tween tween, Control card, double delay)
-    {
-        card.Position = new Vector2(0f, ToCardUnits(card, new Vector2(0f, CardRise)).Y);
-        card.Modulate = card.Modulate with { A = 0f };
-        tween.TweenProperty(card, "position:y", 0f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        tween.TweenProperty(card, "modulate:a", 1f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-    }
+    private static void RiseIn(PileMotion motion, Control card, float delay) =>
+        motion.Add(card, new Vector2(0f, ToCardUnits(card, new Vector2(0f, CardRise)).Y), Vector2.Zero, 0f, 1f, fades: true,
+            delay, 0.4f, DsCurve.BackOut, DsCurve.ExpoOut);
 
     // ── card touch ─────────────────────────────────────────────────────────
 
@@ -1774,7 +2044,7 @@ internal static class DsGameHooks
                 return;
             holder.Scale = small;
             var tween = DsStyle.Animate(holder, 0.2);
-            tween.TweenProperty(holder, "scale", hover, 0.18).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+            tween.TweenProperty(holder, DsNodePaths.Scale, hover, 0.18).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
             _holderHoverTween.SetValue(holder, tween);
         }
         catch (Exception e)
@@ -1859,12 +2129,34 @@ internal static class DsGameHooks
         screen.MarkChanged();
     }
 
+    // A pile's PileType, read as its number and looked up, not named per call.
+    private static readonly Dictionary<Type, Func<object, int>> PileTypeOf = new();
+    private static readonly Dictionary<int, string> TabByPileType = new();
+    private static readonly Dictionary<string, object> PileTypeValues = new();
+
     private static string TabForPile(object pile)
     {
-        var type = AccessTools.Property(pile.GetType(), "Type")?.GetValue(pile)?.ToString();
+        var type = pile.GetType();
+        if (!PileTypeOf.TryGetValue(type, out var read))
+        {
+            var property = AccessTools.Property(type, "Type");
+            read = property?.PropertyType.IsEnum == true ? Getter<int>(property) : null;
+            if (read != null && TabByPileType.Count == 0)
+            {
+                foreach (var (tab, name) in TabToPileType)
+                {
+                    if (Enum.TryParse(property.PropertyType, name, out var value))
+                        TabByPileType[Convert.ToInt32(value)] = tab;
+                }
+            }
+            PileTypeOf[type] = read;
+        }
+        if (read != null)
+            return TabByPileType.GetValueOrDefault(read(pile));
+        var named = AccessTools.Property(type, "Type")?.GetValue(pile)?.ToString();
         foreach (var (tab, pileType) in TabToPileType)
         {
-            if (pileType == type)
+            if (pileType == named)
                 return tab;
         }
         return null;
@@ -1893,7 +2185,8 @@ internal static class DsGameHooks
         object pile;
         try
         {
-            var pileType = Enum.Parse(_pileTypeEnum, TabToPileType[tab]);
+            if (!PileTypeValues.TryGetValue(tab, out var pileType))
+                PileTypeValues[tab] = pileType = Enum.Parse(_pileTypeEnum, TabToPileType[tab]);
             pile = _getPile.Invoke(null, new[] { pileType, _player });
         }
         catch (Exception)
@@ -1984,11 +2277,34 @@ internal static class DsGameHooks
     private static FieldInfo _gridDragging, _gridTarget, _gridContainer, _gridScrollbar;
     private static PropertyInfo _gridLimitTop, _gridLimitBottom;
     private static MethodInfo _gridAllocate, _scrollbarSet;
+    private static Func<object, object> _gridContainerGet;
+    private static Func<object, float> _gridTopGet, _gridBottomGet;
+    private static Action<object> _gridAllocateCall;
+    private static Func<object, object> _pileGridGet;
+    private static Action<object> _pileRefresh;
+
+    private static void ResolvePileScreen()
+    {
+        if (_pileScreenType == null)
+            return;
+        _pileGridGet = Getter<object>(AccessTools.Field(_pileScreenType, "_grid"));
+        try
+        {
+            _pileRefresh = Caller(AccessTools.Method(_pileScreenType, "OnPileContentsChanged"));
+        }
+        catch (AmbiguousMatchException)
+        {
+        }
+        if (_pileRefresh == null)
+            DsLog.Info("card pile screen has no OnPileContentsChanged; lower-screen piles won't follow changes");
+        // Interpreted delegates would cost more than the reflection they replace.
+        DsLog.Info($"game members read through {(System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled ? "compiled" : "interpreted")} delegates");
+    }
 
     private static Control PileGrid(string tab)
     {
         if (tab == null || !PileScreens.TryGetValue(tab, out var screen) || !GodotObject.IsInstanceValid(screen)
-            || AccessTools.Field(_pileScreenType, "_grid")?.GetValue(screen) is not Control grid)
+            || _pileGridGet?.Invoke(screen) is not Control grid)
             return null;
         var type = grid.GetType();
         if (type != _gridType)
@@ -2002,6 +2318,11 @@ internal static class DsGameHooks
             _gridLimitBottom = AccessTools.Property(type, "ScrollLimitBottom");
             _gridAllocate = AccessTools.Method(type, "AllocateCardHolders");
             _gridHolders = AccessTools.Property(type, "CurrentlyDisplayedCardHolders");
+            _gridContainerGet = Getter<object>(_gridContainer);
+            _gridTopGet = Getter<float>(_gridLimitTop);
+            _gridBottomGet = Getter<float>(_gridLimitBottom);
+            _gridAllocateCall = Caller(_gridAllocate);
+            _gridHoldersGet = Getter<object>(_gridHolders);
             _scrollbarSet = null;
         }
         return _gridDragging == null || _gridTarget == null || _gridContainer == null || _gridLimitTop == null || _gridLimitBottom == null
@@ -2094,7 +2415,7 @@ internal static class DsGameHooks
             if (held)
                 SettleCards(tab);
             _gridDragging.SetValue(grid, held);
-            if (_gridContainer.GetValue(grid) is Control container)
+            if (_gridContainerGet(grid) is Control container)
                 _gridTarget.SetValue(grid, container.Position.Y);
             return true;
         }
@@ -2108,12 +2429,12 @@ internal static class DsGameHooks
     private static bool ScrollPile(string tab, float canvasDy)
     {
         var grid = PileGrid(tab);
-        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
+        if (grid == null || _gridContainerGet(grid) is not Control container)
             return false;
         try
         {
-            var top = (float)_gridLimitTop.GetValue(grid);
-            var bottom = (float)_gridLimitBottom.GetValue(grid);
+            var top = _gridTopGet(grid);
+            var bottom = _gridBottomGet(grid);
             float low = Math.Min(top, bottom), high = Math.Max(top, bottom);
             var dy = canvasDy / PileScale;
             var y = container.Position.Y;
@@ -2140,13 +2461,13 @@ internal static class DsGameHooks
     {
         _gridTarget.SetValue(grid, y);
         container.Position = container.Position with { Y = y };
-        if (_gridAllocate != null)
+        if (_gridAllocateCall != null)
         {
             for (var i = 0; i < (settle ? 64 : 1); i++)
             {
-                var first = settle && _gridHolders?.GetValue(grid) is IEnumerable<object> holders ? holders.FirstOrDefault() : null;
-                _gridAllocate.Invoke(grid, null);
-                if (!settle || first == null || ReferenceEquals(first, (_gridHolders.GetValue(grid) as IEnumerable<object>)?.FirstOrDefault()))
+                var first = settle && _gridHoldersGet?.Invoke(grid) is IEnumerable<object> holders ? holders.FirstOrDefault() : null;
+                _gridAllocateCall(grid);
+                if (!settle || first == null || ReferenceEquals(first, (_gridHoldersGet(grid) as IEnumerable<object>)?.FirstOrDefault()))
                     break;
             }
         }
@@ -2165,7 +2486,7 @@ internal static class DsGameHooks
     public static void StaggerPile(string tab)
     {
         var grid = PileGrid(tab);
-        if (grid == null || _gridContainer.GetValue(grid) is not Control container)
+        if (grid == null || _gridContainerGet(grid) is not Control container)
             return;
         try
         {
@@ -2173,9 +2494,10 @@ internal static class DsGameHooks
             var count = Math.Min(shown.Count, 40);
             if (count == 0)
                 return;
-            var tween = CardTween(tab, container, 0.6);
+            var motion = BeginMotion(tab);
             for (var i = 0; i < count; i++)
-                RiseIn(tween, shown[i].Card, i / (double)count * 0.2);
+                RiseIn(motion, shown[i].Card, i / (float)count * 0.2f);
+            PlayMotion(tab, motion, container);
         }
         catch (Exception e)
         {
@@ -2211,7 +2533,7 @@ internal static class DsGameHooks
         SettleCards(tab);
         control.Size = screen.Page(tab).Size / PileScale;
         // See EnsurePileScreen: the grid won't reflow by itself.
-        if (AccessTools.Field(_pileScreenType, "_grid")?.GetValue(control) is Node grid)
+        if (_pileGridGet?.Invoke(control) is Node grid)
             AccessTools.Method(grid.GetType(), "ReflowColumns")?.Invoke(grid, null);
     }
 
@@ -2224,4 +2546,110 @@ internal static class DsGameHooks
         if (pile == null && DsBottomScreen.Instance is { } screen)
             screen.SetPlaceholder(tab, screen.PlaceholderText(tab));
     }
+    // ── compiled member access ─────────────────────────────────────────────
+
+    // Game members read on every card moved or every frame: compiled once
+    // into delegates rather than looked up by name and run through
+    // reflection each time. Null where the member is missing (another game
+    // version), as the lookup was; reflection where code can't be compiled.
+    private sealed class MemberReader<T>
+    {
+        private readonly string _name;
+        private readonly bool _field;
+        private readonly Dictionary<Type, Func<object, T>> _byType = new();
+
+        public MemberReader(string name, bool field)
+        {
+            _name = name;
+            _field = field;
+        }
+
+        public bool TryRead(object instance, out T value)
+        {
+            value = default;
+            if (instance == null)
+                return false;
+            var type = instance.GetType();
+            if (!_byType.TryGetValue(type, out var read))
+                _byType[type] = read = Getter<T>(_field ? AccessTools.Field(type, _name) : AccessTools.Property(type, _name));
+            if (read == null)
+                return false;
+            value = read(instance);
+            return true;
+        }
+    }
+
+    private static Func<object, T> Getter<T>(MemberInfo member)
+    {
+        if (member is not (FieldInfo or PropertyInfo { CanRead: true }))
+            return null;
+        var field = member as FieldInfo;
+        var property = member as PropertyInfo;
+        try
+        {
+            var instance = Expr.Parameter(typeof(object));
+            var isStatic = field?.IsStatic ?? property.GetGetMethod(true).IsStatic;
+            var target = isStatic ? null : Expr.Convert(instance, member.DeclaringType);
+            Expr read = field != null ? Expr.Field(target, field) : Expr.Property(target, property);
+            var body = read.Type == typeof(T) ? read : Expr.Convert(read, typeof(T));
+            return Expr.Lambda<Func<object, T>>(body, instance).Compile();
+        }
+        catch (Exception e)
+        {
+            NoteNotCompiled(member, e);
+            return field != null ? o => Cast<T>(field.GetValue(o)) : o => Cast<T>(property.GetValue(o));
+        }
+    }
+
+    private static Func<object, T> Calling<T>(MethodInfo method)
+    {
+        if (method == null)
+            return null;
+        try
+        {
+            var instance = Expr.Parameter(typeof(object));
+            var call = method.IsStatic ? Expr.Call(method) : Expr.Call(Expr.Convert(instance, method.DeclaringType), method);
+            Expr body = call.Type == typeof(T) ? call : Expr.Convert(call, typeof(T));
+            return Expr.Lambda<Func<object, T>>(body, instance).Compile();
+        }
+        catch (Exception e)
+        {
+            NoteNotCompiled(method, e);
+            return o => Cast<T>(method.Invoke(o, null));
+        }
+    }
+
+    private static Action<object> Caller(MethodInfo method)
+    {
+        if (method == null)
+            return null;
+        try
+        {
+            var instance = Expr.Parameter(typeof(object));
+            var call = method.IsStatic ? Expr.Call(method) : Expr.Call(Expr.Convert(instance, method.DeclaringType), method);
+            return Expr.Lambda<Action<object>>(call, instance).Compile();
+        }
+        catch (Exception e)
+        {
+            NoteNotCompiled(method, e);
+            return o => method.Invoke(o, null);
+        }
+    }
+
+    private static T Cast<T>(object value)
+    {
+        if (value is T typed)
+            return typed;
+        try
+        {
+            return value is IConvertible && typeof(T).IsPrimitive ? (T)Convert.ChangeType(value, typeof(T)) : default;
+        }
+        catch (Exception)
+        {
+            return default;
+        }
+    }
+
+    private static void NoteNotCompiled(MemberInfo member, Exception e) =>
+        DsLog.Info($"{member.DeclaringType?.Name}.{member.Name} read through reflection: {e.Message}");
 }
