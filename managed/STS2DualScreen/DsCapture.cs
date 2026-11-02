@@ -11,7 +11,8 @@ namespace STS2DualScreen;
 // Pacing: at the active rate while the part is changing (MarkChanged, or the
 // last capture differed), at the ambient rate while something on it loops
 // forever, and otherwise at IdleIntervalUsec, if idle checks are on, to notice
-// changes nobody announced.
+// changes nobody announced. A MarkChanged window also owes one capture after
+// it ends, so the frame where the motion comes to rest is always taken.
 internal sealed class DsCapture
 {
     private const ulong IdleIntervalUsec = 1_000_000;
@@ -21,6 +22,8 @@ internal sealed class DsCapture
     // changed on every capture for MaxReArmUsec.
     private const double ReArmSeconds = 0.25;
     private const ulong MaxReArmUsec = 3_000_000;
+    // An owed capture kept waiting this long (by an urgent page) is let go first.
+    private const ulong StarveUsec = 250_000;
 
     public readonly string Name;
     public readonly SubViewport Viewport;
@@ -46,8 +49,15 @@ internal sealed class DsCapture
     private int _pendingWidth, _pendingHeight, _pendingEpoch;
     private long _pendingSeq;
     private int _deferredSubmits;
-    // Since when every capture differed from the last; 0 after an unchanged one.
+    // Since when every capture differed from the last; 0 after an unchanged
+    // one, and while nothing tells (looping, or idle with no idle checks).
     private ulong _changedSinceUsec;
+    // MarkChanged since the last capture started after its window ended: a
+    // window as long as its tween can end a frame before the tween's last
+    // step is drawn, so one capture after it is owed (see Due).
+    private bool _owed;
+    // Since when Due has said yes without a Start; 0 if not waiting.
+    private ulong _dueFromUsec;
 
     // Where frames go. A request keeps the target it was made for; frames
     // from an older epoch (resized, moved, paused) are dropped.
@@ -124,7 +134,16 @@ internal sealed class DsCapture
         if (now >= _activeUntilUsec)
             _nextFrameUsec = 0;
         _activeUntilUsec = Math.Max(_activeUntilUsec, now + (ulong)(Math.Max(seconds, 0.05) * 1_000_000));
+        _owed = true;
     }
+
+    /// <summary>
+    /// A capture still owed by a MarkChanged has waited long enough (or its
+    /// window is over): it should have this frame's render, even over an
+    /// urgent page, or a page scrolled without pause would freeze it mid-way.
+    /// </summary>
+    public bool Starved(ulong now) =>
+        _owed && _dueFromUsec != 0 && (now >= _activeUntilUsec || now - _dueFromUsec >= StarveUsec);
 
     /// <summary>
     /// Once per game frame, before Due: asks for the copy of what the
@@ -158,17 +177,42 @@ internal sealed class DsCapture
     public bool Due(ulong now, int activeFps, int ambientFps, bool idleChecks, out ulong dueSince)
     {
         _ambient = ambientFps > 0;
+        // A loop changes every frame by design: that says nothing about
+        // whether something else keeps changing (Submit's re-arm cap).
+        if (_ambient)
+            _changedSinceUsec = 0;
         dueSince = _nextFrameUsec;
-        if (!Enabled || now < _nextFrameUsec || _inFlight >= MaxInFlight)
+        if (!Enabled)
+        {
+            _dueFromUsec = 0;
+            return false;
+        }
+        if (now < _nextFrameUsec || _inFlight >= MaxInFlight)
             return false;
         if (now < _activeUntilUsec)
+        {
             _dueIntervalUsec = (ulong)(1_000_000 / Math.Max(1, activeFps));
+        }
         else if (ambientFps > 0)
+        {
             _dueIntervalUsec = (ulong)(1_000_000 / ambientFps);
-        else if (idleChecks)
+        }
+        else if (_owed || idleChecks)
+        {
+            // The owed capture, then (with idle checks) the idle rate.
             _dueIntervalUsec = IdleIntervalUsec;
+        }
         else
+        {
+            // Idle, and no capture comes until someone says so: a streak of
+            // changed captures ends here, or the next motion after a long
+            // one would never re-arm.
+            _changedSinceUsec = 0;
+            _dueFromUsec = 0;
             return false;
+        }
+        if (_dueFromUsec == 0)
+            _dueFromUsec = now;
         return true;
     }
 
@@ -176,6 +220,10 @@ internal sealed class DsCapture
     public void Start(ulong now)
     {
         _nextFrameUsec = now + _dueIntervalUsec;
+        _dueFromUsec = 0;
+        // Drawn after the window's end: what it owed is paid.
+        if (now >= _activeUntilUsec)
+            _owed = false;
         RenderingServer.ViewportSetUpdateMode(Viewport.GetViewportRid(), RenderingServer.ViewportUpdateMode.Once);
         _readbackDue = true;
         _measureFrames = MeasureFrames;

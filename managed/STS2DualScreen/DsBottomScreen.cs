@@ -763,9 +763,10 @@ internal sealed class DsBottomScreen
     // Each part renders only when its capture is due, and each render costs
     // the game's GPU in the game's frame, then a full copy when it comes
     // back. So at most one part starts a render a game frame (the one that
-    // has waited longest; the pages first while a finger is on them), and at
-    // most one copy goes out (DsCapture.Stagger): bursts are spread over
-    // frames instead of landing in one.
+    // has waited longest; the pages first while a finger is on them, unless
+    // a part has been owed a frame too long: DsCapture.Starved), and at most
+    // one copy goes out (DsCapture.Stagger): bursts are spread over frames
+    // instead of landing in one.
     private void RunCaptures(ulong now, int fps, bool booting, bool pageAmbient, bool urgent)
     {
         if (DsCapture.Stagger)
@@ -786,6 +787,7 @@ internal sealed class DsBottomScreen
         var stagger = _config.StaggerCaptures;
         DsCapture next = null;
         var nextSince = ulong.MaxValue;
+        var pageUrgent = false;
         // Booting: one black frame, then nothing.
         if (!(booting && _bootFrameShown))
         {
@@ -794,7 +796,8 @@ internal sealed class DsBottomScreen
                 if (stagger)
                 {
                     next = _page;
-                    nextSince = urgent ? 0 : since;
+                    nextSince = since;
+                    pageUrgent = urgent;
                 }
                 else
                 {
@@ -813,10 +816,11 @@ internal sealed class DsBottomScreen
             {
                 part.Capture.Start(now);
             }
-            else if (since < nextSince)
+            else if (pageUrgent ? part.Capture.Starved(now) : since < nextSince)
             {
                 next = part.Capture;
                 nextSince = since;
+                pageUrgent = false;
             }
         }
         next?.Start(now);

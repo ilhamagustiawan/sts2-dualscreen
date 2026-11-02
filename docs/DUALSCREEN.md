@@ -36,11 +36,14 @@ The tab bar is docked along the bottom edge of the lower screen.
 - **Pacing.** A part renders (`UpdateMode.Once`) only when a capture is due:
   at the active rate while something on it moves (`MarkChanged`, or the last
   capture differed, for 0.25 s), at an ambient rate while something loops
-  forever, else once a second to catch changes nobody announced. In a fight
+  forever, else once a second to catch changes nobody announced. A window
+  owes one more capture after it ends, so the frame a motion ends on is
+  always drawn. In a fight
   the pile pages stay at 15 FPS even while their cards move
   (`combat_motion_fps`), and lower still while the game is dropping frames.
 - **Stagger.** At most one part starts a render per game frame (the one that
-  has waited longest; the pages first under a finger), and at most one frame
+  has waited longest; the pages first under a finger, unless another part has
+  been owed a frame for 0.25 s or its window is over), and at most one frame
   is handed to libsts2ds per game frame; one that comes back later in the same
   frame is held for the next.
 - **Readback.** Asynchronous: `RenderingDevice.TextureGetDataAsync`. Its
