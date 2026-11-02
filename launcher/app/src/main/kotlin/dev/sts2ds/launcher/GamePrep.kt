@@ -165,6 +165,11 @@ object GamePrep {
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
+        try {
+            EngineOverrides.apply(gameDir, EngineOverrides.render(settings.savePipelinesOften))
+        } catch (e: Exception) {
+            LauncherLog.log("Could not write engine overrides: ${e.message}")
+        }
 
         LauncherLog.log(
             "Prepared in ${(System.nanoTime() - started) / 1_000_000} ms" +

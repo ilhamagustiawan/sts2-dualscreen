@@ -138,6 +138,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PERF_HINT, true)
         set(value) { prefs.edit().putBoolean(KEY_PERF_HINT, value).apply() }
 
+    /**
+     * Save the engine's Vulkan pipeline cache every 256 KB of growth instead
+     * of every 3 MB or at a clean exit (EngineOverrides), so effects compiled
+     * in one session are not compiled again in the next. On by default.
+     */
+    var savePipelinesOften: Boolean
+        get() = prefs.getBoolean(KEY_SAVE_PIPELINES, true)
+        set(value) { prefs.edit().putBoolean(KEY_SAVE_PIPELINES, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -174,6 +183,7 @@ class SettingsStore(context: Context) {
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_GC_NURSERY = "gc_nursery"
         private const val KEY_PERF_HINT = "perf_hint"
+        private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

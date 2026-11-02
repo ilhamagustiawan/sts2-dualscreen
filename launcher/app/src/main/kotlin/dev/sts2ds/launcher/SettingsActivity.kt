@@ -170,6 +170,10 @@ class SettingsActivity : Activity() {
             settings.perfHint = on
             LauncherLog.log("Settings: performance hint → $on")
         }
+        bind(R.id.sw_save_pipelines, settings.savePipelinesOften) { on ->
+            settings.savePipelinesOften = on
+            LauncherLog.log("Settings: save shader pipelines often → $on")
+        }
         bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
             settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
             LauncherLog.log("Settings: renderer → ${settings.renderer}")
