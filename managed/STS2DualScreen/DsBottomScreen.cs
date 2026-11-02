@@ -445,7 +445,17 @@ internal sealed class DsBottomScreen
         var previous = _active;
         _active = tab;
         foreach (var (key, page) in _pages)
+        {
             page.Visible = key == tab;
+            // A hidden page's game nodes still ran every frame: the map's
+            // reachable rooms pulse in _Process and its tweens and the grids'
+            // tick. Paused, they pick up where they were once shown. The
+            // mirroring (SetMap, travel state, drawings) is plain calls and
+            // signals, which a paused node still takes.
+            page.ProcessMode = key == tab || !_config.PauseHiddenPages
+                ? Node.ProcessModeEnum.Inherit
+                : Node.ProcessModeEnum.Disabled;
+        }
         _dock.Select(tab, animate);
         MarkChanged();
         DsGameHooks.OnTabShown(tab);

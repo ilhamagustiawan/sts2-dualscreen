@@ -19,6 +19,9 @@ internal sealed class DsConfig
     /// <summary>Pile page rate in a fight while its cards move (the still rate is 15).</summary>
     public int CombatMotionFps = 15;
 
+    /// <summary>Pages not shown don't process (their game nodes' _Process and tweens).</summary>
+    public bool PauseHiddenPages = true;
+
     /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
     public float ParticleAmount = 1f;
 
@@ -55,6 +58,8 @@ internal sealed class DsConfig
                 Fps = Math.Clamp(fps, 10, 60);
             if (root.TryGetProperty("combat_motion_fps", out var cm) && cm.TryGetInt32(out var combatMotion))
                 CombatMotionFps = Math.Clamp(combatMotion, 10, 60);
+            if (root.TryGetProperty("pause_hidden_pages", out var ph) && ph.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                PauseHiddenPages = ph.GetBoolean();
             if (root.TryGetProperty("default_tab", out var t) && t.ValueKind == JsonValueKind.String)
                 DefaultTab = t.GetString();
             if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))
