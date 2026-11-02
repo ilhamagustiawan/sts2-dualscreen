@@ -90,7 +90,8 @@ internal sealed class DsBottomScreen
     // busiest; half the rate there is still smooth enough for cards moving.
     private const int CombatFps = 15;
     // Until then a one-shot animation is playing on the pages (cards moving
-    // in a pile): those caps give way to the set rate while it runs.
+    // in a pile): outside a fight the caps give way to the set rate while it
+    // runs (see PileRate).
     private ulong _pageMotionUntilUsec;
     private Control _idle;
     private Control _idleArt;
@@ -683,7 +684,7 @@ internal sealed class DsBottomScreen
 
             var pageAmbient = !booting && PageAmbient();
             var dockAmbient = _inRun && _dock.Animating;
-            UpdateBudget(now, pageAmbient || dockAmbient);
+            UpdateBudget(now, pageAmbient || dockAmbient || now < _pageMotionUntilUsec);
 
             // The menu art needn't be smooth; a pile grid is many cards, each
             // costly to draw, and mostly still (more so in a fight); the map
@@ -691,8 +692,8 @@ internal sealed class DsBottomScreen
             var scrolling = Scrolling(now);
             var fps = scrolling ? Math.Max(_config.Fps, ScrollFps)
                 : !_inRun ? Math.Min(_config.Fps, IdleArtFps)
-                : _active == "map" || TouchRecent || now < _pageMotionUntilUsec ? _config.Fps
-                : Math.Min(_config.Fps, DsGameHooks.InCombat ? CombatFps : PileFps);
+                : _active == "map" || TouchRecent ? _config.Fps
+                : PileRate(now);
             var defer = DeferCapture(now, scrolling);
             // Booting: one black frame, then nothing.
             if (!defer && !(booting && _bootFrameShown))
@@ -719,6 +720,19 @@ internal sealed class DsBottomScreen
             DsLog.Info($"frame failed, bottom screen stopped: {e}");
             _tree.ProcessFrame -= OnProcessFrame;
         }
+    }
+
+    // A pile page. Cards moving in it lift the rate to the set one, but not
+    // in a fight: there the top screen is at its busiest just as cards move,
+    // so motion gets CombatMotionFps at most. While the game is dropping
+    // frames already, the budget's lower rate holds, motion or not.
+    private int PileRate(ulong now)
+    {
+        var motion = now < _pageMotionUntilUsec;
+        var fps = DsGameHooks.InCombat
+            ? Math.Min(_config.Fps, motion ? Math.Max(CombatFps, _config.CombatMotionFps) : CombatFps)
+            : motion ? _config.Fps : Math.Min(_config.Fps, PileFps);
+        return _budget > 0 ? Math.Min(fps, PageAmbientFps[_budget]) : fps;
     }
 
     private bool IsBooting()

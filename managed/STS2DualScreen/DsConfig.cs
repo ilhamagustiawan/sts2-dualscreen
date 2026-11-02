@@ -15,6 +15,9 @@ internal sealed class DsConfig
     /// 1080p-designed UI keeps a readable scale on the 3.9" panel.</summary>
     public float CanvasScale = 1.3f;
 
+    /// <summary>Pile page rate in a fight while its cards move (the still rate is 15).</summary>
+    public int CombatMotionFps = 15;
+
     /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
     public float ParticleAmount = 1f;
 
@@ -38,6 +41,8 @@ internal sealed class DsConfig
                 config.Enabled = e.GetBoolean();
             if (root.TryGetProperty("fps", out var f) && f.TryGetInt32(out var fps))
                 config.Fps = Math.Clamp(fps, 10, 60);
+            if (root.TryGetProperty("combat_motion_fps", out var cm) && cm.TryGetInt32(out var combatMotion))
+                config.CombatMotionFps = Math.Clamp(combatMotion, 10, 60);
             if (root.TryGetProperty("default_tab", out var t) && t.ValueKind == JsonValueKind.String)
                 config.DefaultTab = t.GetString();
             if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))

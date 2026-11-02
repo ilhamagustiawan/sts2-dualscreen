@@ -17,6 +17,10 @@ internal sealed class DsCapture
     private const ulong IdleIntervalUsec = 1_000_000;
     private const ulong ActiveWindowUsec = 1_000_000;
     private const int MaxInFlight = 3;
+    // A changed capture keeps the active rate this much longer, until it has
+    // changed on every capture for MaxReArmUsec.
+    private const double ReArmSeconds = 0.25;
+    private const ulong MaxReArmUsec = 3_000_000;
 
     public readonly string Name;
     public readonly SubViewport Viewport;
@@ -33,6 +37,8 @@ internal sealed class DsCapture
     private bool _ambient;
     private int _inFlight;
     private ulong _lastRequestUsec;
+    // Since when every capture differed from the last; 0 after an unchanged one.
+    private ulong _changedSinceUsec;
 
     // Where frames go. A request keeps the target it was made for; frames
     // from an older epoch (resized, moved, paused) are dropped.
@@ -268,12 +274,20 @@ internal sealed class DsCapture
             : DsNative.SubmitRegion(pixels, width, height, width * 4, _x, _y, _region);
         _submitMsTotal += (Time.GetTicksUsec() - started) / 1000.0;
         _submits++;
+        if (posted == 0)
+            _changedSinceUsec = 0;
         if (posted != 1)
             return;
         _posted++;
-        // It differed from the last frame: it's moving, keep up with it. Not
-        // while it loops forever: that's what the ambient rate is for.
-        if (!_ambient)
-            MarkChanged();
+        var now = Time.GetTicksUsec();
+        if (_changedSinceUsec == 0)
+            _changedSinceUsec = now;
+        // It differed from the last frame: it's moving, keep up with it for a
+        // moment. Not while it loops forever (that's what the ambient rate is
+        // for), nor once it has changed on every capture for a while: that is
+        // a loop nobody announced, and whoever starts real motion says so
+        // (MarkChanged) for as long as it runs.
+        if (!_ambient && now - _changedSinceUsec < MaxReArmUsec)
+            MarkChanged(ReArmSeconds);
     }
 }
