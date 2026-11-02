@@ -478,6 +478,9 @@ internal sealed class DsBottomScreen
                 ? Node.ProcessModeEnum.Inherit
                 : Node.ProcessModeEnum.Disabled;
         }
+        // Its pile motion would wait, paused, and be replayed stale on return.
+        if (changed && previous != null)
+            DsGameHooks.OnTabHidden(previous);
         _dock.Select(tab, animate);
         MarkChanged();
         DsGameHooks.OnTabShown(tab);

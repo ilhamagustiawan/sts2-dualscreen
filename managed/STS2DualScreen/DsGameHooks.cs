@@ -320,6 +320,19 @@ internal static class DsGameHooks
             UpdateMapPlaceholder();
     }
 
+    /// <summary>
+    /// A pile tab was left: its cards' motion ends now. Paused with its page
+    /// (pause_hidden_pages), the tween would stay running, so the pile would
+    /// stay pending (CardsMoving) and mid-exit (ExitingPiles) until shown
+    /// again, then replay a stale motion. Cards leaving finish leaving: the
+    /// pile is stale, and its tab rebuilds it when opened.
+    /// </summary>
+    public static void OnTabHidden(string tab)
+    {
+        if (TabToPileType.ContainsKey(tab))
+            SettleCards(tab);
+    }
+
     /// <summary>While travel is on, the map's rooms you can reach pulse forever (NNormalMapPoint).</summary>
     public static bool MapAmbient() => MapValid() && _mapTravelGet?.Invoke(_map) == true;
 
@@ -1534,7 +1547,10 @@ internal static class DsGameHooks
             PendingGone.Clear();
             foreach (var (node, pending) in PendingPiles)
             {
-                if (!GodotObject.IsInstanceValid(node) || !StalePiles.Contains(node))
+                // Hidden: no longer pending, but still stale, so its tab
+                // rebuilds it when opened (EnsurePileScreen).
+                if (!GodotObject.IsInstanceValid(node) || !StalePiles.Contains(node)
+                    || node is CanvasItem item && !item.IsVisibleInTree())
                 {
                     PendingGone.Add(node);
                     continue;
