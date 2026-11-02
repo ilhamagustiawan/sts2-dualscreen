@@ -318,6 +318,11 @@ internal sealed class DsBottomScreen
         return null;
     }
 
+    /// <summary>Opens a trace section for a Perfetto capture; close it with TraceEnd, same thread. No-op without libsts2ds.</summary>
+    public static void TraceBegin(string name) => DsNative.TraceBegin(name);
+
+    public static void TraceEnd() => DsNative.TraceEnd();
+
     /// <summary>A pile was rebuilt (called once per real rebuild): counted for the stats line.</summary>
     public static void NotePileRebuild() => DsPerf.NotePileRebuild();
 
@@ -624,6 +629,19 @@ internal sealed class DsBottomScreen
 
     private void OnProcessFrame()
     {
+        DsNative.TraceBegin("ds tick");
+        try
+        {
+            Tick();
+        }
+        finally
+        {
+            DsNative.TraceEnd();
+        }
+    }
+
+    private void Tick()
+    {
         try
         {
             var now = Time.GetTicksUsec();
@@ -745,7 +763,15 @@ internal sealed class DsBottomScreen
             if (_surfaceReady && _inRun)
             {
                 var started = Time.GetTicksUsec();
-                DsNative.Present();
+                DsNative.TraceBegin("ds present");
+                try
+                {
+                    DsNative.Present();
+                }
+                finally
+                {
+                    DsNative.TraceEnd();
+                }
                 DsPerf.NotePresent(Time.GetTicksUsec() - started);
             }
         }

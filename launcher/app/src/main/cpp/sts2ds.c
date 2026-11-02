@@ -18,6 +18,7 @@
 #include <android/log.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
+#include <android/trace.h>
 #include <jni.h>
 #include <pthread.h>
 #include <stdint.h>
@@ -28,6 +29,9 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
 #define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
 #define EXPORT __attribute__((visibility("default")))
+// Sections for a Perfetto/systrace capture (app atrace); no-ops unless tracing.
+#define TRACE_BEGIN(name) ATrace_beginSection(name)
+#define TRACE_END() ATrace_endSection()
 
 #define TOUCH_CAPACITY 256
 #define REGION_COUNT 4
@@ -263,11 +267,14 @@ static uint64_t frame_hash(const uint8_t *rgba, int32_t w, int32_t h, int32_t st
 // skipped (unchanged or no surface), negative on error.
 EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_t stride) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4) return -1;
+    TRACE_BEGIN("ds submit frame");
     pthread_mutex_lock(&g_lock);
     int32_t result = 0;
     if (!g_window || !g_visible) goto out;
 
+    TRACE_BEGIN("ds hash");
     uint64_t hash = frame_hash(rgba, w, h, stride);
+    TRACE_END();
     if (hash == g_last_hash) {
         g_frames_skipped++;
         goto out;
@@ -284,17 +291,24 @@ EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_
     }
 
     ANativeWindow_Buffer buffer;
-    if (ANativeWindow_lock(g_window, &buffer, NULL) != 0) {
+    TRACE_BEGIN("ds lock");
+    int32_t locked = ANativeWindow_lock(g_window, &buffer, NULL);
+    TRACE_END();
+    if (locked != 0) {
         result = -3;
         goto out;
     }
+    TRACE_BEGIN("ds copy");
     int32_t rows = buffer.height < h ? buffer.height : h;
     int32_t cols = buffer.width < w ? buffer.width : w;
     uint8_t *dst = (uint8_t *)buffer.bits;
     for (int32_t y = 0; y < rows; y++) {
         memcpy(dst + (size_t)y * buffer.stride * 4, rgba + (size_t)y * stride, (size_t)cols * 4);
     }
+    TRACE_END();
+    TRACE_BEGIN("ds post");
     ANativeWindow_unlockAndPost(g_window);
+    TRACE_END();
     g_last_hash = hash;
     // The buffers now hold this frame, not the regions.
     memset(g_region_hash, 0, sizeof(g_region_hash));
@@ -304,6 +318,7 @@ EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_
 
 out:
     pthread_mutex_unlock(&g_lock);
+    TRACE_END();
     return result;
 }
 
@@ -316,6 +331,7 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
                                 int32_t x, int32_t y, int32_t region) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4 || x < 0 || y < 0
         || region < 0 || region >= REGION_COUNT) return -1;
+    TRACE_BEGIN("ds submit region");
     pthread_mutex_lock(&g_lock);
     int32_t result = 0;
     if (!g_window || !g_visible || g_width <= 0 || g_height <= 0) goto out;
@@ -323,7 +339,9 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
     int32_t cw = w < g_width - x ? w : g_width - x;
     int32_t ch = h < g_height - y ? h : g_height - y;
 
+    TRACE_BEGIN("ds hash");
     uint64_t hash = frame_hash(rgba, w, h, stride) ^ ((uint64_t)x << 48 | (uint64_t)y << 32);
+    TRACE_END();
     if (hash == g_region_hash[region]) {
         g_frames_skipped++;
         goto out;
@@ -353,9 +371,9 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
         memset(g_region_hash, 0, sizeof(g_region_hash));
         for (int32_t i = 0; i < REGION_COUNT; i++) g_overlays[i].valid = 0;
     }
+    TRACE_BEGIN("ds compose");
     if (region >= FIRST_OVERLAY) {
         result = store_overlay_locked(region, rgba, stride, x, y, cw, ch);
-        if (result != 1) goto out;
     } else {
         size_t shadow_stride = (size_t)g_shadow_w * 4;
         for (int32_t row = 0; row < ch; row++) {
@@ -364,6 +382,8 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
         }
         restore_overlays_locked(x, y, x + cw, y + ch);
     }
+    TRACE_END();
+    if (region >= FIRST_OVERLAY && result != 1) goto out;
     if (!g_pending) {
         g_pending_rect = (ARect){x, y, x + cw, y + ch};
         g_pending = 1;
@@ -378,6 +398,7 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
 
 out:
     pthread_mutex_unlock(&g_lock);
+    TRACE_END();
     return result;
 }
 
@@ -387,6 +408,7 @@ out:
 // drawn (all of it, after a new buffer) is copied from the shadow. Returns 1
 // if posted, 0 if nothing was pending, negative on error.
 EXPORT int32_t ds_present(void) {
+    TRACE_BEGIN("ds present");
     pthread_mutex_lock(&g_lock);
     int32_t result = 0;
     if (!g_pending) goto out;
@@ -395,10 +417,14 @@ EXPORT int32_t ds_present(void) {
 
     ARect dirty = g_pending_rect;
     ANativeWindow_Buffer buffer;
-    if (ANativeWindow_lock(g_window, &buffer, &dirty) != 0) {
+    TRACE_BEGIN("ds lock");
+    int32_t locked = ANativeWindow_lock(g_window, &buffer, &dirty);
+    TRACE_END();
+    if (locked != 0) {
         result = -3;
         goto out;
     }
+    TRACE_BEGIN("ds copy");
     int32_t left = dirty.left > 0 ? dirty.left : 0;
     int32_t top = dirty.top > 0 ? dirty.top : 0;
     int32_t right = dirty.right < buffer.width ? dirty.right : buffer.width;
@@ -411,13 +437,17 @@ EXPORT int32_t ds_present(void) {
         memcpy(dst + ((size_t)row * buffer.stride + left) * 4,
                g_shadow + (size_t)row * shadow_stride + (size_t)left * 4, (size_t)(right - left) * 4);
     }
+    TRACE_END();
+    TRACE_BEGIN("ds post");
     ANativeWindow_unlockAndPost(g_window);
+    TRACE_END();
     g_last_hash = 0;
     g_frames_posted++;
     result = 1;
 
 out:
     pthread_mutex_unlock(&g_lock);
+    TRACE_END();
     return result;
 }
 
@@ -428,6 +458,16 @@ EXPORT void ds_stats(int64_t *out) {
     out[1] = g_frames_skipped;
     out[2] = g_touch_overflow;
     pthread_mutex_unlock(&g_lock);
+}
+
+// For the game's own trace sections (DsBottomScreen.TraceBegin/TraceEnd).
+// Begin and end must pair up on one thread.
+EXPORT void ds_trace_begin(const char *name) {
+    if (name) TRACE_BEGIN(name);
+}
+
+EXPORT void ds_trace_end(void) {
+    TRACE_END();
 }
 
 EXPORT void ds_log(const char *message) {

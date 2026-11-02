@@ -25,6 +25,7 @@ internal sealed class DsCapture
     // waits on the GPU. Null on the Compatibility renderer: read back inline.
     private readonly RenderingDevice _rd;
     private readonly Callable _onFrameData;
+    private readonly string _traceName;
 
     private ulong _activeUntilUsec;
     private ulong _nextFrameUsec;
@@ -58,6 +59,7 @@ internal sealed class DsCapture
         Name = name;
         Viewport = viewport;
         _rd = rd;
+        _traceName = $"ds frame data {name}";
         // Variant, not byte[]: the frame arrives as Godot's own refcounted
         // PackedByteArray and is read in place. A byte[] would be a fresh
         // 5 MB managed array per capture, and that churn forces full GCs.
@@ -204,12 +206,14 @@ internal sealed class DsCapture
     private void OnFrameData(Variant data)
     {
         var started = Time.GetTicksUsec();
+        DsNative.TraceBegin(_traceName);
         try
         {
             TakeFrame(data);
         }
         finally
         {
+            DsNative.TraceEnd();
             DsPerf.NoteCallback(Time.GetTicksUsec() - started);
         }
     }
