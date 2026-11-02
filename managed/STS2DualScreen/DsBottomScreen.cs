@@ -267,6 +267,7 @@ internal sealed class DsBottomScreen
 
         _createdUsec = Time.GetTicksUsec();
         DsCapture.Stagger = config.StaggerCaptures;
+        StartPresentThread(config.PresentThread);
         _page = new DsCapture("page", _viewport, rd);
         DsLog.Info(rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
         ApplyLayout(_surfaceW, _surfaceH);
@@ -278,6 +279,26 @@ internal sealed class DsBottomScreen
         RenderingServer.FramePostDraw += OnPostDraw;
         _tree.Root.WindowInput += OnRootInput;
         Show(Array.IndexOf(Tabs, config.DefaultTab) >= 0 ? config.DefaultTab : "map");
+    }
+
+    private static void StartPresentThread(bool on)
+    {
+        if (!on)
+        {
+            DsLog.Info("bottom present: on the game's thread (present_thread off)");
+            return;
+        }
+        try
+        {
+            DsLog.Info(DsNative.PresentThread(true)
+                ? "bottom present: native thread"
+                : "bottom present: native thread failed to start; on the game's thread");
+        }
+        catch (Exception e)
+        {
+            // An older libsts2ds without the thread.
+            DsLog.Info($"bottom present: on the game's thread ({e.GetType().Name})");
+        }
     }
 
     private static SubViewport NewViewport(string name) =>

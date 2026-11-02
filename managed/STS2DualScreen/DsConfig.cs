@@ -25,6 +25,12 @@ internal sealed class DsConfig
     /// <summary>At most one lower-screen part renders, and one is copied out, a game frame.</summary>
     public bool StaggerCaptures = true;
 
+    /// <summary>
+    /// libsts2ds compares, composes and posts frames on its own thread; the
+    /// game's thread only copies each one over. Off: all of it in the game's frame.
+    /// </summary>
+    public bool PresentThread = true;
+
     /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
     public float ParticleAmount = 1f;
 
@@ -65,6 +71,8 @@ internal sealed class DsConfig
                 PauseHiddenPages = ph.GetBoolean();
             if (root.TryGetProperty("stagger_captures", out var sc) && sc.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 StaggerCaptures = sc.GetBoolean();
+            if (root.TryGetProperty("present_thread", out var pt) && pt.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                PresentThread = pt.GetBoolean();
             if (root.TryGetProperty("default_tab", out var t) && t.ValueKind == JsonValueKind.String)
                 DefaultTab = t.GetString();
             if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))

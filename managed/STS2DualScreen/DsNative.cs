@@ -37,9 +37,15 @@ internal static unsafe class DsNative
     [DllImport(Lib, EntryPoint = "ds_submit_region")]
     public static extern int SubmitRegion(byte* rgba, int width, int height, int stride, int x, int y, int region);
 
-    /// <summary>Posts the regions written since the last call as one buffer.</summary>
+    /// <summary>Posts the regions written since the last call as one buffer (on the present thread, if on).</summary>
     [DllImport(Lib, EntryPoint = "ds_present")]
     public static extern int Present();
+
+    /// <summary>Starts (true) or stops the native present thread; true if it runs.</summary>
+    [DllImport(Lib, EntryPoint = "ds_present_thread")]
+    private static extern int ds_present_thread(int on);
+
+    public static bool PresentThread(bool on) => ds_present_thread(on ? 1 : 0) == 1;
 
     [DllImport(Lib, EntryPoint = "ds_stats")]
     private static extern void ds_stats(long* outStats);
