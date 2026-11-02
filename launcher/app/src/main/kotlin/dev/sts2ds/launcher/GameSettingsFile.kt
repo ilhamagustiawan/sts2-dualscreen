@@ -72,6 +72,15 @@ class GameSettingsFile(val file: File) {
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
 
+        /**
+         * The compat pack's combat code warmup: while the game loads it runs
+         * the JIT over the attack, damage, hook and VFX code a fight uses
+         * (PrepareMethod), so the first card played does not compile it on
+         * the main thread. Code only, no scenes or animation: unrelated to
+         * [KEY_ANIMATION_WARMUP]. Set from the launcher's switch every launch.
+         */
+        const val KEY_COMBAT_CODE_WARMUP = "preload_combat_code_enabled"
+
         /** Always present; filled in only where missing so in-game changes stay. */
         private val BASE_DEFAULTS: Map<String, Any> = linkedMapOf(
             KEY_PRELOAD to true,
@@ -85,7 +94,6 @@ class GameSettingsFile(val file: File) {
             "preload_vfx_tree_warmup_frames" to 3,
             "preload_combat_animation_warmup_frames" to 1,
             "preload_shader_mode" to "off",
-            "preload_combat_code_enabled" to false,
             KEY_SHADER_COMPAT to false,
             KEY_OVERLAY to false,
         )
@@ -136,12 +144,27 @@ class GameSettingsFile(val file: File) {
         val VSYNC_MODES = listOf("off", "on", "adaptive")
 
         /**
+         * The game's FPS cap (Engine.MaxFps; 0 is none). 60 is the Balanced
+         * preset; 0 leaves pacing to vsync and Swappy alone, without Godot's
+         * own limiter sleeping on top of it, which can miss a vsync. The game
+         * applies 0 as is (NGame.InitializeGraphicsPreferences); its own
+         * settings page, which lists 24 to 500, shows it as 60 until changed.
+         */
+        val FPS_LIMITS = listOf(60, 0, 30)
+
+        /**
          * Fills in missing performance keys. [firstTime] also applies the
          * Balanced preset and turns the warmups on over whatever is there.
-         * [animWarmup] configures creature Spine animation pre-warming ("safe" or "off").
+         * [animWarmup] configures creature Spine animation pre-warming ("safe" or "off");
+         * [combatCode] the combat code warmup ([KEY_COMBAT_CODE_WARMUP]).
          * Returns whether anything changed.
          */
-        fun ensurePerformanceDefaults(json: JSONObject, firstTime: Boolean, animWarmup: Boolean = false): Boolean {
+        fun ensurePerformanceDefaults(
+            json: JSONObject,
+            firstTime: Boolean,
+            animWarmup: Boolean = false,
+            combatCode: Boolean = true,
+        ): Boolean {
             var changed = false
             for ((key, value) in BASE_DEFAULTS) changed = putIfMissing(json, key, value) || changed
             if (!json.has(KEY_RENDER_SIZE)) {
@@ -161,6 +184,10 @@ class GameSettingsFile(val file: File) {
             val targetAnim = if (animWarmup) "safe" else "off"
             if (json.optString(KEY_ANIMATION_WARMUP, "") != targetAnim) {
                 json.put(KEY_ANIMATION_WARMUP, targetAnim)
+                changed = true
+            }
+            if (json.opt(KEY_COMBAT_CODE_WARMUP) != combatCode) {
+                json.put(KEY_COMBAT_CODE_WARMUP, combatCode)
                 changed = true
             }
             return changed

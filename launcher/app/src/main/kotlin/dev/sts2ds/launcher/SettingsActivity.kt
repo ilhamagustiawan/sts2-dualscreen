@@ -111,6 +111,10 @@ class SettingsActivity : Activity() {
             settings.animWarmup = on
             edit("anim warmup → $on") { it.put(GameSettingsFile.KEY_ANIMATION_WARMUP, if (on) "safe" else "off") }
         }
+        bind(R.id.sw_combat_code, settings.combatCodeWarmup) { on ->
+            settings.combatCodeWarmup = on
+            edit("combat code warmup → $on") { it.put(GameSettingsFile.KEY_COMBAT_CODE_WARMUP, on) }
+        }
         bind(R.id.sw_preload, settingsJson.optBoolean(GameSettingsFile.KEY_PRELOAD, true)) { on ->
             edit("preload → $on") { it.put(GameSettingsFile.KEY_PRELOAD, on) }
         }
@@ -135,6 +139,17 @@ class SettingsActivity : Activity() {
         ) { mode -> edit("vsync → $mode") { it.put(GameSettingsFile.KEY_VSYNC, mode) } }
 
         choose(
+            R.id.sp_fps_limit, GameSettingsFile.FPS_LIMITS, settingsJson.optInt(GameSettingsFile.KEY_FPS_LIMIT, 60),
+            { if (it > 0) "$it" else getString(R.string.settings_fps_limit_none) },
+        ) { limit -> edit("fps limit → $limit") { it.put(GameSettingsFile.KEY_FPS_LIMIT, limit) } }
+        choose(
+            R.id.sp_frame_pacing, PACING_NAMES.keys.toList(), settings.framePacing,
+            { PACING_NAMES[it]?.let(::getString) ?: it },
+        ) { mode ->
+            settings.framePacing = mode
+            LauncherLog.log("Settings: frame pacing → $mode")
+        }
+        choose(
             R.id.sp_refresh_rate, REFRESH_NAMES.keys.toList(), settings.refreshRate,
             { getString(REFRESH_NAMES.getValue(it)) },
         ) { mode ->
@@ -153,6 +168,22 @@ class SettingsActivity : Activity() {
         ) { percent ->
             settings.particleAmount = percent
             LauncherLog.log("Settings: particles → $percent%")
+        }
+        // The launcher's own: GamePrep sets MONO_GC_PARAMS before the engine starts.
+        choose(
+            R.id.sp_gc, GC_NAMES.keys.toList(), settings.gcNursery,
+            { GC_NAMES[it]?.let(::getString) ?: it },
+        ) { mode ->
+            settings.gcNursery = mode
+            LauncherLog.log("Settings: GC nursery → $mode")
+        }
+        bind(R.id.sw_perf_hint, settings.perfHint) { on ->
+            settings.perfHint = on
+            LauncherLog.log("Settings: performance hint → $on")
+        }
+        bind(R.id.sw_save_pipelines, settings.savePipelinesOften) { on ->
+            settings.savePipelinesOften = on
+            LauncherLog.log("Settings: save shader pipelines often → $on")
         }
         bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
             settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
@@ -204,12 +235,22 @@ class SettingsActivity : Activity() {
     private companion object {
         val GAME_FILE_CONTROLS = intArrayOf(
             R.id.sw_warmups, R.id.sw_anim_warmup, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
-            R.id.sp_render_size, R.id.sp_msaa, R.id.sp_vsync,
+            R.id.sp_render_size, R.id.sp_msaa, R.id.sp_vsync, R.id.sp_fps_limit,
+        )
+        val PACING_NAMES = linkedMapOf(
+            EngineOverrides.PACING_STEADY to R.string.settings_pacing_steady,
+            EngineOverrides.PACING_ADAPTIVE to R.string.settings_pacing_adaptive,
+            EngineOverrides.PACING_OFF to R.string.settings_pacing_off,
         )
         val REFRESH_NAMES = linkedMapOf(
             SettingsStore.REFRESH_SYSTEM to R.string.settings_refresh_system,
             SettingsStore.REFRESH_60HZ to R.string.settings_refresh_60,
             SettingsStore.REFRESH_HIGH to R.string.settings_refresh_high,
+        )
+        val GC_NAMES = linkedMapOf(
+            SettingsStore.GC_DEFAULT to R.string.settings_gc_default,
+            SettingsStore.GC_16M to R.string.settings_gc_16m,
+            SettingsStore.GC_32M to R.string.settings_gc_32m,
         )
         val PARTICLE_AMOUNTS = linkedMapOf(
             100 to R.string.settings_particles_full,

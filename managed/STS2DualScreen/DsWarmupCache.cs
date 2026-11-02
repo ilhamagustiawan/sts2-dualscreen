@@ -114,6 +114,20 @@ internal static class DsWarmupCache
         if (shaderCount == 0 || shaderBytes == 0)
             return (false, "shader_cache is empty or missing");
 
+        // The shader cache alone says nothing about pipelines: Godot writes
+        // its Vulkan pipeline cache only every few MB of growth or on a clean
+        // exit, which Android seldom gives it. Skipping the warmup without one
+        // leaves every effect to compile in the first fights.
+        if (UsesVulkan())
+        {
+            var (pipelineBytes, pipelineTime) = GetPipelineCacheStats();
+            if (pipelineBytes == 0)
+                return (false, "no Vulkan pipeline cache on disk");
+            var buildTime = DsRuntimeConfig.Current.BuildTimeMs;
+            if (buildTime > 0 && pipelineTime < DateTimeOffset.FromUnixTimeMilliseconds(buildTime).UtcDateTime)
+                return (false, "Vulkan pipeline cache is older than the game build");
+        }
+
         try
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(stampPath));
@@ -169,6 +183,7 @@ internal static class DsWarmupCache
                 ["vfx_frames"] = treeWarmupFrames,
                 ["shader_cache_files"] = shaderCount,
                 ["shader_cache_bytes"] = shaderBytes,
+                ["pipeline_cache_bytes"] = GetPipelineCacheStats().bytes,
                 ["timestamp"] = DateTime.UtcNow.ToString("o")
             };
 
@@ -200,6 +215,36 @@ internal static class DsWarmupCache
         }
         catch { }
         return (count, bytes);
+    }
+
+    private static bool UsesVulkan()
+    {
+        try { return RenderingServer.GetCurrentRenderingDriverName() == "vulkan"; }
+        catch { return true; }
+    }
+
+    /// <summary>Total size and newest write of user://vulkan/pipelines*.cache.</summary>
+    private static (long bytes, DateTime newestUtc) GetPipelineCacheStats()
+    {
+        long bytes = 0;
+        var newest = DateTime.MinValue;
+        try
+        {
+            var dir = Path.Combine(OS.GetUserDataDir(), "vulkan");
+            if (!Directory.Exists(dir))
+                return (0, newest);
+            foreach (var file in Directory.EnumerateFiles(dir, "pipelines*.cache"))
+            {
+                var info = new FileInfo(file);
+                if (info.Length == 0)
+                    continue;
+                bytes += info.Length;
+                if (info.LastWriteTimeUtc > newest)
+                    newest = info.LastWriteTimeUtc;
+            }
+        }
+        catch { }
+        return (bytes, newest);
     }
 
     private static string GetVideoAdapter()

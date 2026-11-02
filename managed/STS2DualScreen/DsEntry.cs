@@ -47,7 +47,8 @@ public static class DsEntry
             Callable.From(Attach).CallDeferred();
             return;
         }
-        DsParticles.Attach(tree, Config.ParticleAmount);
+        DsParticles.Attach(tree, Harmony, Config.ParticleAmount);
+        DsPerfHint.Attach(tree);
         if (!Config.Enabled)
             return;
         try

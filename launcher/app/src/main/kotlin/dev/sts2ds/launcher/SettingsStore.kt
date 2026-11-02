@@ -107,6 +107,55 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_ANIM_WARMUP, false)
         set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP, value).apply() }
 
+    /**
+     * Have the compat pack JIT-compile the combat code while the game loads
+     * (GameSettingsFile.KEY_COMBAT_CODE_WARMUP). On by default: it only
+     * prepares methods, so it costs a little load time and no fight stutters
+     * on its first attack's code. Written into settings.save every launch.
+     */
+    var combatCodeWarmup: Boolean
+        get() = prefs.getBoolean(KEY_COMBAT_CODE_WARMUP, true)
+        set(value) { prefs.edit().putBoolean(KEY_COMBAT_CODE_WARMUP, value).apply() }
+
+    /**
+     * Mono's garbage collector young generation (nursery): [GC_DEFAULT] for
+     * the runtime's own (4 MB), or [GC_16M]/[GC_32M]. A bigger nursery fills
+     * up less often, so there are fewer minor collections, each a pause on
+     * the game thread, while cards and effects churn objects. 32 MB by
+     * default: the Thor has the memory, and pause time grows with what
+     * survives, not with the nursery's size. GamePrep sets MONO_GC_PARAMS.
+     */
+    var gcNursery: String
+        get() = prefs.getString(KEY_GC_NURSERY, GC_32M) ?: GC_32M
+        set(value) { prefs.edit().putString(KEY_GC_NURSERY, value).apply() }
+
+    /**
+     * Tell Android how long each game frame's work takes against a one-frame
+     * target (ADPF, Android 13+), so CPU clocks rise as a burst of work
+     * starts. On by default; does nothing on devices without it.
+     */
+    var perfHint: Boolean
+        get() = prefs.getBoolean(KEY_PERF_HINT, true)
+        set(value) { prefs.edit().putBoolean(KEY_PERF_HINT, value).apply() }
+
+    /**
+     * Save the engine's Vulkan pipeline cache every 256 KB of growth instead
+     * of every 3 MB or at a clean exit (EngineOverrides), so effects compiled
+     * in one session are not compiled again in the next. On by default.
+     */
+    var savePipelinesOften: Boolean
+        get() = prefs.getBoolean(KEY_SAVE_PIPELINES, true)
+        set(value) { prefs.edit().putBoolean(KEY_SAVE_PIPELINES, value).apply() }
+
+    /**
+     * Swappy frame pacing: EngineOverrides.PACING_STEADY (the engine's own,
+     * one frame per refresh), PACING_ADAPTIVE (may halve the rate after slow
+     * frames) or PACING_OFF (plain vsync). Steady by default, as before.
+     */
+    var framePacing: String
+        get() = prefs.getString(KEY_FRAME_PACING, EngineOverrides.PACING_STEADY) ?: EngineOverrides.PACING_STEADY
+        set(value) { prefs.edit().putString(KEY_FRAME_PACING, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -122,6 +171,9 @@ class SettingsStore(context: Context) {
         const val REFRESH_SYSTEM = "system"
         const val REFRESH_60HZ = "60hz"
         const val REFRESH_HIGH = "high"
+        const val GC_DEFAULT = "default"
+        const val GC_16M = "16m"
+        const val GC_32M = "32m"
         const val BRANCH_STABLE = "public"
         const val BRANCH_BETA = "public-beta"
 
@@ -137,6 +189,11 @@ class SettingsStore(context: Context) {
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
         private const val KEY_ANIM_WARMUP = "anim_warmup"
         private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
+        private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
+        private const val KEY_GC_NURSERY = "gc_nursery"
+        private const val KEY_PERF_HINT = "perf_hint"
+        private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
+        private const val KEY_FRAME_PACING = "frame_pacing"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"
