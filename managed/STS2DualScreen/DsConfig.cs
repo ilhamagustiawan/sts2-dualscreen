@@ -4,7 +4,8 @@ using System.Text.Json;
 
 namespace STS2DualScreen;
 
-// Written by the launcher (GamePrep) to <files>/dualscreen.json before every launch.
+// Written by the launcher (GamePrep) to <files>/dualscreen.json before every
+// launch; <files>/dualscreen_overrides.json, if there, is laid over it.
 internal sealed class DsConfig
 {
     public bool Enabled = true;
@@ -14,6 +15,21 @@ internal sealed class DsConfig
     /// <summary>Bottom-screen canvas is the panel size times this, so the game's
     /// 1080p-designed UI keeps a readable scale on the 3.9" panel.</summary>
     public float CanvasScale = 1.3f;
+
+    /// <summary>Pile page rate in a fight while its cards move (the still rate is 15).</summary>
+    public int CombatMotionFps = 15;
+
+    /// <summary>Pages not shown don't process (their game nodes' _Process and tweens).</summary>
+    public bool PauseHiddenPages = true;
+
+    /// <summary>At most one lower-screen part renders, and one is copied out, a game frame.</summary>
+    public bool StaggerCaptures = true;
+
+    /// <summary>
+    /// libsts2ds compares, composes and posts frames on its own thread; the
+    /// game's thread only copies each one over. Off: all of it in the game's frame.
+    /// </summary>
+    public bool PresentThread = true;
 
     /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
     public float ParticleAmount = 1f;
@@ -27,32 +43,52 @@ internal sealed class DsConfig
     public static DsConfig Load()
     {
         var config = new DsConfig();
-        var path = Path.Combine(DsPaths.FilesDir, "dualscreen.json");
+        config.Read(Path.Combine(DsPaths.FilesDir, "dualscreen.json"));
+        // The launcher rewrites dualscreen.json on every launch. Switches it
+        // has no setting for (yet) go here, by hand, same keys; they win.
+        if (config.Read(Path.Combine(DsPaths.FilesDir, OverridesFile)))
+            DsLog.Info($"{OverridesFile} applied");
+        return config;
+    }
+
+    public const string OverridesFile = "dualscreen_overrides.json";
+
+    private bool Read(string path)
+    {
         try
         {
             if (!File.Exists(path))
-                return config;
+                return false;
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var root = doc.RootElement;
             if (root.TryGetProperty("enabled", out var e))
-                config.Enabled = e.GetBoolean();
+                Enabled = e.GetBoolean();
             if (root.TryGetProperty("fps", out var f) && f.TryGetInt32(out var fps))
-                config.Fps = Math.Clamp(fps, 10, 60);
+                Fps = Math.Clamp(fps, 10, 60);
+            if (root.TryGetProperty("combat_motion_fps", out var cm) && cm.TryGetInt32(out var combatMotion))
+                CombatMotionFps = Math.Clamp(combatMotion, 10, 60);
+            if (root.TryGetProperty("pause_hidden_pages", out var ph) && ph.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                PauseHiddenPages = ph.GetBoolean();
+            if (root.TryGetProperty("stagger_captures", out var sc) && sc.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                StaggerCaptures = sc.GetBoolean();
+            if (root.TryGetProperty("present_thread", out var pt) && pt.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                PresentThread = pt.GetBoolean();
             if (root.TryGetProperty("default_tab", out var t) && t.ValueKind == JsonValueKind.String)
-                config.DefaultTab = t.GetString();
+                DefaultTab = t.GetString();
             if (root.TryGetProperty("particle_amount", out var p) && p.TryGetSingle(out var amount))
-                config.ParticleAmount = Math.Clamp(amount, 0.1f, 1f);
+                ParticleAmount = Math.Clamp(amount, 0.1f, 1f);
             if (root.TryGetProperty("canvas_scale", out var s) && s.TryGetSingle(out var scale))
-                config.CanvasScale = Math.Clamp(scale, 1f, 2f);
+                CanvasScale = Math.Clamp(scale, 1f, 2f);
             if (root.TryGetProperty("build", out var b) && b.ValueKind == JsonValueKind.String)
-                config.Build = b.GetString() ?? "";
+                Build = b.GetString() ?? "";
             if (root.TryGetProperty("compat", out var c) && c.ValueKind == JsonValueKind.String)
-                config.Compat = c.GetString() ?? "";
+                Compat = c.GetString() ?? "";
+            return true;
         }
         catch (Exception ex)
         {
-            DsLog.Info($"dualscreen.json unreadable, using defaults: {ex.Message}");
+            DsLog.Info($"{Path.GetFileName(path)} unreadable, using defaults for it: {ex.Message}");
+            return false;
         }
-        return config;
     }
 }

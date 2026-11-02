@@ -216,6 +216,7 @@ internal static class DsStyle
     public static Tween Animate(Node owner, double seconds)
     {
         DsBottomScreen.Instance?.MarkChanged(owner, seconds);
+        DsPerf.NoteTween();
         return owner.CreateTween();
     }
 
@@ -223,6 +224,7 @@ internal static class DsStyle
     public static Tween Loop(Node owner)
     {
         DsBottomScreen.Instance?.MarkChanged(owner, 0.1);
+        DsPerf.NoteTween();
         return owner.CreateTween().SetLoops(0);
     }
 
