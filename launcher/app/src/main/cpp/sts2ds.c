@@ -82,7 +82,10 @@ static int32_t g_touch_overflow;
 // fills `write`, the thread draws from `work`, and `ready` (the newest
 // complete frame, if `full`) is swapped between them under g_lock, so
 // neither ever waits on the other. A frame not yet drawn when a newer one
-// arrives is dropped.
+// arrives is dropped. The slots are a few full frames per source (~30 MB in
+// all), so they are freed while there is nothing to draw to (no surface,
+// hidden, thread stopped: release_mailboxes_locked) and allocated again by
+// the next frame sent.
 typedef struct {
     uint8_t *pixels;
     size_t capacity;
@@ -97,11 +100,17 @@ typedef struct {
     int32_t changed, last;
     // The sampled hash of the frame the game last sent (0: none yet).
     uint64_t sent_hash;
+    // The game is copying into `write` without the lock: a release leaves
+    // that slot to it (drop: free it, don't hand the frame over).
+    int32_t sending, drop;
 } ds_mailbox;
 static ds_mailbox g_mail[SOURCE_COUNT] = {[0 ... SOURCE_COUNT - 1] = {.write = 0, .ready = 1, .work = 2}};
 static pthread_cond_t g_wake = PTHREAD_COND_INITIALIZER;
 static pthread_t g_thread;
 static int32_t g_thread_on, g_thread_quit;
+// Hidden: the thread frees the mailboxes at its next turn (a hide can't wait
+// on g_render, which a post may hold).
+static int32_t g_release_slots;
 // The game ended a frame (ds_present) or sent a whole one: the thread has work.
 static int32_t g_commit, g_whole_due;
 #ifdef DS_HOST_TEST
@@ -493,6 +502,28 @@ static int32_t render_present(const ds_target *t) {
 
 // ── present thread ─────────────────────────────────────────────────────────
 
+// Frees every mailbox's slots (g_render and g_lock held: the thread draws
+// from `work` under g_render, `ready` moves under g_lock). The slot the game
+// is copying into right now is its own until it hands it over; it frees
+// that one itself (drop).
+static void release_mailboxes_locked(void) {
+    g_release_slots = 0;
+    for (int32_t s = 0; s < SOURCE_COUNT; s++) {
+        ds_mailbox *m = &g_mail[s];
+        for (int32_t i = 0; i < 3; i++) {
+            if (i == m->write && m->sending) {
+                m->drop = 1;
+                continue;
+            }
+            free(m->slot[i].pixels);
+            m->slot[i].pixels = NULL;
+            m->slot[i].capacity = 0;
+        }
+        m->full = 0;
+        m->sent_hash = 0;
+    }
+}
+
 static void note_result_locked(ds_mailbox *m, int32_t result) {
     m->last = result;
     if (result == 1) m->changed = 1;
@@ -508,7 +539,7 @@ static void *present_main(void *arg) {
     int32_t take[SOURCE_COUNT];
     pthread_mutex_lock(&g_lock);
     for (;;) {
-        while (!g_thread_quit && !g_commit && !g_whole_due) pthread_cond_wait(&g_wake, &g_lock);
+        while (!g_thread_quit && !g_commit && !g_whole_due && !g_release_slots) pthread_cond_wait(&g_wake, &g_lock);
         if (g_thread_quit) break;
         int32_t commit = g_commit;
         g_commit = g_whole_due = 0;
@@ -519,6 +550,13 @@ static void *present_main(void *arg) {
 
         pthread_mutex_lock(&g_render);
         TRACE_BEGIN("ds present thread");
+        pthread_mutex_lock(&g_lock);
+        // Still hidden: shown again since, the frames are wanted.
+        if (g_release_slots) {
+            if (!g_visible) release_mailboxes_locked();
+            g_release_slots = 0;
+        }
+        pthread_mutex_unlock(&g_lock);
         ds_target t;
         begin_render(&t);
         pthread_mutex_lock(&g_lock);
@@ -574,6 +612,8 @@ static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_
     int32_t result = m->changed ? 1 : m->last;
     m->changed = 0;
     ds_slot *slot = &m->slot[m->write];
+    m->sending = live;
+    m->drop = 0;
     pthread_mutex_unlock(&g_lock);
     if (!live) return 0;
 
@@ -585,12 +625,19 @@ static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_
     uint64_t hash = frame_hash(rgba, w, h, stride) ^ ((uint64_t)x << 48 | (uint64_t)y << 32);
     TRACE_END();
 
+    // Freed by a release, or too small: (re)allocated here, lazily.
     size_t need = (size_t)w * h * 4;
     if (need > slot->capacity) {
         free(slot->pixels);
         slot->pixels = malloc(need);
         slot->capacity = slot->pixels ? need : 0;
-        if (!slot->pixels) return -4;
+        if (!slot->pixels) {
+            pthread_mutex_lock(&g_lock);
+            m->sending = 0;
+            m->drop = 0;
+            pthread_mutex_unlock(&g_lock);
+            return -4;
+        }
     }
     TRACE_BEGIN("ds slot copy");
     if (stride == w * 4) {
@@ -606,6 +653,16 @@ static int32_t send_frame(int32_t source, const uint8_t *rgba, int32_t w, int32_
     slot->y = y;
 
     pthread_mutex_lock(&g_lock);
+    m->sending = 0;
+    if (m->drop) {
+        // Released while copying: the frame is for a surface that's gone.
+        m->drop = 0;
+        free(slot->pixels);
+        slot->pixels = NULL;
+        slot->capacity = 0;
+        pthread_mutex_unlock(&g_lock);
+        return result;
+    }
     if (hash != m->sent_hash) {
         m->sent_hash = hash;
         result = 1;
@@ -647,10 +704,15 @@ Java_dev_sts2ds_dualscreen_DsNative_nativeSetSurface(JNIEnv *env, jclass cls, jo
     g_width = next ? width : 0;
     g_height = next ? height : 0;
     reset_touches_locked();
-    // Frames waiting to be drawn were for the old surface.
-    for (int32_t s = 0; s < SOURCE_COUNT; s++) {
-        g_mail[s].full = 0;
-        g_mail[s].sent_hash = 0;
+    // Frames waiting to be drawn were for the old surface; with none to
+    // follow it, their memory goes too.
+    if (!next) {
+        release_mailboxes_locked();
+    } else {
+        for (int32_t s = 0; s < SOURCE_COUNT; s++) {
+            g_mail[s].full = 0;
+            g_mail[s].sent_hash = 0;
+        }
     }
     g_render_reset = 0;
     g_generation++;
@@ -677,6 +739,12 @@ Java_dev_sts2ds_dualscreen_DsNative_nativeSetVisible(JNIEnv *env, jclass cls, jb
         g_visible = visible ? 1 : 0;
         g_render_reset = 1; // repaint on return, the surface may have been cleared
         reset_touches_locked();
+        // The mailboxes' memory: the thread frees it, if there is one (none,
+        // nothing was allocated since it stopped).
+        if (!g_visible && g_thread_on) {
+            g_release_slots = 1;
+            pthread_cond_signal(&g_wake);
+        }
     }
     pthread_mutex_unlock(&g_lock);
 }
@@ -756,10 +824,13 @@ EXPORT int32_t ds_present_thread(int32_t on) {
         pthread_cond_signal(&g_wake);
         pthread_mutex_unlock(&g_lock);
         pthread_join(g_thread, NULL);
-        // Frames it hadn't drawn are dropped; the game's next ones repaint.
+        // Frames it hadn't drawn are dropped, and the mailboxes freed; the
+        // game's next frames repaint, drawn on its own thread.
+        pthread_mutex_lock(&g_render);
         pthread_mutex_lock(&g_lock);
-        for (int32_t s = 0; s < SOURCE_COUNT; s++) g_mail[s].full = 0;
+        release_mailboxes_locked();
         pthread_mutex_unlock(&g_lock);
+        pthread_mutex_unlock(&g_render);
         LOGI("present thread stopped");
         return 0;
     }
