@@ -313,6 +313,32 @@ runtime. Research only.
 | 3.6 | Zero-copy lower screen | deferred until device numbers |
 | 3.7 | AOT `sts2.dll` | not practical: custom Mono 9.0.7 build, AOT images must match it; per-update recompiles |
 
+Review fixes (two independent reviews of the merged branch): d4b0cee capture re-arm
+and owed frames, 39c2698 settle pile motion when its tab hides, 6f71a65 failed refresh
+rescheduled, 2c54aa3 present thread reports changes at once, 54eb2d8 per-request
+readback slots, d95caac no held page frames under a finger, cfae9ce free present
+mailboxes, b8a2f7b warmup cache stamp-first, fcfa6d6 runtime config overrides,
+2a195b9 launcher switches for the capture options, 1d4ba11 DUALSCREEN.md.
+
+## Device checklist (user)
+
+All new behaviour has a switch: launcher Settings (combat code warmup, GC nursery,
+CPU boost hint, keep compiled shaders, FPS limit, frame pacing, Advanced > Lower
+screen: present thread / stagger captures / pause hidden pages) or
+`files/dualscreen_overrides.json`.
+
+1. Baseline protocol above; read the `hitches=`, `frame_max=`, `gc_minor=`, compile
+   deltas, `captures_cb_max`, `cb_ms_max`, `present_ms_max` and the `hitch` lines.
+2. A full fight, then a second fight (combat code warmup on).
+3. Lower screen off/on, app background/foreground: lower screen repaints correctly
+   (present thread, mailbox release). If not: switch the present thread off.
+4. Switch pile tabs during a discard; the pile is right when you come back.
+5. Card rise-in/exit and badge ticks look as before; dock tab/marker go still after
+   one cycle in combat.
+6. Swipe the app away, then `adb shell run-as dev.sts2ds ls -l files/vulkan`; next
+   launch logs `warmup cache: HIT`.
+7. A/B CPU boost hint and the 32 MB nursery (`dumpsys meminfo dev.sts2ds`).
+
 After each phase, the user re-runs the baseline protocol and the numbers go
 here:
 
