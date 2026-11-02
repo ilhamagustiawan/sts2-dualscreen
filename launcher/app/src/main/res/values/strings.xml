@@ -113,6 +113,8 @@
     <string name="settings_warmups_subtitle">As each room loads, plays its hit effects and visual effects once out of sight, so the first attack of a fight does not stutter. Uses more memory and a little load time.</string>
     <string name="settings_anim_warmup">Pre-warm creature animations (Experimental)</string>
     <string name="settings_anim_warmup_subtitle">Steps creature animations once as each fight loads, to smooth the first few moves. Can crash the game on some fights; if it does, it turns itself off.</string>
+    <string name="settings_perf_hint">CPU boost hint</string>
+    <string name="settings_perf_hint_subtitle">Tells Android how long each frame takes, so the processor speeds up as soon as a fight gets busy instead of a few frames later. Android 13 and later; does nothing elsewhere.</string>
     <string name="settings_gc">Memory cleanup (GC)</string>
     <string name="settings_gc_default">Runtime default (4 MB)</string>
     <string name="settings_gc_16m">16 MB nursery</string>

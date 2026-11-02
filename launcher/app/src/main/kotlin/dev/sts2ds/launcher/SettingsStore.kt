@@ -129,6 +129,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getString(KEY_GC_NURSERY, GC_32M) ?: GC_32M
         set(value) { prefs.edit().putString(KEY_GC_NURSERY, value).apply() }
 
+    /**
+     * Tell Android how long each game frame's work takes against a one-frame
+     * target (ADPF, Android 13+), so CPU clocks rise as a burst of work
+     * starts. On by default; does nothing on devices without it.
+     */
+    var perfHint: Boolean
+        get() = prefs.getBoolean(KEY_PERF_HINT, true)
+        set(value) { prefs.edit().putBoolean(KEY_PERF_HINT, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -164,6 +173,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_GC_NURSERY = "gc_nursery"
+        private const val KEY_PERF_HINT = "perf_hint"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

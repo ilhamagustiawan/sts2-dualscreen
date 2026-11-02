@@ -160,6 +160,7 @@ object GamePrep {
                 .put("build", "$dllSha:${state.getString("pck_stamp", "")}")
                 // The warmup cache trusts only a pipeline cache written after this.
                 .put("build_time_ms", maxOf(pck.lastModified(), gameDll.lastModified()))
+                .put("perf_hint", settings.perfHint)
                 .put("compat", "${compat.packId}/${compat.targetId}")
                 .toString(2)
         )

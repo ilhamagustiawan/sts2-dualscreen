@@ -48,6 +48,7 @@ public static class DsEntry
             return;
         }
         DsParticles.Attach(tree, Harmony, Config.ParticleAmount);
+        DsPerfHint.Attach(tree);
         if (!Config.Enabled)
             return;
         try

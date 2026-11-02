@@ -166,6 +166,10 @@ class SettingsActivity : Activity() {
             settings.gcNursery = mode
             LauncherLog.log("Settings: GC nursery → $mode")
         }
+        bind(R.id.sw_perf_hint, settings.perfHint) { on ->
+            settings.perfHint = on
+            LauncherLog.log("Settings: performance hint → $on")
+        }
         bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
             settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
             LauncherLog.log("Settings: renderer → ${settings.renderer}")
