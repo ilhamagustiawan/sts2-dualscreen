@@ -111,6 +111,10 @@ class SettingsActivity : Activity() {
             settings.animWarmup = on
             edit("anim warmup → $on") { it.put(GameSettingsFile.KEY_ANIMATION_WARMUP, if (on) "safe" else "off") }
         }
+        bind(R.id.sw_combat_code, settings.combatCodeWarmup) { on ->
+            settings.combatCodeWarmup = on
+            edit("combat code warmup → $on") { it.put(GameSettingsFile.KEY_COMBAT_CODE_WARMUP, on) }
+        }
         bind(R.id.sw_preload, settingsJson.optBoolean(GameSettingsFile.KEY_PRELOAD, true)) { on ->
             edit("preload → $on") { it.put(GameSettingsFile.KEY_PRELOAD, on) }
         }

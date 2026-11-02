@@ -193,7 +193,9 @@ object GamePrep {
                     if (json.has(GameSettingsFile.KEY_HIGH_REFRESH)) json.optBoolean(GameSettingsFile.KEY_HIGH_REFRESH) else null,
                 )
                 if (refresh != settings.refreshRate) settings.refreshRate = refresh
-                var changed = GameSettingsFile.ensurePerformanceDefaults(json, firstTime, settings.animWarmup)
+                var changed = GameSettingsFile.ensurePerformanceDefaults(
+                    json, firstTime, settings.animWarmup, settings.combatCodeWarmup,
+                )
                 val high = refresh == SettingsStore.REFRESH_HIGH
                 if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
                     json.put(GameSettingsFile.KEY_HIGH_REFRESH, high)
@@ -207,7 +209,7 @@ object GamePrep {
                         "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
                         "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, fps_limit ${json.opt(GameSettingsFile.KEY_FPS_LIMIT)}, " +
                         "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}, " +
-                        "anim_warmup ${settings.animWarmup}" +
+                        "anim_warmup ${settings.animWarmup}, combat_code ${settings.combatCodeWarmup}" +
                         if (firstTime) " (defaults applied)" else ""
                 )
             }

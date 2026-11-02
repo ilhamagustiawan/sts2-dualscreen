@@ -107,6 +107,16 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_ANIM_WARMUP, false)
         set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP, value).apply() }
 
+    /**
+     * Have the compat pack JIT-compile the combat code while the game loads
+     * (GameSettingsFile.KEY_COMBAT_CODE_WARMUP). On by default: it only
+     * prepares methods, so it costs a little load time and no fight stutters
+     * on its first attack's code. Written into settings.save every launch.
+     */
+    var combatCodeWarmup: Boolean
+        get() = prefs.getBoolean(KEY_COMBAT_CODE_WARMUP, true)
+        set(value) { prefs.edit().putBoolean(KEY_COMBAT_CODE_WARMUP, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -137,6 +147,7 @@ class SettingsStore(context: Context) {
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
         private const val KEY_ANIM_WARMUP = "anim_warmup"
         private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
+        private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

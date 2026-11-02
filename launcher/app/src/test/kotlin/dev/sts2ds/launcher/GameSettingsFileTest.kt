@@ -95,6 +95,29 @@ class GameSettingsFileTest {
     }
 
     @Test
+    fun combatCodeWarmupIsOnByDefault() {
+        val json = playerSettings()
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false)
+        assertTrue(json.getBoolean(GameSettingsFile.KEY_COMBAT_CODE_WARMUP))
+        // An older launcher wrote false into the file; the default turns it on.
+        val old = playerSettings().put(GameSettingsFile.KEY_COMBAT_CODE_WARMUP, false)
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(old, firstTime = false))
+        assertTrue(old.getBoolean(GameSettingsFile.KEY_COMBAT_CODE_WARMUP))
+        // The animation warmup stays off: they are separate settings.
+        assertEquals("off", old.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
+    }
+
+    @Test
+    fun combatCodeWarmupFollowsTheLauncherSwitch() {
+        val json = playerSettings()
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true, combatCode = false)
+        assertFalse(json.getBoolean(GameSettingsFile.KEY_COMBAT_CODE_WARMUP))
+        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, combatCode = false))
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, combatCode = true))
+        assertTrue(json.getBoolean(GameSettingsFile.KEY_COMBAT_CODE_WARMUP))
+    }
+
+    @Test
     fun renderSizeIsAVector() {
         val json = JSONObject()
         assertEquals(0 to 0, GameSettingsFile.renderSize(json))
