@@ -11,16 +11,16 @@ class GameSettingsFileTest {
         .put("fps_limit", 60)
         .put("msaa", 4)
         .put("vsync", "on")
-        .put("preload_combat_animation_warmup_mode", "off")
+        .put("preload_combat_animation_warmup_mode", "safe")
         .put("some_future_key", "kept")
 
     @Test
     fun missingKeysAreFilledAndPlayerValuesKept() {
         val json = playerSettings()
-        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, animWarmup = true))
         assertEquals(4, json.getInt("msaa"))
         assertEquals("on", json.getString("vsync"))
-        assertEquals("off", json.getString("preload_combat_animation_warmup_mode"))
+        assertEquals("safe", json.getString("preload_combat_animation_warmup_mode"))
         assertTrue(json.getBoolean("preload_enabled"))
         assertTrue(json.getBoolean("preload_combat_hit_effect_warmup_enabled"))
         assertEquals("kept", json.getString("some_future_key"))
@@ -35,15 +35,14 @@ class GameSettingsFileTest {
             .put("skip_intro_logo", false)
             .put("preload_gameplay_assets_enabled", true)
         GameSettingsFile.putRenderSize(json, 1280, 720)
-        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true)
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true, animWarmup = true)
         assertEquals(0, json.getInt("msaa"))
         assertEquals("on", json.getString("vsync"))
         assertEquals(60, json.getInt("fps_limit"))
         assertTrue(json.getBoolean("skip_intro_logo"))
         assertEquals(0 to 0, GameSettingsFile.renderSize(json))
         assertFalse(json.getBoolean("preload_gameplay_assets_enabled"))
-        assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
-        for ((key, value) in GameSettingsFile.WARMUPS_ON) assertEquals(key, value, json.get(key))
+        assertEquals("safe", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
         assertTrue(GameSettingsFile.warmupsEnabled(json))
         assertEquals("kept", json.getString("some_future_key"))
     }
@@ -51,10 +50,10 @@ class GameSettingsFileTest {
     @Test
     fun laterRunsKeepPlayerGraphics() {
         val json = playerSettings()
-        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true)
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true, animWarmup = true)
         GameSettingsFile.putRenderSize(json, 1600, 900)
         json.put("vsync", "off").put("skip_intro_logo", false)
-        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, animWarmup = true))
         assertEquals(1600 to 900, GameSettingsFile.renderSize(json))
         assertEquals("off", json.getString("vsync"))
         assertFalse(json.getBoolean("skip_intro_logo"))
@@ -63,20 +62,36 @@ class GameSettingsFileTest {
     @Test
     fun secondRunChangesNothing() {
         val json = playerSettings()
-        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true)
-        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true, animWarmup = true)
+        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, animWarmup = true))
         // Round trip through text, as the file does.
-        assertFalse(GameSettingsFile.ensurePerformanceDefaults(JSONObject(json.toString()), firstTime = false))
+        assertFalse(GameSettingsFile.ensurePerformanceDefaults(JSONObject(json.toString()), firstTime = false, animWarmup = true))
     }
 
     @Test
-    fun animationWarmupIsTurnedBackOff() {
-        val json = playerSettings().put(GameSettingsFile.KEY_ANIMATION_WARMUP, "safe")
-        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+    fun animationWarmupIsOffByDefault() {
+        val json = playerSettings()
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true))
         assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
         GameSettingsFile.setWarmups(json, true)
         assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
+    }
+
+    @Test
+    fun animationWarmupToggleControlsMode() {
+        val json = playerSettings()
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, animWarmup = false)
+        assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
+
+        GameSettingsFile.setWarmups(json, enabled = true, animWarmup = true)
+        assertEquals("safe", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
         assertTrue(GameSettingsFile.warmupsEnabled(json))
+
+        GameSettingsFile.setWarmups(json, enabled = true, animWarmup = false)
+        assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
+
+        GameSettingsFile.setWarmups(json, enabled = false, animWarmup = true)
+        assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
     }
 
     @Test
@@ -91,9 +106,9 @@ class GameSettingsFileTest {
     @Test
     fun warmupSwitchSetsEveryWarmupKey() {
         val json = JSONObject()
-        GameSettingsFile.setWarmups(json, true)
+        GameSettingsFile.setWarmups(json, true, animWarmup = false)
         for ((key, value) in GameSettingsFile.WARMUPS_ON) assertEquals(key, value, json.get(key))
-        GameSettingsFile.setWarmups(json, false)
+        GameSettingsFile.setWarmups(json, false, animWarmup = false)
         for ((key, value) in GameSettingsFile.WARMUPS_OFF) assertEquals(key, value, json.get(key))
         assertFalse(GameSettingsFile.warmupsEnabled(json))
     }

@@ -28,6 +28,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.text.format.DateUtils
+import android.widget.Toast
 import android.view.View
 import android.widget.Button
 import android.widget.ProgressBar
@@ -168,6 +169,10 @@ class LauncherActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        if (settings.animWarmupCrashed) {
+            settings.animWarmupCrashed = false
+            Toast.makeText(this, R.string.settings_anim_warmup_crashed_notice, Toast.LENGTH_LONG).show()
+        }
         refreshUi()
         // Owed since the last game started; also retries one that failed or
         // was put off because the game was still running.

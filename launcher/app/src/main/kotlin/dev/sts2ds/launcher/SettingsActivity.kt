@@ -105,7 +105,11 @@ class SettingsActivity : Activity() {
         val settingsJson = json ?: org.json.JSONObject()
 
         bind(R.id.sw_warmups, GameSettingsFile.warmupsEnabled(settingsJson)) { on ->
-            edit("combat warmups → $on") { GameSettingsFile.setWarmups(it, on) }
+            edit("combat warmups → $on") { GameSettingsFile.setWarmups(it, on, settings.animWarmup) }
+        }
+        bind(R.id.sw_anim_warmup, settings.animWarmup) { on ->
+            settings.animWarmup = on
+            edit("anim warmup → $on") { it.put(GameSettingsFile.KEY_ANIMATION_WARMUP, if (on) "safe" else "off") }
         }
         bind(R.id.sw_preload, settingsJson.optBoolean(GameSettingsFile.KEY_PRELOAD, true)) { on ->
             edit("preload → $on") { it.put(GameSettingsFile.KEY_PRELOAD, on) }
@@ -199,7 +203,7 @@ class SettingsActivity : Activity() {
 
     private companion object {
         val GAME_FILE_CONTROLS = intArrayOf(
-            R.id.sw_warmups, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
+            R.id.sw_warmups, R.id.sw_anim_warmup, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
             R.id.sp_render_size, R.id.sp_msaa, R.id.sp_vsync,
         )
         val REFRESH_NAMES = linkedMapOf(

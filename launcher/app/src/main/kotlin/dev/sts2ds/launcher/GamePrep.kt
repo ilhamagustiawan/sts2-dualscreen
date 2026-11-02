@@ -140,6 +140,16 @@ object GamePrep {
         writeLaunchContext(files, gameDir, accountRoot, modsDir, logsDir, version, compat)
 
         val settings = SettingsStore(context)
+        val animCrashMarker = File(files, "dualscreen_anim_warmup.running")
+        if (animCrashMarker.exists()) {
+            animCrashMarker.delete()
+            if (settings.animWarmup) {
+                settings.animWarmup = false
+                settings.animWarmupCrashed = true
+                LauncherLog.log("Combat animation warmup crashed during last run; disabling it")
+            }
+        }
+
         val dualScreen = settings.dualScreen
         File(files, "dualscreen.json").writeText(
             JSONObject()
@@ -147,6 +157,8 @@ object GamePrep {
                 .put("fps", settings.dualScreenFps)
                 .put("default_tab", settings.dualScreenDefaultTab)
                 .put("particle_amount", settings.particleAmount / 100.0)
+                .put("build", "$dllSha:${state.getString("pck_stamp", "")}")
+                .put("compat", "${compat.packId}/${compat.targetId}")
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
@@ -181,7 +193,7 @@ object GamePrep {
                     if (json.has(GameSettingsFile.KEY_HIGH_REFRESH)) json.optBoolean(GameSettingsFile.KEY_HIGH_REFRESH) else null,
                 )
                 if (refresh != settings.refreshRate) settings.refreshRate = refresh
-                var changed = GameSettingsFile.ensurePerformanceDefaults(json, firstTime)
+                var changed = GameSettingsFile.ensurePerformanceDefaults(json, firstTime, settings.animWarmup)
                 val high = refresh == SettingsStore.REFRESH_HIGH
                 if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
                     json.put(GameSettingsFile.KEY_HIGH_REFRESH, high)
@@ -194,7 +206,8 @@ object GamePrep {
                     "Performance: renderer ${settings.renderer}, refresh $refresh, " +
                         "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
                         "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, fps_limit ${json.opt(GameSettingsFile.KEY_FPS_LIMIT)}, " +
-                        "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}" +
+                        "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}, " +
+                        "anim_warmup ${settings.animWarmup}" +
                         if (firstTime) " (defaults applied)" else ""
                 )
             }
@@ -242,6 +255,7 @@ object GamePrep {
         // MonoMod leaves a dump of every patched method in TMPDIR, each launch.
         files.resolve("tmp").listFiles { f -> f.name.startsWith("MonoMod_DMD_") }?.forEach { it.delete() }
         if (state.getString("cache_build", "") == build) return
+        File(files, "dualscreen_warmup.json").delete()
         var bytes = 0L
         for (cache in BUILD_CACHE_DIRS.map { File(files, it) }) {
             if (!cache.exists()) continue

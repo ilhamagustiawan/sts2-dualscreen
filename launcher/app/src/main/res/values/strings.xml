@@ -111,6 +111,9 @@
     <string name="settings_particles_subtitle">Sparks, embers and dust are drawn with fewer particles. Lighter on the GPU in busy fights; the effects stay recognisable.</string>
     <string name="settings_warmups">Pre-warm combat effects</string>
     <string name="settings_warmups_subtitle">As each room loads, plays its hit effects and visual effects once out of sight, so the first attack of a fight does not stutter. Uses more memory and a little load time.</string>
+    <string name="settings_anim_warmup">Pre-warm creature animations (Experimental)</string>
+    <string name="settings_anim_warmup_subtitle">Steps creature animations once as each fight loads, to smooth the first few moves. Can crash the game on some fights; if it does, it turns itself off.</string>
+    <string name="settings_anim_warmup_crashed_notice">Creature animation warmup was disabled because a crash was detected during loading.</string>
     <string name="settings_preload">Preload game assets</string>
     <string name="settings_preload_subtitle">Loads common assets after the main menu and keeps them loaded between rooms, instead of loading mid-fight.</string>
     <string name="settings_shader_compat">Cheaper effect shaders</string>

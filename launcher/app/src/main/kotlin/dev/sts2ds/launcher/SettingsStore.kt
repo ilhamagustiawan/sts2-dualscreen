@@ -98,6 +98,20 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PERF_DEFAULTS, false)
         set(value) { prefs.edit().putBoolean(KEY_PERF_DEFAULTS, value).commit() }
 
+    /**
+     * Pre-warm creature Spine animations when entering combat rooms. Off by
+     * default: the compat pack's warmup aborts the engine ("Unreferenced
+     * static string to 0: markers") on some fights.
+     */
+    var animWarmup: Boolean
+        get() = prefs.getBoolean(KEY_ANIM_WARMUP, false)
+        set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP, value).apply() }
+
+    /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
+    var animWarmupCrashed: Boolean
+        get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
+        set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP_CRASHED, value).apply() }
+
     fun clear() {
         prefs.edit().clear().apply()
     }
@@ -121,6 +135,8 @@ class SettingsStore(context: Context) {
         private const val KEY_PARTICLE_AMOUNT = "particle_amount"
         private const val KEY_REFRESH_RATE = "refresh_rate"
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
+        private const val KEY_ANIM_WARMUP = "anim_warmup"
+        private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

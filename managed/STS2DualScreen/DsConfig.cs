@@ -18,6 +18,12 @@ internal sealed class DsConfig
     /// <summary>Share of each particle emitter's particles that are drawn; 1 is all.</summary>
     public float ParticleAmount = 1f;
 
+    /// <summary>Game payload stamp: dllSha:pckStamp.</summary>
+    public string Build = "";
+
+    /// <summary>Compatibility pack identifier: packId/targetId.</summary>
+    public string Compat = "";
+
     public static DsConfig Load()
     {
         var config = new DsConfig();
@@ -38,6 +44,10 @@ internal sealed class DsConfig
                 config.ParticleAmount = Math.Clamp(amount, 0.1f, 1f);
             if (root.TryGetProperty("canvas_scale", out var s) && s.TryGetSingle(out var scale))
                 config.CanvasScale = Math.Clamp(scale, 1f, 2f);
+            if (root.TryGetProperty("build", out var b) && b.ValueKind == JsonValueKind.String)
+                config.Build = b.GetString() ?? "";
+            if (root.TryGetProperty("compat", out var c) && c.ValueKind == JsonValueKind.String)
+                config.Compat = c.GetString() ?? "";
         }
         catch (Exception ex)
         {

@@ -67,7 +67,8 @@ class GameSettingsFile(val file: File) {
          * The compat pack's combat animation warmup steps each creature's
          * Spine clips as a fight loads; on game v0.107.1 it aborts the process
          * (a StringName refcount underflow, then a JNI abort) a few ms in.
-         * Kept off, even in a file where it was turned on.
+         * Off unless the launcher's experimental toggle turns it on; then
+         * "safe", and the launcher turns it back off after a crash in it.
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
 
@@ -137,9 +138,10 @@ class GameSettingsFile(val file: File) {
         /**
          * Fills in missing performance keys. [firstTime] also applies the
          * Balanced preset and turns the warmups on over whatever is there.
+         * [animWarmup] configures creature Spine animation pre-warming ("safe" or "off").
          * Returns whether anything changed.
          */
-        fun ensurePerformanceDefaults(json: JSONObject, firstTime: Boolean): Boolean {
+        fun ensurePerformanceDefaults(json: JSONObject, firstTime: Boolean, animWarmup: Boolean = false): Boolean {
             var changed = false
             for ((key, value) in BASE_DEFAULTS) changed = putIfMissing(json, key, value) || changed
             if (!json.has(KEY_RENDER_SIZE)) {
@@ -156,8 +158,9 @@ class GameSettingsFile(val file: File) {
             } else {
                 for ((key, value) in WARMUPS_ON) changed = putIfMissing(json, key, value) || changed
             }
-            if (json.optString(KEY_ANIMATION_WARMUP, "off") != "off") {
-                json.put(KEY_ANIMATION_WARMUP, "off")
+            val targetAnim = if (animWarmup) "safe" else "off"
+            if (json.optString(KEY_ANIMATION_WARMUP, "") != targetAnim) {
+                json.put(KEY_ANIMATION_WARMUP, targetAnim)
                 changed = true
             }
             return changed
@@ -179,8 +182,15 @@ class GameSettingsFile(val file: File) {
             json.optBoolean("preload_combat_hit_effect_warmup_enabled", false) ||
                 json.optBoolean("preload_vfx_tree_warmup_enabled", false)
 
-        fun setWarmups(json: JSONObject, enabled: Boolean): Boolean =
-            putAll(json, if (enabled) WARMUPS_ON else WARMUPS_OFF)
+        fun setWarmups(json: JSONObject, enabled: Boolean, animWarmup: Boolean = false): Boolean {
+            var changed = putAll(json, if (enabled) WARMUPS_ON else WARMUPS_OFF)
+            val targetAnim = if (enabled && animWarmup) "safe" else "off"
+            if (json.optString(KEY_ANIMATION_WARMUP, "") != targetAnim) {
+                json.put(KEY_ANIMATION_WARMUP, targetAnim)
+                changed = true
+            }
+            return changed
+        }
 
         fun renderSize(json: JSONObject): Pair<Int, Int> {
             val size = json.optJSONObject(KEY_RENDER_SIZE) ?: return 0 to 0

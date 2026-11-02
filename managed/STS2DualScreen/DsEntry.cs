@@ -19,16 +19,24 @@ public static class DsEntry
         Config = DsConfig.Load();
         // Particles are thinned on one screen too; Attach skips the rest.
         Callable.From(Attach).CallDeferred();
+        Harmony = new Harmony("dev.sts2ds.dualscreen");
+        // Startup optimizations, restyled loading screen, and animation safety net
+        // run on single- and dual-screen configs alike.
+        DsStartup.Apply(Harmony);
+        DsWarmupCache.Apply(Harmony);
+        DsStartupLoadingScreenStyle.Apply(Harmony);
+        DsAnimWarmup.Apply(Harmony);
+        DsShakeGuard.Apply(Harmony);
+
         if (!Config.Enabled)
         {
-            DsLog.Info("disabled in settings");
+            DsLog.Info("bottom screen disabled in settings; startup patches active");
             return;
         }
-        Harmony = new Harmony("dev.sts2ds.dualscreen");
+
         // Patches go in now, before the game creates its UI; the bottom-screen
         // host is created once there is a SceneTree to attach it to.
         DsGameHooks.Apply(Harmony);
-        DsStartup.Apply(Harmony);
         DsLog.Info($"started (fps={Config.Fps}, tab={Config.DefaultTab})");
     }
 
