@@ -31,7 +31,20 @@ internal sealed class DsCapture
     // Async readback through the RenderingDevice, so the game thread never
     // waits on the GPU. Null on the Compatibility renderer: read back inline.
     private readonly RenderingDevice _rd;
-    private readonly Callable _onFrameData;
+
+    // Each readback in flight has a slot, answered through that slot's own
+    // callable, so what a frame was requested for (target epoch, size) is
+    // its own and never a later request's, in whatever order the answers
+    // come. With one shared record, a frame requested before a Retarget
+    // could be taken under the new epoch.
+    private struct Request
+    {
+        public bool Busy;
+        public int Epoch, Width, Height;
+    }
+
+    private readonly Request[] _requests = new Request[MaxInFlight];
+    private readonly Callable[] _onFrameData = new Callable[MaxInFlight];
     private readonly string _traceName;
 
     private ulong _activeUntilUsec;
@@ -64,7 +77,6 @@ internal sealed class DsCapture
     private bool _whole = true;
     private int _x, _y, _region;
     private int _epoch;
-    private int _requestEpoch, _requestWidth, _requestHeight;
 
     // The engine's own timing of this viewport's render (CPU and GPU), read
     // for a few frames after each render: the timestamps come back late.
@@ -88,7 +100,11 @@ internal sealed class DsCapture
         // Variant, not byte[]: the frame arrives as Godot's own refcounted
         // PackedByteArray and is read in place. A byte[] would be a fresh
         // 5 MB managed array per capture, and that churn forces full GCs.
-        _onFrameData = Callable.From<Variant>(OnFrameData);
+        for (var i = 0; i < MaxInFlight; i++)
+        {
+            var slot = i;
+            _onFrameData[i] = Callable.From<Variant>(data => OnFrameData(slot, data));
+        }
         RenderingServer.ViewportSetMeasureRenderTime(viewport.GetViewportRid(), true);
     }
 
@@ -166,6 +182,8 @@ internal sealed class DsCapture
         {
             DsLog.Info($"{Name} readback: {_inFlight} request(s) never answered; resetting");
             _inFlight = 0;
+            // An answer that still comes is dropped (its slot is no longer busy).
+            Array.Clear(_requests);
         }
     }
 
@@ -269,12 +287,16 @@ internal sealed class DsCapture
         var texture = RenderingServer.TextureGetRdTexture(Viewport.GetTexture().GetRid());
         if (!texture.IsValid)
             return;
-        var size = Viewport.Size;
-        _requestWidth = size.X;
-        _requestHeight = size.Y;
-        _requestEpoch = _epoch;
-        if (_rd.TextureGetDataAsync(texture, 0, _onFrameData) != Error.Ok)
+        var slot = Array.FindIndex(_requests, r => !r.Busy);
+        if (slot < 0)
             return;
+        var size = Viewport.Size;
+        _requests[slot] = new Request { Busy = true, Epoch = _epoch, Width = size.X, Height = size.Y };
+        if (_rd.TextureGetDataAsync(texture, 0, _onFrameData[slot]) != Error.Ok)
+        {
+            _requests[slot].Busy = false;
+            return;
+        }
         _inFlight++;
         _lastRequestUsec = now;
         _readbackMsTotal += (Time.GetTicksUsec() - now) / 1000.0;
@@ -282,13 +304,13 @@ internal sealed class DsCapture
     }
 
     // Timed whole for the stats line: this runs inside the game's frame.
-    private void OnFrameData(Variant data)
+    private void OnFrameData(int slot, Variant data)
     {
         var started = Time.GetTicksUsec();
         DsNative.TraceBegin(_traceName);
         try
         {
-            TakeFrame(data);
+            TakeFrame(slot, data);
         }
         finally
         {
@@ -297,11 +319,13 @@ internal sealed class DsCapture
         }
     }
 
-    private void TakeFrame(Variant data)
+    private void TakeFrame(int slot, Variant data)
     {
-        if (_inFlight > 0)
+        var request = _requests[slot];
+        _requests[slot].Busy = false;
+        if (request.Busy && _inFlight > 0)
             _inFlight--;
-        if (!Enabled || _requestEpoch != _epoch)
+        if (!request.Busy || !Enabled || request.Epoch != _epoch)
         {
             // Release the frame now, not when a finalizer gets to it.
             data.Dispose();
@@ -315,14 +339,14 @@ internal sealed class DsCapture
             DropPending();
             _pending = data;
             _hasPending = true;
-            _pendingWidth = _requestWidth;
-            _pendingHeight = _requestHeight;
-            _pendingEpoch = _requestEpoch;
+            _pendingWidth = request.Width;
+            _pendingHeight = request.Height;
+            _pendingEpoch = request.Epoch;
             _pendingSeq = ++_pendingCounter;
             _deferredSubmits++;
             return;
         }
-        SubmitFrameData(data, _requestWidth, _requestHeight);
+        SubmitFrameData(data, request.Width, request.Height);
     }
 
     /// <summary>One capture's frame went out this game frame; the rest wait.</summary>
