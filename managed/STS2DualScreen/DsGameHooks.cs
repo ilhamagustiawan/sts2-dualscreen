@@ -1708,8 +1708,13 @@ internal static class DsGameHooks
     // holders and swaps the cards in them). The game pools its cards, so
     // every one of these tweens is run to its end before the grid lets its
     // cards go (SettleCards), and when a finger takes the pile.
+    //
+    // A change's cards all move in one tween: one method tweener steps every
+    // card from arrays made up front (PileMotion), rather than two property
+    // tweeners per card. The curves are Godot's own (DsEase).
     private const float CardRise = 40f;
     private static readonly Dictionary<string, Tween> CardTweens = new();
+    private static readonly Dictionary<string, PileMotion> Motions = new();
     private static readonly HashSet<Node> ExitingPiles = new();
     private static PropertyInfo _gridHolders;
     private static Func<object, object> _gridHoldersGet;
@@ -1772,13 +1777,19 @@ internal static class DsGameHooks
     /// <summary>Runs this pile's card animation to its end: every card at rest in its holder.</summary>
     private static void SettleCards(string tab)
     {
-        if (tab == null || !CardTweens.Remove(tab, out var tween) || !GodotObject.IsInstanceValid(tween))
+        if (tab == null)
             return;
         try
         {
-            if (tween.IsValid())
-                tween.CustomStep(1000.0);
-            tween.Kill();
+            if (CardTweens.Remove(tab, out var tween) && GodotObject.IsInstanceValid(tween))
+            {
+                if (tween.IsValid())
+                    tween.CustomStep(1000.0);
+                tween.Kill();
+            }
+            // Cards set up for a motion whose tween never ran (it failed midway) too.
+            if (Motions.TryGetValue(tab, out var motion))
+                motion.Settle();
         }
         catch (Exception e)
         {
@@ -1787,12 +1798,120 @@ internal static class DsGameHooks
     }
 
     // One animation per pile at a time; a new one first ends the last.
-    private static Tween CardTween(string tab, Control container, double seconds)
+    private static PileMotion BeginMotion(string tab)
     {
         SettleCards(tab);
-        var tween = DsStyle.Animate(container, seconds).SetParallel(true);
+        if (!Motions.TryGetValue(tab, out var motion))
+            Motions[tab] = motion = new PileMotion();
+        motion.Clear();
+        return motion;
+    }
+
+    // exiting: the pile whose rebuild waits for these cards to be gone.
+    private static void PlayMotion(string tab, PileMotion motion, Control container, Node exiting = null)
+    {
+        if (motion.Count == 0)
+            return;
+        var tween = DsStyle.Animate(container, motion.Length);
+        tween.TweenMethod(motion.Step, 0f, motion.Length, motion.Length);
+        if (exiting != null)
+        {
+            motion.Exiting = exiting;
+            ExitingPiles.Add(exiting);
+            tween.TweenCallback(motion.ExitsDone);
+        }
         CardTweens[tab] = tween;
-        return tween;
+    }
+
+    private struct CardMove
+    {
+        public Control Card;    // null once at rest
+        public Color Tint;      // its modulate but for alpha, which may fade
+        public Vector2 From, To;
+        public float AlphaFrom, AlphaTo;
+        public float Delay, Duration;
+        public DsCurve Move, Fade;
+        public bool Fades;
+    }
+
+    // One pile's cards in motion. Its two callables are made once per pile.
+    private sealed class PileMotion
+    {
+        private CardMove[] _moves = new CardMove[16];
+        public int Count;
+        public float Length;
+        public Node Exiting;
+        public readonly Callable Step;
+        public readonly Callable ExitsDone;
+
+        public PileMotion()
+        {
+            Step = Callable.From<float>(StepTo);
+            ExitsDone = Callable.From(OnExitsDone);
+        }
+
+        public void Clear()
+        {
+            Array.Clear(_moves, 0, Count);
+            Count = 0;
+            Length = 0f;
+            Exiting = null;
+        }
+
+        // The card takes its first frame now: held there through its delay,
+        // as a delayed property tween leaves it as it was set.
+        public void Add(Control card, Vector2 from, Vector2 to, float alphaFrom, float alphaTo, bool fades,
+            float delay, float duration, DsCurve move, DsCurve fade)
+        {
+            if (Count == _moves.Length)
+                Array.Resize(ref _moves, Count * 2);
+            var tint = card.Modulate;
+            _moves[Count++] = new CardMove
+            {
+                Card = card, Tint = tint, From = from, To = to, AlphaFrom = alphaFrom, AlphaTo = alphaTo,
+                Delay = delay, Duration = duration, Move = move, Fade = fade, Fades = fades,
+            };
+            card.Position = from;
+            if (fades)
+                card.Modulate = tint with { A = alphaFrom };
+            Length = Math.Max(Length, delay + duration);
+        }
+
+        public void Settle() => StepTo(1e6f);
+
+        private void StepTo(float t)
+        {
+            for (var i = 0; i < Count; i++)
+            {
+                ref var move = ref _moves[i];
+                if (move.Card == null)
+                    continue;
+                var x = move.Duration > 0f ? (t - move.Delay) / move.Duration : 1f;
+                if (x <= 0f)
+                    continue;
+                if (!GodotObject.IsInstanceValid(move.Card))
+                {
+                    move.Card = null;
+                    continue;
+                }
+                x = Math.Min(x, 1f);
+                move.Card.Position = move.From + (move.To - move.From) * DsEase.Apply(move.Move, x);
+                if (move.Fades)
+                    move.Card.Modulate = move.Tint with { A = move.AlphaFrom + (move.AlphaTo - move.AlphaFrom) * DsEase.Apply(move.Fade, x) };
+                if (x >= 1f)
+                    move.Card = null;
+            }
+        }
+
+        private void OnExitsDone()
+        {
+            var node = Exiting;
+            Exiting = null;
+            if (node == null)
+                return;
+            ExitingPiles.Remove(node);
+            SchedulePile(node, exitsDone: true);
+        }
     }
 
     // A card's move, in its own units (its holder is scaled, and the grid with it).
@@ -1826,19 +1945,15 @@ internal static class DsGameHooks
             }
             if (leaving == null)
                 return false;
-            var tween = CardTween(tab, container, 0.2);
+            var motion = BeginMotion(tab);
             foreach (var card in leaving)
             {
                 var drop = ToCardUnits(card, new Vector2(0f, CardRise)).Y;
-                tween.TweenProperty(card, DsNodePaths.PositionY, card.Position.Y + drop, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-                tween.TweenProperty(card, DsNodePaths.ModulateA, 0f, 0.2);
+                var at = card.Position;
+                motion.Add(card, at, at with { Y = at.Y + drop }, card.Modulate.A, 0f, fades: true,
+                    0f, 0.2f, DsCurve.ExpoOut, DsCurve.Linear);
             }
-            ExitingPiles.Add(node);
-            tween.Chain().TweenCallback(Callable.From(() =>
-            {
-                ExitingPiles.Remove(node);
-                SchedulePile(node, exitsDone: true);
-            }));
+            PlayMotion(tab, motion, container, exiting: node);
             return true;
         }
         catch (Exception e)
@@ -1874,7 +1989,8 @@ internal static class DsGameHooks
                 if (model == null || !before.Cards.ContainsKey(model))
                     arriving++;
             }
-            Tween tween = null;
+            // The last motion ends before the new layout is read.
+            var motion = BeginMotion(tab);
             var next = 0;
             foreach (var (_, card, model) in shown)
             {
@@ -1883,19 +1999,16 @@ internal static class DsGameHooks
                     var offset = ToCardUnits(card, was.Position - card.GlobalPosition);
                     if (offset.LengthSquared() < 1f && was.Alpha >= 0.99f)
                         continue;
-                    tween ??= CardTween(tab, container, 0.6);
-                    card.Position = offset;
                     card.Modulate = card.Modulate with { A = was.Alpha };
-                    tween.TweenProperty(card, DsNodePaths.Position, Vector2.Zero, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-                    if (was.Alpha < 0.99f)
-                        tween.TweenProperty(card, DsNodePaths.ModulateA, 1f, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+                    motion.Add(card, offset, Vector2.Zero, was.Alpha, 1f, fades: was.Alpha < 0.99f,
+                        0f, 0.3f, DsCurve.CubicOut, DsCurve.ExpoOut);
                 }
                 else
                 {
-                    tween ??= CardTween(tab, container, 0.6);
-                    RiseIn(tween, card, next++ / (double)arriving * 0.2);
+                    RiseIn(motion, card, next++ / (float)arriving * 0.2f);
                 }
             }
+            PlayMotion(tab, motion, container);
         }
         catch (Exception e)
         {
@@ -1905,13 +2018,9 @@ internal static class DsGameHooks
     }
 
     // NCardGrid.AnimateIn, on the card: up from below as it fades in.
-    private static void RiseIn(Tween tween, Control card, double delay)
-    {
-        card.Position = new Vector2(0f, ToCardUnits(card, new Vector2(0f, CardRise)).Y);
-        card.Modulate = card.Modulate with { A = 0f };
-        tween.TweenProperty(card, DsNodePaths.PositionY, 0f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        tween.TweenProperty(card, DsNodePaths.ModulateA, 1f, 0.4).SetDelay(delay).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-    }
+    private static void RiseIn(PileMotion motion, Control card, float delay) =>
+        motion.Add(card, new Vector2(0f, ToCardUnits(card, new Vector2(0f, CardRise)).Y), Vector2.Zero, 0f, 1f, fades: true,
+            delay, 0.4f, DsCurve.BackOut, DsCurve.ExpoOut);
 
     // ── card touch ─────────────────────────────────────────────────────────
 
@@ -2383,9 +2492,10 @@ internal static class DsGameHooks
             var count = Math.Min(shown.Count, 40);
             if (count == 0)
                 return;
-            var tween = CardTween(tab, container, 0.6);
+            var motion = BeginMotion(tab);
             for (var i = 0; i < count; i++)
-                RiseIn(tween, shown[i].Card, i / (double)count * 0.2);
+                RiseIn(motion, shown[i].Card, i / (float)count * 0.2f);
+            PlayMotion(tab, motion, container);
         }
         catch (Exception e)
         {
