@@ -37,6 +37,9 @@
 #define REGION_COUNT 4
 // Regions from here up are overlays, blended over the ones below.
 #define FIRST_OVERLAY 2
+// Regions below the overlays are compared with what they last drew in bands
+// of this many rows; only the bands that changed are copied and posted.
+#define BAND_ROWS 16
 
 typedef struct {
     int32_t id;
@@ -57,6 +60,14 @@ static uint64_t g_last_hash;
 static uint8_t *g_shadow;
 static int32_t g_shadow_w, g_shadow_h;
 static uint64_t g_region_hash[REGION_COUNT];
+// Where each region below the overlays last drew into the shadow. While it
+// is valid, the shadow (or an overlay's under, beneath one) holds exactly
+// those pixels, so a new frame needs copying only where it differs.
+typedef struct {
+    int32_t x, y, w, h;
+    int32_t valid;
+} ds_drawn;
+static ds_drawn g_drawn[REGION_COUNT];
 static ARect g_pending_rect;
 static int32_t g_pending;
 // An overlay keeps its own pixels and what the regions below drew under it,
@@ -83,10 +94,18 @@ static void reset_touches_locked(void) {
     g_touch_count = 0;
 }
 
+// These regions post again, in full, with their next frame.
+static void forget_regions_locked(int32_t from, int32_t to) {
+    for (int32_t i = from; i < to; i++) {
+        g_region_hash[i] = 0;
+        g_drawn[i].valid = 0;
+    }
+}
+
 static void reset_hashes_locked(void) {
     g_last_hash = 0;
     g_pending = 0;
-    memset(g_region_hash, 0, sizeof(g_region_hash));
+    forget_regions_locked(0, REGION_COUNT);
     for (int32_t i = 0; i < REGION_COUNT; i++) g_overlays[i].valid = 0;
 }
 
@@ -154,13 +173,72 @@ static int32_t store_overlay_locked(int32_t region, const uint8_t *rgba, int32_t
         size_t shadow_stride = (size_t)g_shadow_w * 4;
         for (int32_t row = 0; row < ch; row++)
             memcpy(o->under + (size_t)row * cw * 4, g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4, (size_t)cw * 4);
-        for (int32_t i = 0; i < FIRST_OVERLAY; i++) g_region_hash[i] = 0;
+        forget_regions_locked(0, FIRST_OVERLAY);
         o->valid = 1;
     }
     for (int32_t row = 0; row < ch; row++)
         memcpy(o->pixels + (size_t)row * cw * 4, rgba + (size_t)row * stride, (size_t)cw * 4);
     blend_overlay_locked(o, x, y, x + cw, y + ch);
     return 1;
+}
+
+// Whether one row of a region's new pixels (surface row `row`, columns x0 to
+// x1) is what the region last drew there: the shadow, except beneath an
+// overlay, where the shadow holds the blend and the overlay's under holds
+// the region's own pixels. Exact, unlike the sampled hash.
+static int32_t row_same_locked(const uint8_t *src, int32_t row, int32_t x0, int32_t x1) {
+    const uint8_t *shadow = g_shadow + (size_t)row * g_shadow_w * 4;
+    int32_t col = x0;
+    while (col < x1) {
+        // The first overlay on this row from col on.
+        const ds_overlay *next = NULL;
+        int32_t next_left = x1;
+        for (int32_t i = FIRST_OVERLAY; i < REGION_COUNT; i++) {
+            const ds_overlay *o = &g_overlays[i];
+            if (!o->valid || row < o->y || row >= o->y + o->h || o->x + o->w <= col || o->x >= x1) continue;
+            int32_t left = o->x > col ? o->x : col;
+            if (left < next_left) {
+                next_left = left;
+                next = o;
+            }
+        }
+        if (next_left > col && memcmp(src + (size_t)(col - x0) * 4, shadow + (size_t)col * 4, (size_t)(next_left - col) * 4) != 0)
+            return 0;
+        if (!next) return 1;
+        int32_t right = next->x + next->w < x1 ? next->x + next->w : x1;
+        const uint8_t *under = next->under + ((size_t)(row - next->y) * next->w + (next_left - next->x)) * 4;
+        if (memcmp(src + (size_t)(next_left - x0) * 4, under, (size_t)(right - next_left) * 4) != 0) return 0;
+        col = right;
+    }
+    return 1;
+}
+
+// A region below the overlays into the shadow, band by band: a band whose
+// rows all match what the region last drew is left alone. Returns the rows
+// that changed as [*top, *bottom), in surface rows; none if *top == *bottom.
+static void compose_region_locked(int32_t region, const uint8_t *rgba, int32_t stride,
+                                  int32_t x, int32_t y, int32_t cw, int32_t ch, int32_t *top, int32_t *bottom) {
+    ds_drawn *d = &g_drawn[region];
+    int32_t full = !d->valid || d->x != x || d->y != y || d->w != cw || d->h != ch;
+    size_t shadow_stride = (size_t)g_shadow_w * 4;
+    *top = *bottom = y;
+    int32_t any = 0;
+    for (int32_t band = 0; band < ch; band += BAND_ROWS) {
+        int32_t end = band + BAND_ROWS < ch ? band + BAND_ROWS : ch;
+        int32_t changed = full;
+        for (int32_t row = band; !changed && row < end; row++)
+            changed = !row_same_locked(rgba + (size_t)row * stride, y + row, x, x + cw);
+        if (!changed) continue;
+        for (int32_t row = band; row < end; row++) {
+            memcpy(g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4,
+                   rgba + (size_t)row * stride, (size_t)cw * 4);
+        }
+        restore_overlays_locked(x, y + band, x + cw, y + end);
+        if (!any) *top = y + band;
+        *bottom = y + end;
+        any = 1;
+    }
+    *d = (ds_drawn){x, y, cw, ch, 1};
 }
 
 // ── Java side (dev.sts2ds.dualscreen.DsNative) ─────────────────────────────
@@ -311,7 +389,7 @@ EXPORT int32_t ds_submit_frame(const uint8_t *rgba, int32_t w, int32_t h, int32_
     TRACE_END();
     g_last_hash = hash;
     // The buffers now hold this frame, not the regions.
-    memset(g_region_hash, 0, sizeof(g_region_hash));
+    forget_regions_locked(0, REGION_COUNT);
     g_pending = 0;
     g_frames_posted++;
     result = 1;
@@ -324,9 +402,11 @@ out:
 
 // Writes one RGBA8 region of the surface at (x, y), in surface pixels, into
 // the shadow, to be posted by the next ds_present. Each region keeps its own
-// hash, so an unchanged one costs nothing. Regions FIRST_OVERLAY and up are
-// premultiplied overlays, blended over the rest. Returns 1 if it changed, 0
-// if skipped, negative on error.
+// hash, so an unchanged one costs nothing, and a changed one below the
+// overlays is copied and posted only in the bands of rows that changed (a
+// card moving in a pile is a small part of the page). Regions FIRST_OVERLAY
+// and up are premultiplied overlays, blended over the rest. Returns 1 if it
+// changed, 0 if skipped, negative on error.
 EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32_t stride,
                                 int32_t x, int32_t y, int32_t region) {
     if (!rgba || w <= 0 || h <= 0 || stride < w * 4 || x < 0 || y < 0
@@ -368,32 +448,33 @@ EXPORT int32_t ds_submit_region(const uint8_t *rgba, int32_t w, int32_t h, int32
         g_shadow_w = g_width;
         g_shadow_h = g_height;
         // The other regions are not in the new shadow yet.
-        memset(g_region_hash, 0, sizeof(g_region_hash));
+        forget_regions_locked(0, REGION_COUNT);
         for (int32_t i = 0; i < REGION_COUNT; i++) g_overlays[i].valid = 0;
     }
     TRACE_BEGIN("ds compose");
-    if (region >= FIRST_OVERLAY) {
+    int32_t top = y, bottom = y + ch;
+    if (region >= FIRST_OVERLAY)
         result = store_overlay_locked(region, rgba, stride, x, y, cw, ch);
-    } else {
-        size_t shadow_stride = (size_t)g_shadow_w * 4;
-        for (int32_t row = 0; row < ch; row++) {
-            memcpy(g_shadow + (size_t)(y + row) * shadow_stride + (size_t)x * 4,
-                   rgba + (size_t)row * stride, (size_t)cw * 4);
-        }
-        restore_overlays_locked(x, y, x + cw, y + ch);
-    }
+    else
+        compose_region_locked(region, rgba, stride, x, y, cw, ch, &top, &bottom);
     TRACE_END();
     if (region >= FIRST_OVERLAY && result != 1) goto out;
+    g_region_hash[region] = hash;
+    if (top == bottom) {
+        // The sampled hash moved, but not one row did.
+        g_frames_skipped++;
+        result = 0;
+        goto out;
+    }
     if (!g_pending) {
-        g_pending_rect = (ARect){x, y, x + cw, y + ch};
+        g_pending_rect = (ARect){x, top, x + cw, bottom};
         g_pending = 1;
     } else {
         if (x < g_pending_rect.left) g_pending_rect.left = x;
-        if (y < g_pending_rect.top) g_pending_rect.top = y;
+        if (top < g_pending_rect.top) g_pending_rect.top = top;
         if (x + cw > g_pending_rect.right) g_pending_rect.right = x + cw;
-        if (y + ch > g_pending_rect.bottom) g_pending_rect.bottom = y + ch;
+        if (bottom > g_pending_rect.bottom) g_pending_rect.bottom = bottom;
     }
-    g_region_hash[region] = hash;
     result = 1;
 
 out:
@@ -412,8 +493,10 @@ EXPORT int32_t ds_present(void) {
     pthread_mutex_lock(&g_lock);
     int32_t result = 0;
     if (!g_pending) goto out;
-    g_pending = 0;
-    if (!g_window || !g_visible || !g_shadow || g_buffer_w != g_shadow_w || g_buffer_h != g_shadow_h) goto out;
+    if (!g_window || !g_visible || !g_shadow || g_buffer_w != g_shadow_w || g_buffer_h != g_shadow_h) {
+        g_pending = 0;
+        goto out;
+    }
 
     ARect dirty = g_pending_rect;
     ANativeWindow_Buffer buffer;
@@ -421,9 +504,11 @@ EXPORT int32_t ds_present(void) {
     int32_t locked = ANativeWindow_lock(g_window, &buffer, &dirty);
     TRACE_END();
     if (locked != 0) {
+        // Kept pending: the shadow has it, the window not yet; next time.
         result = -3;
         goto out;
     }
+    g_pending = 0;
     TRACE_BEGIN("ds copy");
     int32_t left = dirty.left > 0 ? dirty.left : 0;
     int32_t top = dirty.top > 0 ? dirty.top : 0;
