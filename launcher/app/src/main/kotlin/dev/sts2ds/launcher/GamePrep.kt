@@ -158,6 +158,8 @@ object GamePrep {
                 .put("default_tab", settings.dualScreenDefaultTab)
                 .put("particle_amount", settings.particleAmount / 100.0)
                 .put("build", "$dllSha:${state.getString("pck_stamp", "")}")
+                // The warmup cache trusts only a pipeline cache written after this.
+                .put("build_time_ms", maxOf(pck.lastModified(), gameDll.lastModified()))
                 .put("compat", "${compat.packId}/${compat.targetId}")
                 .toString(2)
         )
