@@ -1459,42 +1459,143 @@ internal static class DsGameHooks
     // its pile. On PC only an open one exists; here all four live on, so a
     // hand draw would rebuild each of them once per card. Down here a hidden
     // one only notes it is stale and rebuilds when its tab is shown, and the
-    // visible one rebuilds once a burst of changes settles.
-    private const double PileRefreshDelay = 0.12;
+    // visible one rebuilds once a burst of changes settles: each change
+    // pushes the rebuild a little later, never past a cap from the burst's
+    // first change, and never while that pile's cards are still moving (a
+    // rebuild would cut their motion short). One pile per frame at most.
+    private const ulong PileQuietUsec = 120_000;
+    private const ulong PileMaxWaitUsec = 350_000;
     private static readonly HashSet<Node> StalePiles = new();
     private static bool _refreshingPile;
+
+    private struct PendingPile
+    {
+        public ulong First, Due;
+        // Its leaving cards are gone: rebuild now, without animating them out again.
+        public bool ExitsDone;
+    }
+
+    private static readonly Dictionary<Node, PendingPile> PendingPiles = new();
+    private static readonly List<Node> PendingGone = new();
+    private static readonly Action PileFrame = OnPileFrame;
+    private static SceneTree _pileTree;
 
     private static bool PileContentsChangedPrefix(object __instance)
     {
         if (_refreshingPile || DsBottomScreen.Instance is not { } screen || __instance is not CanvasItem node || !screen.IsBottom(node))
             return true;
-        if (StalePiles.Add(node) && node.IsVisibleInTree())
-            node.GetTree().CreateTimer(PileRefreshDelay).Timeout += () => RefreshPile(node, animate: true);
+        // Already stale and not pending: its cards are on their way out, and
+        // the rebuild after that takes this change too.
+        if ((StalePiles.Add(node) || PendingPiles.ContainsKey(node)) && node.IsVisibleInTree())
+            SchedulePile(node, exitsDone: false);
         return false;
     }
+
+    private static void SchedulePile(Node node, bool exitsDone)
+    {
+        var now = Time.GetTicksUsec();
+        if (!PendingPiles.TryGetValue(node, out var pending))
+            pending = new PendingPile { First = now, Due = now + PileQuietUsec };
+        else if (!pending.ExitsDone)
+            pending.Due = Math.Min(now + PileQuietUsec, pending.First + PileMaxWaitUsec);
+        if (exitsDone)
+        {
+            pending.ExitsDone = true;
+            pending.Due = now;
+        }
+        PendingPiles[node] = pending;
+        // Polled only while something is pending.
+        if (_pileTree == null && node.IsInsideTree() && node.GetTree() is { } tree)
+        {
+            _pileTree = tree;
+            tree.ProcessFrame += PileFrame;
+        }
+    }
+
+    private static void OnPileFrame()
+    {
+        try
+        {
+            var now = Time.GetTicksUsec();
+            Node next = null;
+            var nextPending = default(PendingPile);
+            PendingGone.Clear();
+            foreach (var (node, pending) in PendingPiles)
+            {
+                if (!GodotObject.IsInstanceValid(node) || !StalePiles.Contains(node))
+                {
+                    PendingGone.Add(node);
+                    continue;
+                }
+                // Due, not mid-exit, and its last motion has played out.
+                if (next != null || now < pending.Due || ExitingPiles.Contains(node) || CardsMoving(TabOf(node)))
+                    continue;
+                next = node;
+                nextPending = pending;
+            }
+            foreach (var node in PendingGone)
+            {
+                PendingPiles.Remove(node);
+                if (!GodotObject.IsInstanceValid(node))
+                    StalePiles.Remove(node);
+            }
+            PendingGone.Clear();
+            if (next != null)
+            {
+                PendingPiles.Remove(next);
+                RefreshPile(next, animate: true, exitsDone: nextPending.ExitsDone);
+            }
+        }
+        catch (Exception e)
+        {
+            // Dropped, not left stale: the next change schedules them afresh.
+            DsLog.Info($"pile refresh failed: {e.Message}");
+            foreach (var node in PendingPiles.Keys)
+                StalePiles.Remove(node);
+            PendingPiles.Clear();
+        }
+        if (PendingPiles.Count == 0 && _pileTree != null)
+        {
+            _pileTree.ProcessFrame -= PileFrame;
+            _pileTree = null;
+        }
+    }
+
+    private static bool CardsMoving(string tab) =>
+        tab != null && CardTweens.TryGetValue(tab, out var tween) && DsStyle.Running(tween);
 
     // A visible pile animates the change, as below; a hidden one (and one
     // brought up to date as its tab opens, which plays the entrance) just
     // rebuilds. Either way it keeps its scroll.
-    private static void RefreshPile(Node node, bool animate = false)
+    private static void RefreshPile(Node node, bool animate = false, bool exitsDone = false)
     {
-        if (!GodotObject.IsInstanceValid(node))
+        TraceBegin("RefreshPile");
+        try
         {
-            StalePiles.Remove(node);
-            return;
+            if (!GodotObject.IsInstanceValid(node))
+            {
+                StalePiles.Remove(node);
+                PendingPiles.Remove(node);
+                return;
+            }
+            // Cards are leaving: it rebuilds, with whatever else changed, once they are gone.
+            if (!StalePiles.Contains(node) || ExitingPiles.Contains(node))
+                return;
+            var tab = TabOf(node);
+            animate = animate && tab != null && node is CanvasItem { } item && item.IsVisibleInTree();
+            if (animate && !exitsDone && AnimateExits(tab, node))
+                return;
+            RebuildPile(node, tab, animate);
         }
-        // Cards are leaving: it rebuilds, with whatever else changed, once they are gone.
-        if (!StalePiles.Contains(node) || ExitingPiles.Contains(node))
-            return;
-        var tab = TabOf(node);
-        animate = animate && tab != null && node is CanvasItem { } item && item.IsVisibleInTree();
-        if (animate && AnimateExits(tab, node))
-            return;
-        RebuildPile(node, tab, animate);
+        finally
+        {
+            TraceEnd();
+        }
     }
 
     private static void RebuildPile(Node node, string tab, bool animate)
     {
+        PendingPiles.Remove(node);
         if (!StalePiles.Remove(node) || !GodotObject.IsInstanceValid(node))
             return;
         PileSnapshot before = null;
@@ -1513,6 +1614,7 @@ internal static class DsGameHooks
         try
         {
             AccessTools.Method(_pileScreenType, "OnPileContentsChanged")?.Invoke(node, null);
+            NotePileRebuild();
         }
         catch (Exception e)
         {
@@ -1526,6 +1628,49 @@ internal static class DsGameHooks
         if (before != null)
             Callable.From(() => AfterRebuild(tab, node, before)).CallDeferred();
         DsBottomScreen.Instance?.MarkChanged();
+    }
+
+    // The lower screen's stats and trace markers (DsBottomScreen), found by
+    // name so this builds before they exist; nothing happens without them.
+    private static Action _notePileRebuild, _traceEnd;
+    private static Action<string> _traceBegin;
+    private static bool _statsLooked;
+
+    private static void NotePileRebuild()
+    {
+        LookUpStats();
+        _notePileRebuild?.Invoke();
+    }
+
+    private static void TraceBegin(string name)
+    {
+        LookUpStats();
+        _traceBegin?.Invoke(name);
+    }
+
+    private static void TraceEnd() => _traceEnd?.Invoke();
+
+    private static void LookUpStats()
+    {
+        if (_statsLooked)
+            return;
+        _statsLooked = true;
+        _notePileRebuild = ScreenHook<Action>("NotePileRebuild");
+        _traceBegin = ScreenHook<Action<string>>("TraceBegin", typeof(string));
+        _traceEnd = ScreenHook<Action>("TraceEnd");
+    }
+
+    private static T ScreenHook<T>(string name, params Type[] args) where T : Delegate
+    {
+        try
+        {
+            var method = typeof(DsBottomScreen).GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, args, null);
+            return method == null || method.ReturnType != typeof(void) ? null : (T)method.CreateDelegate(typeof(T));
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static string TabOf(Node pileScreen)
@@ -1678,7 +1823,7 @@ internal static class DsGameHooks
             tween.Chain().TweenCallback(Callable.From(() =>
             {
                 ExitingPiles.Remove(node);
-                Callable.From(() => RebuildPile(node, TabOf(node), animate: true)).CallDeferred();
+                SchedulePile(node, exitsDone: true);
             }));
             return true;
         }
