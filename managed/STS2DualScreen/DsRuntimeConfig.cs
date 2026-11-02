@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace STS2DualScreen;
 
 // The runtime keys GamePrep writes into dualscreen.json next to DsConfig's:
-// read separately so the bottom screen's config stays as it is.
+// read separately so the bottom screen's config stays as it is. Like
+// DsConfig, dualscreen_overrides.json, if there, is laid over it.
 internal sealed class DsRuntimeConfig
 {
     private static DsRuntimeConfig _current;
@@ -21,22 +22,28 @@ internal sealed class DsRuntimeConfig
     private static DsRuntimeConfig Load()
     {
         var config = new DsRuntimeConfig();
-        var path = Path.Combine(DsPaths.FilesDir, "dualscreen.json");
+        config.Read(Path.Combine(DsPaths.FilesDir, "dualscreen.json"));
+        // DsConfig logs that the overrides file was applied.
+        config.Read(Path.Combine(DsPaths.FilesDir, DsConfig.OverridesFile));
+        return config;
+    }
+
+    private void Read(string path)
+    {
         try
         {
             if (!File.Exists(path))
-                return config;
+                return;
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             var root = doc.RootElement;
             if (root.TryGetProperty("build_time_ms", out var b) && b.TryGetInt64(out var ms))
-                config.BuildTimeMs = ms;
-            if (root.TryGetProperty("perf_hint", out var h) && (h.ValueKind == JsonValueKind.True || h.ValueKind == JsonValueKind.False))
-                config.PerfHint = h.GetBoolean();
+                BuildTimeMs = ms;
+            if (root.TryGetProperty("perf_hint", out var h) && h.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                PerfHint = h.GetBoolean();
         }
         catch (Exception ex)
         {
-            DsLog.Info($"dualscreen.json runtime keys unreadable, using defaults: {ex.Message}");
+            DsLog.Info($"{Path.GetFileName(path)} runtime keys unreadable, using defaults for them: {ex.Message}");
         }
-        return config;
     }
 }
