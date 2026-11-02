@@ -117,6 +117,18 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_COMBAT_CODE_WARMUP, true)
         set(value) { prefs.edit().putBoolean(KEY_COMBAT_CODE_WARMUP, value).apply() }
 
+    /**
+     * Mono's garbage collector young generation (nursery): [GC_DEFAULT] for
+     * the runtime's own (4 MB), or [GC_16M]/[GC_32M]. A bigger nursery fills
+     * up less often, so there are fewer minor collections, each a pause on
+     * the game thread, while cards and effects churn objects. 32 MB by
+     * default: the Thor has the memory, and pause time grows with what
+     * survives, not with the nursery's size. GamePrep sets MONO_GC_PARAMS.
+     */
+    var gcNursery: String
+        get() = prefs.getString(KEY_GC_NURSERY, GC_32M) ?: GC_32M
+        set(value) { prefs.edit().putString(KEY_GC_NURSERY, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -132,6 +144,9 @@ class SettingsStore(context: Context) {
         const val REFRESH_SYSTEM = "system"
         const val REFRESH_60HZ = "60hz"
         const val REFRESH_HIGH = "high"
+        const val GC_DEFAULT = "default"
+        const val GC_16M = "16m"
+        const val GC_32M = "32m"
         const val BRANCH_STABLE = "public"
         const val BRANCH_BETA = "public-beta"
 
@@ -148,6 +163,7 @@ class SettingsStore(context: Context) {
         private const val KEY_ANIM_WARMUP = "anim_warmup"
         private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
+        private const val KEY_GC_NURSERY = "gc_nursery"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
         private const val KEY_AUTO_PUSH = "auto_push_after_play"
         private const val KEY_DUAL_SCREEN = "dual_screen"

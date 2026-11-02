@@ -113,6 +113,11 @@
     <string name="settings_warmups_subtitle">As each room loads, plays its hit effects and visual effects once out of sight, so the first attack of a fight does not stutter. Uses more memory and a little load time.</string>
     <string name="settings_anim_warmup">Pre-warm creature animations (Experimental)</string>
     <string name="settings_anim_warmup_subtitle">Steps creature animations once as each fight loads, to smooth the first few moves. Can crash the game on some fights; if it does, it turns itself off.</string>
+    <string name="settings_gc">Memory cleanup (GC)</string>
+    <string name="settings_gc_default">Runtime default (4 MB)</string>
+    <string name="settings_gc_16m">16 MB nursery</string>
+    <string name="settings_gc_32m">32 MB nursery</string>
+    <string name="settings_gc_subtitle">How much new memory the game fills before a short cleanup pause. Bigger means fewer pauses in busy fights, for a little more memory. Applies on the next launch.</string>
     <string name="settings_combat_code">Pre-compile combat code</string>
     <string name="settings_combat_code_subtitle">While the game loads, compiles the code for attacks, damage and effects ahead of time, so the first card of a fight does not stutter. Code only: no animations are played.</string>
     <string name="settings_anim_warmup_crashed_notice">Creature animation warmup was disabled because a crash was detected during loading.</string>

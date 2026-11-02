@@ -79,7 +79,8 @@ object GamePrep {
             throw NotReady("Slay the Spire 2 is not downloaded yet")
         }
         val started = System.nanoTime()
-        configureEnvironment(files)
+        val settings = SettingsStore(context)
+        configureEnvironment(files, settings.gcNursery)
 
         val state = context.getSharedPreferences("game_prep", Context.MODE_PRIVATE)
         val version = readVersion(gameDir)
@@ -139,7 +140,6 @@ object GamePrep {
         val logsDir = File(files, "logs").apply { mkdirs() }
         writeLaunchContext(files, gameDir, accountRoot, modsDir, logsDir, version, compat)
 
-        val settings = SettingsStore(context)
         val animCrashMarker = File(files, "dualscreen_anim_warmup.running")
         if (animCrashMarker.exists()) {
             animCrashMarker.delete()
@@ -417,9 +417,10 @@ object GamePrep {
     /**
      * HOME and TMPDIR must be writable before Mono starts: it derives
      * ApplicationData from HOME/.config and caches it (see
-     * Sts2MobileLauncher's AndroidRuntimeEnvironment).
+     * Sts2MobileLauncher's AndroidRuntimeEnvironment). MONO_GC_PARAMS too:
+     * SGen reads it once, as the engine brings Mono up after onCreate.
      */
-    private fun configureEnvironment(files: File) {
+    private fun configureEnvironment(files: File, gcNursery: String) {
         File(files, ".config").mkdirs()
         val tmp = File(files, "tmp").apply { mkdirs() }
         try {
@@ -428,9 +429,25 @@ object GamePrep {
             Os.setenv("TMP", tmp.absolutePath, true)
             Os.setenv("TEMP", tmp.absolutePath, true)
             System.setProperty("java.io.tmpdir", tmp.absolutePath)
+            val gc = gcParams(gcNursery)
+            if (gc != null) Os.setenv("MONO_GC_PARAMS", gc, true) else Os.unsetenv("MONO_GC_PARAMS")
+            LauncherLog.log("MONO_GC_PARAMS=${gc ?: "(runtime default)"}")
         } catch (e: Exception) {
             LauncherLog.log("Could not set runtime environment: ${e.message}")
         }
+    }
+
+    /**
+     * SGen options for the launcher's GC setting, or null for the runtime's
+     * own. The shipped libmonosgen-2.0.so (Mono 9.0.7) takes nursery-size as
+     * a power of two (anything else is ignored with a warning) and reports
+     * "sgen (concurrent by default)", so major=marksweep-conc only says
+     * explicitly what it already does.
+     */
+    fun gcParams(nursery: String): String? = when (nursery) {
+        SettingsStore.GC_16M -> "nursery-size=16m,major=marksweep-conc"
+        SettingsStore.GC_32M -> "nursery-size=32m,major=marksweep-conc"
+        else -> null
     }
 
     private fun apkStamp(context: Context): Long =

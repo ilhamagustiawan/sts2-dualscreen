@@ -158,6 +158,14 @@ class SettingsActivity : Activity() {
             settings.particleAmount = percent
             LauncherLog.log("Settings: particles → $percent%")
         }
+        // The launcher's own: GamePrep sets MONO_GC_PARAMS before the engine starts.
+        choose(
+            R.id.sp_gc, GC_NAMES.keys.toList(), settings.gcNursery,
+            { GC_NAMES[it]?.let(::getString) ?: it },
+        ) { mode ->
+            settings.gcNursery = mode
+            LauncherLog.log("Settings: GC nursery → $mode")
+        }
         bind(R.id.sw_opengl, settings.renderer == SettingsStore.RENDERER_OPENGL) { on ->
             settings.renderer = if (on) SettingsStore.RENDERER_OPENGL else SettingsStore.RENDERER_VULKAN
             LauncherLog.log("Settings: renderer → ${settings.renderer}")
@@ -214,6 +222,11 @@ class SettingsActivity : Activity() {
             SettingsStore.REFRESH_SYSTEM to R.string.settings_refresh_system,
             SettingsStore.REFRESH_60HZ to R.string.settings_refresh_60,
             SettingsStore.REFRESH_HIGH to R.string.settings_refresh_high,
+        )
+        val GC_NAMES = linkedMapOf(
+            SettingsStore.GC_DEFAULT to R.string.settings_gc_default,
+            SettingsStore.GC_16M to R.string.settings_gc_16m,
+            SettingsStore.GC_32M to R.string.settings_gc_32m,
         )
         val PARTICLE_AMOUNTS = linkedMapOf(
             100 to R.string.settings_particles_full,
