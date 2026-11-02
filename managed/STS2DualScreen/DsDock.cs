@@ -15,7 +15,8 @@ namespace STS2DualScreen;
 // press and elastic settle, the combat piles' count bump, and, forever while
 // it applies, the top-bar map button's rocking when travel is possible and
 // the deck button's rocking while its screen is open. A gold marker slides to
-// the selected tab and breathes.
+// the selected tab and breathes. In a fight the selected tab's rock and the
+// marker's breath play once as the tab is selected, then rest.
 internal enum DockShape
 {
     Strip,
@@ -59,9 +60,14 @@ internal sealed class DsDock
         public Label BadgeLabel;
         public Label BadgeOld;   // the number rolling out
         public string Title;
-        public int Count = -1;
+        public int Count = -1;   // the game's latest
+        public int Shown = -1;   // what the badge shows (or is rolling to)
+        public bool Dirty;
+        public bool Grew;        // the tick under way: up and bump, or down and dip
         public bool Enabled = true;
-        public Tween State, Press, Bump, Roll, Rock;
+        public Tween State, Press, Bump, Tick, Rock;
+        public bool RockLoops;   // Rock repeats, rather than playing once
+        public Callable TickStep, BadgeHidden;   // made once
     }
 
     private readonly Control _root;
@@ -70,15 +76,20 @@ internal sealed class DsDock
     private readonly Dictionary<string, Tab> _tabs = new();
     private readonly Panel _marker;
     private Tween _markerMove, _markerBreath;
+    private bool _breathLoops;
     private string _selected;
     private bool _traveling;
     private bool _live;
+    private bool _combat;
+    private readonly Callable _flushCounts;
+    private bool _flushQueued;
 
     public DsDock(Control root, string[] tabs, Action<string> onPressed, DockShape shape = DockShape.Strip)
     {
         _root = root;
         _shape = shape;
         _onPressed = onPressed;
+        _flushCounts = Callable.From(FlushCounts);
 
         var row = new HBoxContainer { Name = "Tabs", MouseFilter = Control.MouseFilterEnum.Pass };
         row.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -302,6 +313,8 @@ internal sealed class DsDock
             tab.Badge = badge;
             tab.BadgeLabel = count;
             tab.BadgeOld = old;
+            tab.TickStep = Callable.From<float>(t => StepTick(tab, t));
+            tab.BadgeHidden = Callable.From(() => OnBadgeHidden(tab));
         }
 
         button.ButtonDown += () => OnDown(tab);
@@ -393,36 +406,61 @@ internal sealed class DsDock
     /// The pile's card count. It bumps when it grows, as the game's does,
     /// dips like the pressed button when it shrinks, and the number rolls
     /// between the two. It pops in when shown; negative shrinks it away.
+    /// Changes in one frame (a hand dealt or discarded at once) make one
+    /// tick, from the number shown to the newest.
     /// </summary>
     public void SetCount(string key, int count)
     {
         if (!_tabs.TryGetValue(key, out var tab) || tab.Badge == null || tab.Count == count)
             return;
-        var previous = tab.Count;
         tab.Count = count;
-        if (count >= 0)
-            tab.BadgeLabel.Text = count.ToString();
         if (!_live)
         {
+            tab.Shown = count;
+            tab.Dirty = false;
+            if (count >= 0)
+                tab.BadgeLabel.Text = count.ToString();
             DsStyle.Kill(ref tab.Bump);
-            DsStyle.Kill(ref tab.Roll);
+            DsStyle.Kill(ref tab.Tick);
             RestBadge(tab);
             tab.Badge.Visible = count >= 0;
             DsBottomScreen.Instance?.MarkChanged(_root, 0.1);
             return;
         }
-        if (count < 0)
-            HideBadge(tab);
-        else if (previous < 0 || !tab.Badge.Visible)
-            ShowBadge(tab);
-        else
+        tab.Dirty = true;
+        if (_flushQueued)
+            return;
+        _flushQueued = true;
+        _flushCounts.CallDeferred();
+    }
+
+    private void FlushCounts()
+    {
+        _flushQueued = false;
+        foreach (var tab in _tabs.Values)
         {
-            var grew = count > previous;
-            RollCount(tab, previous.ToString(), grew);
-            if (grew)
-                BumpBadge(tab);
+            if (!tab.Dirty)
+                continue;
+            tab.Dirty = false;
+            var previous = tab.Shown;
+            var count = tab.Count;
+            if (previous == count)
+                continue;
+            tab.Shown = count;
+            if (count >= 0)
+                tab.BadgeLabel.Text = count.ToString();
+            if (!_live)
+            {
+                RestBadge(tab);
+                tab.Badge.Visible = count >= 0;
+                continue;
+            }
+            if (count < 0)
+                HideBadge(tab);
+            else if (previous < 0 || !tab.Badge.Visible)
+                ShowBadge(tab);
             else
-                DipBadge(tab);
+                StartTick(tab, previous.ToString(), grew: count > previous);
         }
     }
 
@@ -436,85 +474,95 @@ internal sealed class DsDock
         tab.BadgeOld.Visible = false;
     }
 
-    // NCombatCardPile.AddCard: icon and count at hover scale, easing back.
-    private static void BumpBadge(Tab tab)
+    // One count change, in one tween stepping one made-once callable. The
+    // old number leaves as the new one arrives: upward when the count grows
+    // (the new one flashing gold), downward when it shrinks. Growing, icon
+    // and count jump to hover scale and ease back (NCombatCardPile.AddCard);
+    // shrinking, the badge takes the pile button's pressed look instead,
+    // smaller and darker, easing back. The game counts one card at a time,
+    // so a burst over several frames reads as a counter ticking.
+    private const float TickLength = 0.55f;
+
+    private static void StartTick(Tab tab, string from, bool grew)
     {
         DsStyle.Kill(ref tab.Bump);
-        tab.Bump = DsStyle.Animate(tab.Rocker, 0.5).SetParallel(true);
-        tab.Rocker.Scale = Vector2.One * 1.25f;
-        tab.Badge.Scale = Vector2.One * 1.25f;
-        tab.Badge.Modulate = Colors.White;
-        tab.Bump.TweenProperty(tab.Rocker, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        DsStyle.Kill(ref tab.Tick);
+        tab.Grew = grew;
+        tab.BadgeOld.Text = from;
+        tab.BadgeOld.Visible = true;
+        StepTick(tab, 0f);
+        tab.Tick = DsStyle.Animate(tab.Badge, TickLength);
+        tab.Tick.TweenMethod(tab.TickStep, 0f, TickLength, TickLength);
     }
 
-    // The game's counter only bumps; a card leaving gets its button's
-    // pressed look instead, smaller and darker, easing back.
-    private static void DipBadge(Tab tab)
+    private static void StepTick(Tab tab, float t)
     {
-        DsStyle.Kill(ref tab.Bump);
-        tab.Bump = DsStyle.Animate(tab.Badge, 0.5).SetParallel(true);
-        tab.Rocker.Scale = Vector2.One;
-        tab.Badge.Scale = Vector2.One * 0.85f;
-        tab.Badge.Modulate = DownColor;
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.Bump.TweenProperty(tab.Badge, "modulate", Colors.White, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-    }
-
-    // The old number leaves as the new one arrives: upward when the count
-    // grows (the new one flashing gold), downward when it shrinks. The game
-    // counts one card at a time, so a burst reads as a counter ticking.
-    private static void RollCount(Tab tab, string from, bool up)
-    {
-        DsStyle.Kill(ref tab.Roll);
+        var up = tab.Grew;
         var dy = up ? -RollDistance : RollDistance;
+        // The roll: 0.2 s out and in; the arriving number fades in over
+        // 0.15 s, and a gold one then cools to white over 0.4 s.
+        var roll = DsEase.Apply(DsCurve.CubicOut, Math.Min(t / 0.2f, 1f));
         var old = tab.BadgeOld;
+        if (old.Visible)
+        {
+            old.Position = new Vector2(0f, dy * roll);
+            old.Modulate = Colors.White with { A = 1f - roll };
+            if (t >= 0.2f)
+                old.Visible = false;
+        }
         var now = tab.BadgeLabel;
-        old.Text = from;
-        old.Visible = true;
-        old.Position = Vector2.Zero;
-        old.Modulate = Colors.White;
-        now.Position = new Vector2(0f, -dy);
+        now.Position = new Vector2(0f, -dy * (1f - roll));
         var arrive = up ? DsStyle.Gold : Colors.White;
-        now.Modulate = arrive with { A = 0f };
-        tab.Roll = DsStyle.Animate(tab.Badge, 0.55).SetParallel(true);
-        tab.Roll.TweenProperty(old, "position:y", dy, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(old, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(now, "position:y", 0f, 0.2).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.TweenProperty(now, "modulate", arrive, 0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        now.Modulate = t < 0.15f || !up
+            ? arrive with { A = DsEase.Apply(DsCurve.CubicOut, Math.Min(t / 0.15f, 1f)) }
+            : arrive.Lerp(Colors.White, DsEase.Apply(DsCurve.CubicOut, Math.Min((t - 0.15f) / 0.4f, 1f)));
+        // The bump or dip: 0.5 s.
+        var settle = DsEase.Apply(DsCurve.ExpoOut, Math.Min(t / 0.5f, 1f));
         if (up)
-            tab.Roll.TweenProperty(now, "modulate", Colors.White, 0.4).SetDelay(0.15).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Roll.Chain().TweenCallback(Callable.From(() => old.Visible = false));
+        {
+            var scale = Vector2.One * (1.25f - 0.25f * settle);
+            tab.Rocker.Scale = scale;
+            tab.Badge.Scale = scale;
+            tab.Badge.Modulate = Colors.White;
+        }
+        else
+        {
+            tab.Rocker.Scale = Vector2.One;
+            tab.Badge.Scale = Vector2.One * (0.85f + 0.15f * settle);
+            tab.Badge.Modulate = DownColor.Lerp(Colors.White, settle);
+        }
     }
 
     private static void ShowBadge(Tab tab)
     {
         DsStyle.Kill(ref tab.Bump);
-        DsStyle.Kill(ref tab.Roll);
+        DsStyle.Kill(ref tab.Tick);
         RestBadge(tab);
         tab.Badge.Visible = true;
         tab.Badge.Scale = Vector2.Zero;
         tab.Bump = DsStyle.Animate(tab.Badge, 0.3);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
     }
 
     private static void HideBadge(Tab tab)
     {
-        DsStyle.Kill(ref tab.Roll);
+        DsStyle.Kill(ref tab.Tick);
         if (!tab.Badge.Visible)
             return;
         DsStyle.Kill(ref tab.Bump);
         tab.BadgeOld.Visible = false;
         tab.Bump = DsStyle.Animate(tab.Badge, 0.2).SetParallel(true);
-        tab.Bump.TweenProperty(tab.Badge, "scale", Vector2.One * 0.6f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
-        tab.Bump.TweenProperty(tab.Badge, "modulate:a", 0f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
-        tab.Bump.Chain().TweenCallback(Callable.From(() =>
-        {
-            if (tab.Count >= 0)
-                return;
-            tab.Badge.Visible = false;
-            RestBadge(tab);
-        }));
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.Scale, Vector2.One * 0.6f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.TweenProperty(tab.Badge, DsNodePaths.ModulateA, 0f, 0.2).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Cubic);
+        tab.Bump.Chain().TweenCallback(tab.BadgeHidden);
+    }
+
+    private static void OnBadgeHidden(Tab tab)
+    {
+        if (tab.Count >= 0)
+            return;
+        tab.Badge.Visible = false;
+        RestBadge(tab);
     }
 
     /// <summary>The map is open, so a room can be chosen: the map icon rocks until it closes.</summary>
@@ -526,6 +574,15 @@ internal sealed class DsDock
         RestartLoops();
     }
 
+    /// <summary>A fight is on: the selection's loops play once instead of forever.</summary>
+    public void SetCombat(bool combat)
+    {
+        if (_combat == combat)
+            return;
+        _combat = combat;
+        RestartLoops();
+    }
+
     // ── selection ──────────────────────────────────────────────────────────
 
     public void Select(string key, bool animate)
@@ -534,7 +591,7 @@ internal sealed class DsDock
         foreach (var tab in _tabs.Values)
             ApplyState(tab, animate);
         PlaceMarker(animate);
-        RestartLoops();
+        RestartLoops(selecting: true);
     }
 
     // NSettingsTab and NCardPoolFilter: selected is cream, full colour and a
@@ -563,16 +620,16 @@ internal sealed class DsDock
         }
         tab.State = DsStyle.Animate(tab.Holder, 0.5).SetParallel(true);
         if (selected)
-            tab.State.TweenProperty(tab.Holder, "scale", scale, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+            tab.State.TweenProperty(tab.Holder, DsNodePaths.Scale, scale, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
         else
-            tab.State.TweenProperty(tab.Holder, "scale", scale, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.State.TweenProperty(tab.Label, "modulate", color, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-        tab.State.TweenProperty(tab.Button, "modulate", modulate, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.State.TweenProperty(tab.Icon, "modulate", iconModulate, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Holder, DsNodePaths.Scale, scale, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.State.TweenProperty(tab.Label, DsNodePaths.Modulate, color, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+        tab.State.TweenProperty(tab.Button, DsNodePaths.Modulate, modulate, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.State.TweenProperty(tab.Icon, DsNodePaths.Modulate, iconModulate, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
         if (tab.Hsv != null)
         {
-            tab.State.TweenProperty(tab.Hsv, "shader_parameter/s", s, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
-            tab.State.TweenProperty(tab.Hsv, "shader_parameter/v", v, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Hsv, DsNodePaths.ShaderS, s, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
+            tab.State.TweenProperty(tab.Hsv, DsNodePaths.ShaderV, v, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Expo);
         }
     }
 
@@ -582,18 +639,18 @@ internal sealed class DsDock
     {
         DsStyle.Kill(ref tab.Press);
         tab.Press = DsStyle.Animate(tab.Holder, 0.25).SetParallel(true);
-        tab.Press.TweenProperty(tab.Holder, "rotation", Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        tab.Press.TweenProperty(tab.Label, "modulate", DsStyle.Gold, 0.05);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        tab.Press.TweenProperty(tab.Label, DsNodePaths.Modulate, DsStyle.Gold, 0.05);
         if (tab.Hsv != null)
-            tab.Press.TweenProperty(tab.Hsv, "shader_parameter/v", 0.4f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+            tab.Press.TweenProperty(tab.Hsv, DsNodePaths.ShaderV, 0.4f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
     }
 
     private void OnUp(Tab tab)
     {
         DsStyle.Kill(ref tab.Press);
         tab.Press = DsStyle.Animate(tab.Holder, 1.25);
-        tab.Press.TweenProperty(tab.Holder, "rotation", -Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
-        tab.Press.TweenProperty(tab.Holder, "rotation", 0f, 1.0).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Elastic);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, -Mathf.Pi / 15f, 0.25).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Back);
+        tab.Press.TweenProperty(tab.Holder, DsNodePaths.Rotation, 0f, 1.0).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Elastic);
         // Back to its state's colour and brightness (Select may have just changed it).
         ApplyState(tab, animate: true);
     }
@@ -632,13 +689,18 @@ internal sealed class DsDock
             return;
         }
         _markerMove = DsStyle.Animate(_marker, 0.3).SetParallel(true);
-        _markerMove.TweenProperty(_marker, "position", position, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
-        _markerMove.TweenProperty(_marker, "size", size, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        _markerMove.TweenProperty(_marker, DsNodePaths.Position, position, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
+        _markerMove.TweenProperty(_marker, DsNodePaths.Size, size, 0.3).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
     }
 
     // ── forever ────────────────────────────────────────────────────────────
 
-    private void RestartLoops()
+    // Out of a fight the selected tab rocks and the marker breathes for as
+    // long as the tab is selected. In a fight the strip is on screen
+    // throughout, and loops would keep it captured at the ambient rate all
+    // fight long (and add to the top screen's busiest frames): there both
+    // play once when a tab is selected, then rest.
+    private void RestartLoops(bool selecting = false)
     {
         if (!_live)
         {
@@ -653,40 +715,69 @@ internal sealed class DsDock
             DsStyle.Kill(ref _markerBreath);
             _marker.Modulate = Colors.White;
         }
-        else if (!DsStyle.Running(_markerBreath))
+        else if (_combat)
         {
-            _markerBreath = DsStyle.Loop(_marker);
-            _markerBreath.TweenProperty(_marker, "modulate:a", 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
-            _markerBreath.TweenProperty(_marker, "modulate:a", 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            if (selecting || _breathLoops)
+                Breathe(loop: false, settleOnly: !selecting);
+        }
+        else if (!_breathLoops || !DsStyle.Running(_markerBreath))
+        {
+            Breathe(loop: true, settleOnly: false);
         }
         foreach (var tab in _tabs.Values)
         {
             var rock = tab.Key == "map" ? _traveling : tab.Key == _selected;
-            if (rock)
-                StartRock(tab);
-            else
+            if (!rock)
+                StopRock(tab, animate: true);
+            else if (tab.Key == "map" || !_combat)
+                StartRock(tab, loop: true, restart: false);
+            else if (selecting)
+                StartRock(tab, loop: false, restart: true);
+            else if (tab.RockLoops)
                 StopRock(tab, animate: true);
         }
     }
 
-    private static void StartRock(Tab tab)
+    // settleOnly: back to full, from a loop cut short by a fight.
+    private void Breathe(bool loop, bool settleOnly)
     {
-        if (DsStyle.Running(tab.Rock))
+        DsStyle.Kill(ref _markerBreath);
+        _breathLoops = loop;
+        if (settleOnly)
+        {
+            _markerBreath = DsStyle.Animate(_marker, 0.4);
+            _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 0.4).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Sine);
+            return;
+        }
+        _markerBreath = loop ? DsStyle.Loop(_marker) : DsStyle.Animate(_marker, 2.4);
+        _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 0.65f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+        _markerBreath.TweenProperty(_marker, DsNodePaths.ModulateA, 1f, 1.2).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+    }
+
+    private static void StartRock(Tab tab, bool loop, bool restart)
+    {
+        if (!restart && DsStyle.Running(tab.Rock) && tab.RockLoops == loop)
             return;
         DsStyle.Kill(ref tab.Rock);
+        tab.RockLoops = loop;
         var rocker = tab.Rocker;
+        // One deck-style cycle is a quarter turn of 4t: pi/2 s.
+        tab.Rock = loop ? DsStyle.Loop(rocker) : DsStyle.Animate(rocker, Mathf.Pi / 2f);
         if (tab.Key == "map")
         {
             // NTopBarMapButton.StartOscillation.
-            tab.Rock = DsStyle.Loop(rocker);
-            tab.Rock.TweenProperty(rocker, "rotation", -0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
-            tab.Rock.TweenProperty(rocker, "rotation", 0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, -0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0.12f, 0.8).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
         }
         else
         {
-            // NTopBarDeckButton while its screen is open: 0.12 * sin(4t).
-            tab.Rock = DsStyle.Loop(rocker);
-            tab.Rock.TweenMethod(Callable.From<float>(t => rocker.Rotation = 0.12f * Mathf.Sin(t)), 0f, Mathf.Tau, Mathf.Tau / 4f);
+            // NTopBarDeckButton while its screen is open: 0.12 * sin(4t). Its
+            // quarter, half and quarter swings are exactly the sine curves
+            // below, so the engine runs it with no managed code per frame.
+            var quarter = Mathf.Pi / 8f;
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0.12f, quarter).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, -0.12f, 2 * quarter).SetEase(Tween.EaseType.InOut).SetTrans(Tween.TransitionType.Sine);
+            tab.Rock.TweenProperty(rocker, DsNodePaths.Rotation, 0f, quarter).SetEase(Tween.EaseType.In).SetTrans(Tween.TransitionType.Sine);
         }
     }
 
@@ -696,13 +787,14 @@ internal sealed class DsDock
         if (tab.Rock == null)
             return;
         DsStyle.Kill(ref tab.Rock);
-        if (!animate)
+        tab.RockLoops = false;
+        if (!animate || Math.Abs(tab.Rocker.Rotation) < 0.001f)
         {
             tab.Rocker.Rotation = 0;
             return;
         }
         var settle = DsStyle.Animate(tab.Rocker, 0.5);
-        settle.TweenProperty(tab.Rocker, "rotation", 0f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Spring);
+        settle.TweenProperty(tab.Rocker, DsNodePaths.Rotation, 0f, 0.5).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Spring);
     }
 
     private static GradientTexture2D Gradient(Color top, Color bottom) =>
@@ -753,6 +845,12 @@ internal sealed class DsDockSet
     {
         foreach (var dock in _docks)
             dock.SetTraveling(traveling);
+    }
+
+    public void SetCombat(bool combat)
+    {
+        foreach (var dock in _docks)
+            dock.SetCombat(combat);
     }
 
     public void Select(string key, bool animate)

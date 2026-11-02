@@ -92,7 +92,8 @@ internal sealed class DsBottomScreen
     // busiest; half the rate there is still smooth enough for cards moving.
     private const int CombatFps = 15;
     // Until then a one-shot animation is playing on the pages (cards moving
-    // in a pile): those caps give way to the set rate while it runs.
+    // in a pile): outside a fight the caps give way to the set rate while it
+    // runs (see PileRate).
     private ulong _pageMotionUntilUsec;
     private Control _idle;
     private Control _idleArt;
@@ -267,6 +268,8 @@ internal sealed class DsBottomScreen
         _viewport.AddChild(_hoverLayer);
 
         _createdUsec = Time.GetTicksUsec();
+        DsCapture.Stagger = config.StaggerCaptures;
+        StartPresentThread(config.PresentThread);
         _page = new DsCapture("page", _viewport, rd);
         DsLog.Info(rd != null ? "bottom readback: async (RenderingDevice)" : "bottom readback: inline (no RenderingDevice)");
         ApplyLayout(_surfaceW, _surfaceH);
@@ -278,6 +281,26 @@ internal sealed class DsBottomScreen
         RenderingServer.FramePostDraw += OnPostDraw;
         _tree.Root.WindowInput += OnRootInput;
         Show(Array.IndexOf(Tabs, config.DefaultTab) >= 0 ? config.DefaultTab : "map");
+    }
+
+    private static void StartPresentThread(bool on)
+    {
+        if (!on)
+        {
+            DsLog.Info("bottom present: on the game's thread (present_thread off)");
+            return;
+        }
+        try
+        {
+            DsLog.Info(DsNative.PresentThread(true)
+                ? "bottom present: native thread"
+                : "bottom present: native thread failed to start; on the game's thread");
+        }
+        catch (Exception e)
+        {
+            // An older libsts2ds without the thread.
+            DsLog.Info($"bottom present: on the game's thread ({e.GetType().Name})");
+        }
     }
 
     private static SubViewport NewViewport(string name) =>
@@ -319,6 +342,14 @@ internal sealed class DsBottomScreen
         }
         return null;
     }
+
+    /// <summary>Opens a trace section for a Perfetto capture; close it with TraceEnd, same thread. No-op without libsts2ds.</summary>
+    public static void TraceBegin(string name) => DsNative.TraceBegin(name);
+
+    public static void TraceEnd() => DsNative.TraceEnd();
+
+    /// <summary>A pile was rebuilt (called once per real rebuild): counted for the stats line.</summary>
+    public static void NotePileRebuild() => DsPerf.NotePileRebuild();
 
     public static void Create(SceneTree tree, DsConfig config)
     {
@@ -438,7 +469,20 @@ internal sealed class DsBottomScreen
         var previous = _active;
         _active = tab;
         foreach (var (key, page) in _pages)
+        {
             page.Visible = key == tab;
+            // A hidden page's game nodes still ran every frame: the map's
+            // reachable rooms pulse in _Process and its tweens and the grids'
+            // tick. Paused, they pick up where they were once shown. The
+            // mirroring (SetMap, travel state, drawings) is plain calls and
+            // signals, which a paused node still takes.
+            page.ProcessMode = key == tab || !_config.PauseHiddenPages
+                ? Node.ProcessModeEnum.Inherit
+                : Node.ProcessModeEnum.Disabled;
+        }
+        // Its pile motion would wait, paused, and be replayed stale on return.
+        if (changed && previous != null)
+            DsGameHooks.OnTabHidden(previous);
         _dock.Select(tab, animate);
         MarkChanged();
         DsGameHooks.OnTabShown(tab);
@@ -586,6 +630,7 @@ internal sealed class DsBottomScreen
             art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             art.MouseFilter = Control.MouseFilterEnum.Ignore;
             _idle.AddChild(holder);
+            DsParticles.Thin(art);
             _idleArt = holder;
             LayoutIdleArt();
             holder.Modulate = holder.Modulate with { A = 0f };
@@ -635,8 +680,24 @@ internal sealed class DsBottomScreen
 
     private void OnProcessFrame()
     {
+        DsNative.TraceBegin("ds tick");
         try
         {
+            Tick();
+        }
+        finally
+        {
+            DsNative.TraceEnd();
+        }
+    }
+
+    private void Tick()
+    {
+        try
+        {
+            // One frame may go out to libsts2ds again (DsCapture.Stagger),
+            // even in a frame that renders nothing.
+            DsCapture.BeginFrame();
             var now = Time.GetTicksUsec();
             TrackFramePacing(now);
             var state = DsNative.State();
@@ -676,30 +737,21 @@ internal sealed class DsBottomScreen
 
             var pageAmbient = !booting && PageAmbient();
             var dockAmbient = _inRun && _dock.Animating;
-            UpdateBudget(now, pageAmbient || dockAmbient);
+            UpdateBudget(now, pageAmbient || dockAmbient || now < _pageMotionUntilUsec);
 
             // The menu art needn't be smooth; a pile grid is many cards, each
             // costly to draw, and mostly still (more so in a fight); the map
             // gets the set rate, and a scroll more than that.
             var scrolling = Scrolling(now);
+            // Content that follows a finger can't lose a frame to the stagger.
+            _page.NeverHold = scrolling || TouchRecent;
             var fps = scrolling ? Math.Max(_config.Fps, ScrollFps)
                 : !_inRun ? Math.Min(_config.Fps, IdleArtFps)
-                : _active == "map" || TouchRecent || now < _pageMotionUntilUsec ? _config.Fps
-                : Math.Min(_config.Fps, DsGameHooks.InCombat ? CombatFps : PileFps);
+                : _active == "map" || TouchRecent ? _config.Fps
+                : PileRate(now);
             var defer = DeferCapture(now, scrolling);
-            // Booting: one black frame, then nothing.
-            if (!defer && !(booting && _bootFrameShown))
-            {
-                _page.Tick(now, fps, pageAmbient ? PageAmbientFps[_budget] : 0, idleChecks: !booting);
-                if (booting)
-                    _bootFrameShown = true;
-            }
-            // The dock changes only by its own animations, which say so.
             if (!defer)
-            {
-                foreach (var part in _parts)
-                    part.Capture.Tick(now, _config.Fps, _inRun && part.Dock.Animating ? DockAmbientFps[_budget] : 0, idleChecks: false);
-            }
+                RunCaptures(now, fps, booting, pageAmbient, urgent: scrolling || TouchRecent && _pointerPart == null);
 
             if (now - _lastStatsUsec > 10_000_000)
             {
@@ -713,6 +765,85 @@ internal sealed class DsBottomScreen
             DsBootCover.LiftBottom();
             _tree.ProcessFrame -= OnProcessFrame;
         }
+    }
+
+    // A pile page. Cards moving in it lift the rate to the set one, but not
+    // in a fight: there the top screen is at its busiest just as cards move,
+    // so motion gets CombatMotionFps at most. While the game is dropping
+    // frames already, the budget's lower rate holds, motion or not.
+    private int PileRate(ulong now)
+    {
+        var motion = now < _pageMotionUntilUsec;
+        var fps = DsGameHooks.InCombat
+            ? Math.Min(_config.Fps, motion ? Math.Max(CombatFps, _config.CombatMotionFps) : CombatFps)
+            : motion ? _config.Fps : Math.Min(_config.Fps, PileFps);
+        return _budget > 0 ? Math.Min(fps, PageAmbientFps[_budget]) : fps;
+    }
+
+    // Each part renders only when its capture is due, and each render costs
+    // the game's GPU in the game's frame, then a full copy when it comes
+    // back. So at most one part starts a render a game frame (the one that
+    // has waited longest; the pages first while a finger is on them, unless
+    // a part has been owed a frame too long: DsCapture.Starved), and at most
+    // one copy goes out (DsCapture.Stagger): bursts are spread over frames
+    // instead of landing in one.
+    private void RunCaptures(ulong now, int fps, bool booting, bool pageAmbient, bool urgent)
+    {
+        if (DsCapture.Stagger)
+        {
+            // A frame held back last game frame goes out first, oldest first.
+            DsCapture held = _page.HasPending ? _page : null;
+            foreach (var part in _parts)
+            {
+                if (part.Capture.HasPending && (held == null || part.Capture.PendingSeq < held.PendingSeq))
+                    held = part.Capture;
+            }
+            held?.SubmitPending();
+        }
+        _page.Tick(now);
+        foreach (var part in _parts)
+            part.Capture.Tick(now);
+
+        var stagger = _config.StaggerCaptures;
+        DsCapture next = null;
+        var nextSince = ulong.MaxValue;
+        var pageUrgent = false;
+        // Booting: one black frame, then nothing.
+        if (!(booting && _bootFrameShown))
+        {
+            if (_page.Due(now, fps, pageAmbient ? PageAmbientFps[_budget] : 0, idleChecks: !booting, out var since))
+            {
+                if (stagger)
+                {
+                    next = _page;
+                    nextSince = since;
+                    pageUrgent = urgent;
+                }
+                else
+                {
+                    _page.Start(now);
+                }
+            }
+            if (booting)
+                _bootFrameShown = true;
+        }
+        // The dock changes only by its own animations, which say so.
+        foreach (var part in _parts)
+        {
+            if (!part.Capture.Due(now, _config.Fps, _inRun && part.Dock.Animating ? DockAmbientFps[_budget] : 0, idleChecks: false, out var since))
+                continue;
+            if (!stagger)
+            {
+                part.Capture.Start(now);
+            }
+            else if (pageUrgent ? part.Capture.Starved(now) : since < nextSince)
+            {
+                next = part.Capture;
+                nextSince = since;
+                pageUrgent = false;
+            }
+        }
+        next?.Start(now);
     }
 
     private bool IsBooting()
@@ -755,7 +886,19 @@ internal sealed class DsBottomScreen
         try
         {
             if (_surfaceReady && _inRun)
-                DsNative.Present();
+            {
+                var started = Time.GetTicksUsec();
+                DsNative.TraceBegin("ds present");
+                try
+                {
+                    DsNative.Present();
+                }
+                finally
+                {
+                    DsNative.TraceEnd();
+                }
+                DsPerf.NotePresent(Time.GetTicksUsec() - started);
+            }
         }
         catch (Exception e)
         {
@@ -820,6 +963,7 @@ internal sealed class DsBottomScreen
         if (_lastFrameUsec != 0)
         {
             var dt = now - _lastFrameUsec;
+            DsPerf.EndFrame(now, dt, _active, DsGameHooks.InCombat);
             _lastFrameDtUsec = dt;
             _frameUsecTotal += dt;
             _frameUsecMax = Math.Max(_frameUsecMax, dt);
@@ -881,7 +1025,8 @@ internal sealed class DsBottomScreen
         var gcMajor = GC.CollectionCount(GC.MaxGeneration);
         DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred} ambient={PageAmbientFps[_budget]}/{DockAmbientFps[_budget]}"
             + $" | {_page.TakeStats()} | {string.Join(" | ", Array.ConvertAll(_parts, part => part.Capture.TakeStats()))}"
-            + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}");
+            + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}"
+            + $" | {DsPerf.TakeStats()}");
         _frameUsecTotal = _frameUsecMax = 0;
         _frameCount = _hitches = _deferred = 0;
         _gcMinor = gcMinor;

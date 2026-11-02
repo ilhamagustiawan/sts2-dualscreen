@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
 namespace STS2DualScreen;
@@ -36,9 +37,15 @@ internal static unsafe class DsNative
     [DllImport(Lib, EntryPoint = "ds_submit_region")]
     public static extern int SubmitRegion(byte* rgba, int width, int height, int stride, int x, int y, int region);
 
-    /// <summary>Posts the regions written since the last call as one buffer.</summary>
+    /// <summary>Posts the regions written since the last call as one buffer (on the present thread, if on).</summary>
     [DllImport(Lib, EntryPoint = "ds_present")]
     public static extern int Present();
+
+    /// <summary>Starts (true) or stops the native present thread; true if it runs.</summary>
+    [DllImport(Lib, EntryPoint = "ds_present_thread")]
+    private static extern int ds_present_thread(int on);
+
+    public static bool PresentThread(bool on) => ds_present_thread(on ? 1 : 0) == 1;
 
     [DllImport(Lib, EntryPoint = "ds_stats")]
     private static extern void ds_stats(long* outStats);
@@ -47,6 +54,49 @@ internal static unsafe class DsNative
     private static extern void ds_log([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
 
     public static void Log(string message) => ds_log(message);
+
+    [DllImport(Lib, EntryPoint = "ds_trace_begin")]
+    private static extern void ds_trace_begin(IntPtr name);
+
+    [DllImport(Lib, EntryPoint = "ds_trace_end")]
+    private static extern void ds_trace_end();
+
+    // Each name is turned into UTF-8 once and kept: a marker every frame
+    // must not allocate. Main thread only.
+    private static readonly Dictionary<string, IntPtr> TraceNames = new();
+    private static bool _traceOff;
+
+    /// <summary>Opens an app trace section (Perfetto/systrace); pair it with TraceEnd on the same thread.</summary>
+    public static void TraceBegin(string name)
+    {
+        if (_traceOff || name == null)
+            return;
+        try
+        {
+            if (!TraceNames.TryGetValue(name, out var utf8))
+                TraceNames[name] = utf8 = Marshal.StringToCoTaskMemUTF8(name);
+            ds_trace_begin(utf8);
+        }
+        catch (Exception)
+        {
+            // No libsts2ds, or one without the markers: tracing stays off.
+            _traceOff = true;
+        }
+    }
+
+    public static void TraceEnd()
+    {
+        if (_traceOff)
+            return;
+        try
+        {
+            ds_trace_end();
+        }
+        catch (Exception)
+        {
+            _traceOff = true;
+        }
+    }
 
     /// <summary>Ready, width, height, generation of the bottom-screen surface.</summary>
     public static (bool Ready, int Width, int Height, int Generation) State()
