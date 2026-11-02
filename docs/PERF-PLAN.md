@@ -290,15 +290,28 @@ runtime. Research only.
 
 | # | Item | Status |
 |---|---|---|
-| 0.1–0.4 | Measurement | todo |
+| 0.1–0.4 | Measurement (`DsPerf.cs`, hitch log, viewport render time, ATrace) | done: 0cef881, 66939d8, 9e90428, 63f4e10 |
+| — | `files/dualscreen_overrides.json` (launcher rewrites `dualscreen.json` every launch) | done: 8c36697 |
 | — | Baseline on device (user) | todo |
-| 1.1 | Pile debounce | todo |
-| 1.2 | Combat cap during motion | todo |
-| 1.3 | Combat code warmup | todo (needs device fight test) |
-| 1.4 | GC settings | todo |
-| 1.5 | Cache NodePaths and reflection | todo |
-| 2.1–2.7 | Medium items | todo |
-| 3.x | Larger items | decide after Phase 2 numbers |
+| 1.1 | Pile debounce | done: 135cac9 |
+| 1.2 | Combat cap during motion (`combat_motion_fps`, 0.25 s re-arm) | done: 2366615 |
+| 1.3 | Combat code warmup (launcher switch, default on) | done: efd14fb (needs device fight test) |
+| 1.4 | GC nursery (launcher: 4/16/32 MB, default 32; major GC is already concurrent) | done: 8e60b1b |
+| 1.5 | Cache NodePaths and reflection | done: 9d7c65a |
+| 2.1 | One tween per pile change | done: 91ffb2d |
+| 2.2 | Coalesce dock badges (per frame) | done: e9dfa89 |
+| 2.3 | Calm idle loops in combat | done: eecbe7a |
+| 2.4 | Pause hidden pages (`pause_hidden_pages`) | done: 81ef383 |
+| 2.5 | Stagger captures (`stagger_captures`) | done: 13a6dab |
+| 2.6 | Particle thinning via `AddChildSafely` postfix | done: b062d67, menu art eb3fe39 |
+| 2.7 | Warmup cache needs a fresh Vulkan pipeline cache | done: dae5f36 |
+| 3.1 | Native present thread (`present_thread`, default on) | done: ab53150 |
+| 3.2 | Dirty row bands | done: d7c6708 |
+| 3.3 | ADPF hint (launcher switch, default on) | done: 07cb9c7 |
+| 3.4 | `override.cfg`: `save_chunk_size_mb=0.25` (no save API in 4.5.1) | done: 55fcfea |
+| 3.5 | FPS limit and Swappy mode settings | done: 7885ba4 |
+| 3.6 | Zero-copy lower screen | deferred until device numbers |
+| 3.7 | AOT `sts2.dll` | not practical: custom Mono 9.0.7 build, AOT images must match it; per-update recompiles |
 
 After each phase, the user re-runs the baseline protocol and the numbers go
 here:
