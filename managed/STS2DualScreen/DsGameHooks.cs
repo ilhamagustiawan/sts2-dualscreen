@@ -1539,10 +1539,10 @@ internal static class DsGameHooks
 
     private static void OnPileFrame()
     {
+        Node next = null;
         try
         {
             var now = Time.GetTicksUsec();
-            Node next = null;
             var nextPending = default(PendingPile);
             PendingGone.Clear();
             foreach (var (node, pending) in PendingPiles)
@@ -1581,6 +1581,10 @@ internal static class DsGameHooks
             foreach (var node in PendingPiles.Keys)
                 StalePiles.Remove(node);
             PendingPiles.Clear();
+            // The one being refreshed left the pending list first; left
+            // stale, its next change would count it as mid-exit and wait.
+            if (next != null)
+                StalePiles.Remove(next);
         }
         if (PendingPiles.Count == 0 && _pileTree != null)
         {
