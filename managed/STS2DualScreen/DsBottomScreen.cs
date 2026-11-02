@@ -618,6 +618,7 @@ internal sealed class DsBottomScreen
             art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             art.MouseFilter = Control.MouseFilterEnum.Ignore;
             _idle.AddChild(holder);
+            DsParticles.Thin(art);
             _idleArt = holder;
             LayoutIdleArt();
             holder.Modulate = holder.Modulate with { A = 0f };

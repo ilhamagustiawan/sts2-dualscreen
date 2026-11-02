@@ -1645,48 +1645,10 @@ internal static class DsGameHooks
         DsBottomScreen.Instance?.MarkChanged();
     }
 
-    // The lower screen's stats and trace markers (DsBottomScreen), found by
-    // name so this builds before they exist; nothing happens without them.
-    private static Action _notePileRebuild, _traceEnd;
-    private static Action<string> _traceBegin;
-    private static bool _statsLooked;
-
-    private static void NotePileRebuild()
-    {
-        LookUpStats();
-        _notePileRebuild?.Invoke();
-    }
-
-    private static void TraceBegin(string name)
-    {
-        LookUpStats();
-        _traceBegin?.Invoke(name);
-    }
-
-    private static void TraceEnd() => _traceEnd?.Invoke();
-
-    private static void LookUpStats()
-    {
-        if (_statsLooked)
-            return;
-        _statsLooked = true;
-        _notePileRebuild = ScreenHook<Action>("NotePileRebuild");
-        _traceBegin = ScreenHook<Action<string>>("TraceBegin", typeof(string));
-        _traceEnd = ScreenHook<Action>("TraceEnd");
-    }
-
-    private static T ScreenHook<T>(string name, params Type[] args) where T : Delegate
-    {
-        try
-        {
-            var method = typeof(DsBottomScreen).GetMethod(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null, args, null);
-            return method == null || method.ReturnType != typeof(void) ? null : (T)method.CreateDelegate(typeof(T));
-        }
-        catch (Exception)
-        {
-            return null;
-        }
-    }
+    // The lower screen's stats and trace markers.
+    private static void NotePileRebuild() => DsBottomScreen.NotePileRebuild();
+    private static void TraceBegin(string name) => DsBottomScreen.TraceBegin(name);
+    private static void TraceEnd() => DsBottomScreen.TraceEnd();
 
     private static string TabOf(Node pileScreen)
     {
