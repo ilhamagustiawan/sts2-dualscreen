@@ -810,8 +810,8 @@ internal sealed class DsBottomScreen
     {
         if (_lastFrameUsec != 0)
         {
-            DsPerf.EndFrame();
             var dt = now - _lastFrameUsec;
+            DsPerf.EndFrame(now, dt, _active, DsGameHooks.InCombat);
             _lastFrameDtUsec = dt;
             _frameUsecTotal += dt;
             _frameUsecMax = Math.Max(_frameUsecMax, dt);
