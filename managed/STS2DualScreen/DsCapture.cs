@@ -170,7 +170,21 @@ internal sealed class DsCapture
         _captures++;
     }
 
-    private unsafe void OnFrameData(Variant data)
+    // Timed whole for the stats line: this runs inside the game's frame.
+    private void OnFrameData(Variant data)
+    {
+        var started = Time.GetTicksUsec();
+        try
+        {
+            TakeFrame(data);
+        }
+        finally
+        {
+            DsPerf.NoteCallback(Time.GetTicksUsec() - started);
+        }
+    }
+
+    private unsafe void TakeFrame(Variant data)
     {
         if (_inFlight > 0)
             _inFlight--;

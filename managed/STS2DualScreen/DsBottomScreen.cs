@@ -318,6 +318,9 @@ internal sealed class DsBottomScreen
         return null;
     }
 
+    /// <summary>A pile was rebuilt (called once per real rebuild): counted for the stats line.</summary>
+    public static void NotePileRebuild() => DsPerf.NotePileRebuild();
+
     public static void Create(SceneTree tree, DsConfig config)
     {
         if (Instance != null)
@@ -740,7 +743,11 @@ internal sealed class DsBottomScreen
         try
         {
             if (_surfaceReady && _inRun)
+            {
+                var started = Time.GetTicksUsec();
                 DsNative.Present();
+                DsPerf.NotePresent(Time.GetTicksUsec() - started);
+            }
         }
         catch (Exception e)
         {
@@ -803,6 +810,7 @@ internal sealed class DsBottomScreen
     {
         if (_lastFrameUsec != 0)
         {
+            DsPerf.EndFrame();
             var dt = now - _lastFrameUsec;
             _lastFrameDtUsec = dt;
             _frameUsecTotal += dt;
@@ -865,7 +873,8 @@ internal sealed class DsBottomScreen
         var gcMajor = GC.CollectionCount(GC.MaxGeneration);
         DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred} ambient={PageAmbientFps[_budget]}/{DockAmbientFps[_budget]}"
             + $" | {_page.TakeStats()} | {string.Join(" | ", Array.ConvertAll(_parts, part => part.Capture.TakeStats()))}"
-            + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}");
+            + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}"
+            + $" | {DsPerf.TakeStats()}");
         _frameUsecTotal = _frameUsecMax = 0;
         _frameCount = _hitches = _deferred = 0;
         _gcMinor = gcMinor;
