@@ -334,7 +334,7 @@ internal sealed class DsCapture
         // Another part's frame went out this frame already: this one waits
         // for the next (it is a couple of frames old anyway), so two full
         // copies never land in one game frame. A newer one replaces it.
-        if (Stagger && _submittedThisFrame)
+        if (Stagger && _submittedThisFrame && !NeverHold)
         {
             DropPending();
             _pending = data;
@@ -357,6 +357,12 @@ internal sealed class DsCapture
 
     /// <summary>A new game frame: one frame may go out again.</summary>
     public static void BeginFrame() => _submittedThisFrame = false;
+
+    /// <summary>
+    /// Frames go out as they come, never held: the pages under a finger or
+    /// scrolling, where a frame's wait would put the content a frame behind it.
+    /// </summary>
+    public bool NeverHold { get; set; }
 
     public bool HasPending => _hasPending;
     public long PendingSeq => _pendingSeq;

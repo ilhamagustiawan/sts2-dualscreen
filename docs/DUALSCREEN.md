@@ -45,7 +45,8 @@ The tab bar is docked along the bottom edge of the lower screen.
   has waited longest; the pages first under a finger, unless another part has
   been owed a frame for 0.25 s or its window is over), and at most one frame
   is handed to libsts2ds per game frame; one that comes back later in the same
-  frame is held for the next.
+  frame is held for the next, except the pages' while a finger is on the
+  lower screen or they scroll.
 - **Readback.** Asynchronous: `RenderingDevice.TextureGetDataAsync`. Its
   callback runs on the game's thread inside the engine's frame and reads the
   frame in place (no managed copy); the stats line times all of it

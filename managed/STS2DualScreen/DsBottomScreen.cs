@@ -729,6 +729,8 @@ internal sealed class DsBottomScreen
             // costly to draw, and mostly still (more so in a fight); the map
             // gets the set rate, and a scroll more than that.
             var scrolling = Scrolling(now);
+            // Content that follows a finger can't lose a frame to the stagger.
+            _page.NeverHold = scrolling || TouchRecent;
             var fps = scrolling ? Math.Max(_config.Fps, ScrollFps)
                 : !_inRun ? Math.Min(_config.Fps, IdleArtFps)
                 : _active == "map" || TouchRecent ? _config.Fps
