@@ -40,6 +40,13 @@ internal sealed class DsCapture
     private int _epoch;
     private int _requestEpoch, _requestWidth, _requestHeight;
 
+    // The engine's own timing of this viewport's render (CPU and GPU), read
+    // for a few frames after each render: the timestamps come back late.
+    private const int MeasureFrames = 4;
+    private int _measureFrames;
+    private double _renderCpuTotal, _renderGpuTotal, _renderCpuMax, _renderGpuMax;
+    private int _renderSamples;
+
     private double _readbackMsTotal;
     private double _submitMsTotal;
     private int _captures;
@@ -55,6 +62,7 @@ internal sealed class DsCapture
         // PackedByteArray and is read in place. A byte[] would be a fresh
         // 5 MB managed array per capture, and that churn forces full GCs.
         _onFrameData = Callable.From<Variant>(OnFrameData);
+        RenderingServer.ViewportSetMeasureRenderTime(viewport.GetViewportRid(), true);
     }
 
     /// <summary>Frames are posted (false: dropped, as while the surface is gone).</summary>
@@ -107,6 +115,11 @@ internal sealed class DsCapture
     public void Tick(ulong now, int activeFps, int ambientFps, bool idleChecks)
     {
         _ambient = ambientFps > 0;
+        if (_measureFrames > 0)
+        {
+            _measureFrames--;
+            SampleRenderTime();
+        }
         // Last frame drew the viewport; its pixels are ready to copy.
         if (_readbackDue)
         {
@@ -132,14 +145,31 @@ internal sealed class DsCapture
         _nextFrameUsec = now + interval;
         RenderingServer.ViewportSetUpdateMode(Viewport.GetViewportRid(), RenderingServer.ViewportUpdateMode.Once);
         _readbackDue = true;
+        _measureFrames = MeasureFrames;
+    }
+
+    private void SampleRenderTime()
+    {
+        var rid = Viewport.GetViewportRid();
+        var cpu = RenderingServer.ViewportGetMeasuredRenderTimeCpu(rid);
+        var gpu = RenderingServer.ViewportGetMeasuredRenderTimeGpu(rid);
+        _renderCpuTotal += cpu;
+        _renderGpuTotal += gpu;
+        _renderCpuMax = Math.Max(_renderCpuMax, cpu);
+        _renderGpuMax = Math.Max(_renderGpuMax, gpu);
+        _renderSamples++;
     }
 
     public string TakeStats()
     {
         var readback = _captures > 0 ? _readbackMsTotal / _captures : 0;
         var submit = _submits > 0 ? _submitMsTotal / _submits : 0;
-        var line = $"{Name} captures={_captures} posted={_posted} readback_avg={readback:F1}ms submit_avg={submit:F1}ms size={Viewport.Size}";
+        var samples = Math.Max(1, _renderSamples);
+        var line = $"{Name} captures={_captures} posted={_posted} readback_avg={readback:F1}ms submit_avg={submit:F1}ms"
+            + $" render_cpu={_renderCpuTotal / samples:F1}/{_renderCpuMax:F1}ms render_gpu={_renderGpuTotal / samples:F1}/{_renderGpuMax:F1}ms size={Viewport.Size}";
         _readbackMsTotal = _submitMsTotal = 0;
+        _renderCpuTotal = _renderGpuTotal = _renderCpuMax = _renderGpuMax = 0;
+        _renderSamples = 0;
         _captures = _submits = _posted = 0;
         return line;
     }
