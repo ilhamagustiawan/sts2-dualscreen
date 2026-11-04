@@ -99,14 +99,14 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putBoolean(KEY_PERF_DEFAULTS, value).commit() }
 
     /**
-     * Pre-warm creature Spine animations when entering combat rooms. Off by
-     * default: the released compat pack's warmup aborts the engine
-     * ("Unreferenced static string to 0: markers") on some fights. A pack
-     * rebuilt from 450082d or later (make compat) warms an isolated copy
-     * instead; still off until fights on the device pass with it.
+     * Pre-warm creature Spine animations when entering combat rooms. On by
+     * default: a compat pack rebuilt from 450082d or later (make compat)
+     * warms an isolated copy of each creature. The released pack's warmup
+     * aborts the engine ("Unreferenced static string to 0: markers") on some
+     * fights; then the crash marker turns this off at the next launch.
      */
     var animWarmup: Boolean
-        get() = prefs.getBoolean(KEY_ANIM_WARMUP, false)
+        get() = prefs.getBoolean(KEY_ANIM_WARMUP, true)
         set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP, value).apply() }
 
     /**
