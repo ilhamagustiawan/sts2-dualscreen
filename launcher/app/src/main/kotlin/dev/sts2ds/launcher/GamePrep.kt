@@ -29,7 +29,6 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.system.Os
 import dev.sts2ds.BuildConfig
-import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
@@ -44,6 +43,9 @@ object GamePrep {
     const val COMPAT_DLL_NAME = "STS2AndroidPortCompat.dll"
     private const val FULL_PACK = "compat_packs/sts2-android-compat.zip"
     private const val OFFLINE_PACK = "compat_packs/sts2-android-offline-bootstrap.zip"
+    private const val OFFLINE_KIND = "offline-bootstrap"
+    /** Names of the game files staged in publish last time. */
+    private const val GAME_FILES_KEY = "game_files"
 
     /** Written by the game side (DsAnimWarmup) while a fight's animation warmup runs. */
     private const val ANIM_WARMUP_MARKER = "dualscreen_anim_warmup.running"
@@ -58,6 +60,8 @@ object GamePrep {
         val renderer: String,
         val refreshRate: String,
         val inputPolicy: Boolean,
+        /** Set only when the generic offline pack runs the game; see OfflineGuard. */
+        val offlineTuple: String?,
     )
 
     class NotReady(message: String) : IOException(message)
@@ -99,11 +103,16 @@ object GamePrep {
         val version = readVersion(gameDir)
 
         progress("Patching game package…")
+        // Re-patched when the patcher learns a new form (its schema), too.
         val pckStamp = "${pck.length()}:${pck.lastModified()}"
-        if (force || state.getString("pck_stamp", "") != pckStamp) {
+        val pckSchemaStale = state.getInt("pck_patch_schema", 0) != PckPatcher.PATCH_SCHEMA
+        if (force || pckSchemaStale || state.getString("pck_stamp", "") != pckStamp) {
             val result = PckPatcher.patchSentry(pck)
             LauncherLog.log("PCK: ${result.toJson()}")
-            state.edit().putString("pck_stamp", "${pck.length()}:${pck.lastModified()}").commit()
+            state.edit()
+                .putString("pck_stamp", "${pck.length()}:${pck.lastModified()}")
+                .putInt("pck_patch_schema", PckPatcher.PATCH_SCHEMA)
+                .commit()
         }
 
         progress("Choosing compatibility pack…")
@@ -116,6 +125,8 @@ object GamePrep {
                 .putString("compat_stamp", compatStamp)
                 .putString("compat_pack", it.packId)
                 .putString("compat_target", it.targetId)
+                .putString("compat_kind", it.kind)
+                .putString("compat_version", it.version)
                 .commit()
         }
         LauncherLog.log("Game $version (sts2.dll ${dllSha.take(12)}) → compat ${compat.packId}/${compat.targetId}")
@@ -142,7 +153,7 @@ object GamePrep {
         if (force || state.getString("game_stamp", "") != gameStamp) {
             val runtimeNames = context.assets.list("dotnet_bcl").orEmpty().toSet() +
                 context.assets.list("dualscreen").orEmpty() + COMPAT_DLL_NAME
-            copyGameAssemblies(assemblies, publish, runtimeNames)
+            copyGameAssemblies(assemblies, publish, runtimeNames, state)
             state.edit().putString("game_stamp", gameStamp).commit()
         }
 
@@ -197,6 +208,7 @@ object GamePrep {
         return Prepared(
             gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen,
             settings.renderer, settings.refreshRate, settings.inputPolicy,
+            if (compat.isOffline) OfflineGuard.tuple(compat.packId, compat.targetId, compat.version, version, dllSha) else null,
         )
     }
 
@@ -298,19 +310,33 @@ object GamePrep {
     /** The compat target chosen last time for this APK and game, if its files are still there. */
     private fun cachedCompat(context: Context, state: SharedPreferences, stamp: String): Compat? {
         if (state.getString("compat_stamp", "") != stamp) return null
+        // Chosen before the pack's kind was recorded: choose again.
+        if (!state.contains("compat_kind")) return null
         val packId = state.getString("compat_pack", null) ?: return null
         val targetId = state.getString("compat_target", null) ?: return null
         val dir = File(context.filesDir, "compat/$packId/$targetId")
         val dll = File(dir, "STS2Mobile.dll")
         val overlay = File(dir, "port_compat.pck")
-        return if (dll.isFile && overlay.isFile) Compat(packId, targetId, dll, overlay) else null
+        val kind = state.getString("compat_kind", "").orEmpty()
+        val version = state.getString("compat_version", "").orEmpty()
+        return if (dll.isFile && overlay.isFile) Compat(packId, targetId, kind, version, dll, overlay) else null
     }
 
-    private class Compat(val packId: String, val targetId: String, val dll: File, val overlay: File)
+    /** [kind] is the manifest's pack_kind ("" for a full pack); [version] its compat_version. */
+    private class Compat(
+        val packId: String,
+        val targetId: String,
+        val kind: String,
+        val version: String,
+        val dll: File,
+        val overlay: File,
+    ) {
+        val isOffline: Boolean get() = kind == OFFLINE_KIND
+    }
 
     private fun selectCompat(context: Context, dllSha: String, version: String): Compat {
         val full = readManifest(context, FULL_PACK)
-        val target = full?.let { matchTarget(it, dllSha, version) }
+        val target = full?.let { CompatMatch.target(it, dllSha, version) }
         if (full != null && target != null) return extractTarget(context, FULL_PACK, full, target)
 
         val offline = readManifest(context, OFFLINE_PACK)
@@ -318,26 +344,6 @@ object GamePrep {
         val any = offline.getJSONArray("targets").getJSONObject(0)
         LauncherLog.log("No exact compat target for $version; using the generic offline fallback")
         return extractTarget(context, OFFLINE_PACK, offline, any)
-    }
-
-    private fun matchTarget(manifest: JSONObject, dllSha: String, version: String): JSONObject? {
-        val targets = manifest.optJSONArray("targets") ?: return null
-        var byVersion: JSONObject? = null
-        for (i in 0 until targets.length()) {
-            val target = targets.getJSONObject(i)
-            val shas = when (val v = target.opt("sts2_dll_sha256")) {
-                is String -> listOf(v)
-                is JSONArray -> (0 until v.length()).map { v.getString(it) }
-                else -> emptyList()
-            }
-            if (shas.any { it.equals(dllSha, ignoreCase = true) }) return target
-            val versions = target.optJSONArray("versions")
-            if (byVersion == null && versions != null && version.isNotEmpty() &&
-                (0 until versions.length()).any { versions.getString(it) == version }) {
-                byVersion = target
-            }
-        }
-        return byVersion
     }
 
     private fun readManifest(context: Context, asset: String): JSONObject? = try {
@@ -374,7 +380,9 @@ object GamePrep {
         // A target rebuilt from source (make compat) carries its own commit.
         val build = target.optJSONObject("build_info") ?: manifest.optJSONObject("build_info")
         LauncherLog.log("Compat $packId/$targetId built from ${build?.optString("commit") ?: "unknown"}")
-        return Compat(packId, targetId, dll, overlay)
+        val kind = manifest.optString("pack_kind", "")
+        val version = manifest.optString("compat_version", "")
+        return Compat(packId, targetId, kind, version, dll, overlay)
     }
 
     // ── staging helpers ────────────────────────────────────────────────────
@@ -384,17 +392,24 @@ object GamePrep {
      * depot carries Windows CoreCLR builds of framework assemblies (and its
      * own Harmony/MonoMod) that must not replace the Android ones.
      */
-    private fun copyGameAssemblies(src: File, publish: File, runtimeNames: Set<String>) {
+    private fun copyGameAssemblies(src: File, publish: File, runtimeNames: Set<String>, state: SharedPreferences) {
         val names = src.listFiles().orEmpty()
             .filter { it.isFile && !isNative(it.name) && !isProtectedBcl(it.name) && it.name !in runtimeNames }
-        // Drop game DLLs left over from a previous version.
+        // Drop game files left over from a previous version: those it staged
+        // (recorded since), and any sts2* DLL or JSON.
         val keep = names.map { it.name }.toSet()
+        val staged = state.getStringSet(GAME_FILES_KEY, emptySet()).orEmpty()
         publish.listFiles().orEmpty()
-            .filter { it.isFile && (it.name.endsWith(".dll") || it.name.endsWith(".json")) }
-            .filter { it.name !in keep && it.name.startsWith("sts2") }
+            .filter { it.isFile && it.name !in keep && it.name !in runtimeNames }
+            .filter { it.name in staged || isGameDllOrJson(it.name) }
             .forEach { it.delete() }
+
         for (file in names) copyIfDifferent(file, File(publish, file.name))
+        state.edit().putStringSet(GAME_FILES_KEY, keep).commit()
     }
+
+    private fun isGameDllOrJson(name: String): Boolean =
+        name.startsWith("sts2") && (name.endsWith(".dll") || name.endsWith(".json"))
 
     // Everything but .so files goes across, as Sts2MobileLauncher does. Do not
     // filter Windows "natives" by name: Sentry.dll, for one, is the managed

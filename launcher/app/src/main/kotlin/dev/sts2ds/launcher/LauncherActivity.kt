@@ -179,6 +179,47 @@ class LauncherActivity : Activity() {
         // Owed since the last game started; also retries one that failed or
         // was put off because the game was still running.
         maybeAutoPush()
+        collectOfflineProbe()
+    }
+
+    /** After a run on the offline compat pack: how far it got, once the game has gone. */
+    private fun collectOfflineProbe() {
+        if (!OfflineGuard.hasPending(this)) return
+        uiScope.launch {
+            if (!waitForGameExit()) return@launch
+            val verdict = withContext(Dispatchers.IO) { OfflineGuard.collect(this@LauncherActivity) }
+            if (verdict != null) LauncherLog.log("Offline compat fallback run: $verdict")
+        }
+    }
+
+    /**
+     * Before the generic offline compat pack runs the game: asks once per
+     * game build, and every time if it failed there before. True to launch.
+     */
+    private suspend fun confirmOffline(tuple: String, version: String): Boolean {
+        val prompt = OfflineGuard.promptFor(this, tuple)
+        if (prompt == OfflineGuard.Prompt.NONE) return true
+
+        val failed = OfflineGuard.stored(this, tuple) as? OfflineGuard.Verdict.Failed
+        val message = if (prompt == OfflineGuard.Prompt.FAILED && failed != null) {
+            getString(R.string.offline_failed_message, version, failed.status, failed.summary)
+        } else {
+            getString(R.string.offline_confirm_message, version)
+        }
+        val launch = if (prompt == OfflineGuard.Prompt.FAILED) R.string.offline_retry else R.string.offline_launch
+        return suspendCancellableCoroutine { cont ->
+            fun finish(go: Boolean) {
+                if (cont.isActive) cont.resumeWith(Result.success(go))
+            }
+            val dialog = AlertDialog.Builder(this)
+                .setTitle(R.string.offline_title)
+                .setMessage(message)
+                .setPositiveButton(launch) { _, _ -> finish(true) }
+                .setNegativeButton(android.R.string.cancel) { _, _ -> finish(false) }
+                .setOnCancelListener { finish(false) }
+                .show()
+            cont.invokeOnCancellation { dialog.dismiss() }
+        }
     }
 
     // ── State ──────────────────────────────────────────────────────────
@@ -635,11 +676,18 @@ class LauncherActivity : Activity() {
         refreshUi()
         uiScope.launch {
             try {
-                withContext(Dispatchers.IO) {
+                val prepared = withContext(Dispatchers.IO) {
                     GamePrep.prepare(this@LauncherActivity, force = false) { step ->
                         runOnUiThread { txtStatus.text = getString(R.string.launcher_status_preparing, step) }
                     }
                 }
+                val offline = prepared.offlineTuple
+                if (offline != null && !confirmOffline(offline, prepared.version)) {
+                    LauncherLog.log("Offline compat fallback declined")
+                    return@launch
+                }
+                if (offline != null) OfflineGuard.beforeLaunch(this@LauncherActivity, offline)
+
                 LauncherLog.log("Starting the game")
                 // Owed from now on, and on disk so it outlives this process.
                 if (creds != null) settings.pendingPush = true

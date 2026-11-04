@@ -79,6 +79,11 @@
     <string name="conflict_keep_cloud">Keep cloud</string>
     <string name="conflict_play_anyway">Play without syncing</string>
     <string name="conflict_unknown_time">unknown</string>
+    <string name="offline_title">No compatibility pack</string>
+    <string name="offline_confirm_message">No compatibility pack matches game %1$s. The generic offline fallback may boot it, with some features missing.</string>
+    <string name="offline_failed_message">The generic offline fallback failed on game %1$s last time (%2$s).\n\n%3$s</string>
+    <string name="offline_launch">Try it</string>
+    <string name="offline_retry">Retry anyway</string>
 
     <string name="auth_expired_title">Steam sign-in expired</string>
     <string name="auth_expired_message">Steam no longer accepts the saved sign-in for %1$s. Sign in again to keep downloading and syncing. Your game files and saves stay on this device.</string>
