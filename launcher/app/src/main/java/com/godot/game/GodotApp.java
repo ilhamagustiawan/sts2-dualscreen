@@ -208,6 +208,12 @@ public class GodotApp extends GodotActivity {
     }
 
     @Override
+    public void onPause() {
+        GamePrep.clearAnimWarmupMarker(this);
+        super.onPause();
+    }
+
+    @Override
     public void onStop() {
         if (dualScreen != null) dualScreen.onStop();
         super.onStop();

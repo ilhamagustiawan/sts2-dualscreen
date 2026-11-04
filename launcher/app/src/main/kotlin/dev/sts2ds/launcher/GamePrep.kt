@@ -45,6 +45,9 @@ object GamePrep {
     private const val FULL_PACK = "compat_packs/sts2-android-compat.zip"
     private const val OFFLINE_PACK = "compat_packs/sts2-android-offline-bootstrap.zip"
 
+    /** Written by the game side (DsAnimWarmup) while a fight's animation warmup runs. */
+    private const val ANIM_WARMUP_MARKER = "dualscreen_anim_warmup.running"
+
     class Prepared(
         val gameDir: File,
         val pck: File,
@@ -68,6 +71,15 @@ object GamePrep {
     }
 
     fun version(context: Context): String = readVersion(gameDir(context))
+
+    /**
+     * The game left the screen mid-warmup: if Android kills it now, that is
+     * not a warmup crash, so the switch must not be turned off for it.
+     */
+    @JvmStatic
+    fun clearAnimWarmupMarker(context: Context) {
+        File(context.filesDir, ANIM_WARMUP_MARKER).delete()
+    }
 
     @JvmStatic @JvmOverloads
     fun prepare(context: Context, force: Boolean, progress: (String) -> Unit = {}): Prepared {
@@ -141,7 +153,7 @@ object GamePrep {
         val logsDir = File(files, "logs").apply { mkdirs() }
         writeLaunchContext(files, gameDir, accountRoot, modsDir, logsDir, version, compat)
 
-        val animCrashMarker = File(files, "dualscreen_anim_warmup.running")
+        val animCrashMarker = File(files, ANIM_WARMUP_MARKER)
         if (animCrashMarker.exists()) {
             animCrashMarker.delete()
             if (settings.animWarmup) {
