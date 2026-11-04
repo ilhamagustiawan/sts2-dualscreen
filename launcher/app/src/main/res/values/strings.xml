@@ -160,6 +160,8 @@
     <string name="settings_opengl">Use OpenGL instead of Vulkan</string>
     <string name="settings_opengl_subtitle">For comparison on devices where Vulkan misbehaves. The lower screen is cheaper to mirror on Vulkan.</string>
     <string name="settings_overlay">Performance overlay</string>
+    <string name="settings_input_policy">Auto touch/controller switching</string>
+    <string name="settings_input_policy_subtitle">The top screen follows whichever you used last: touch or controller. Turn off to compare.</string>
     <string name="settings_overlay_subtitle">Shows FPS and frame times over the game.</string>
     <string name="settings_section_cloud">Steam Cloud</string>
     <string name="settings_section_game">Game</string>

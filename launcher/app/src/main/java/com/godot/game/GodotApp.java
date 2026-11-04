@@ -12,11 +12,15 @@ import android.widget.ImageView;
 import androidx.core.splashscreen.SplashScreen;
 
 import org.fmod.FMOD;
+import org.godotengine.godot.Godot;
 import org.godotengine.godot.GodotActivity;
+import org.godotengine.godot.plugin.GodotPlugin;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 import org.json.JSONObject;
 
@@ -60,6 +64,7 @@ public class GodotApp extends GodotActivity {
     private View bootCover;
     private GamePrep.Prepared prepared;
     private String refreshRate = RefreshRate.SYSTEM;
+    private GodotInputSourceHost inputSourceHost;
     private final Runnable applyRefreshRate = () -> RefreshRate.apply(this, refreshRate);
 
     private static void loadOptional(String name) {
@@ -175,7 +180,22 @@ public class GodotApp extends GodotActivity {
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
+        if (inputSourceHost != null) inputSourceHost.onWindowFocusChanged(hasFocus);
         if (hasFocus) requestRefreshRate();
+    }
+
+    // The compat pack's touch/controller policy learns from this plugin which
+    // device each input came from (Sts2MobileLauncher's GodotApp). Without it
+    // the policy stays off. Asked once, while super.onCreate starts Godot.
+    @Override
+    public Set<GodotPlugin> getHostPlugins(Godot godot) {
+        if (prepared == null || !prepared.getInputPolicy()) {
+            return Collections.emptySet();
+        }
+        if (inputSourceHost == null) {
+            inputSourceHost = new GodotInputSourceHost(godot);
+        }
+        return Collections.singleton(inputSourceHost);
     }
 
     // Once now, and again once the game's surface exists to take the vote.
@@ -185,6 +205,12 @@ public class GodotApp extends GodotActivity {
         decor.removeCallbacks(applyRefreshRate);
         applyRefreshRate.run();
         decor.postDelayed(applyRefreshRate, 500);
+    }
+
+    @Override
+    public void onPause() {
+        GamePrep.clearAnimWarmupMarker(this);
+        super.onPause();
     }
 
     @Override

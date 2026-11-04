@@ -77,6 +77,14 @@ cp "$X/lib/arm64-v8a/libgodot_android.so" "$STAGE/jni/arm64-v8a/"
 zip -q -d "$AAR" 'jni/armeabi-v7a/*' 'jni/x86/*' 'jni/x86_64/*' >/dev/null 2>&1 || true
 (cd "$STAGE" && zip -q -u "$AAR" jni/arm64-v8a/libgodot_android.so)
 
+# Godot 4.5.1 leaks a pooled input event per unsupported mouse action; once
+# the pool (1200) is empty, the game ignores all input. Upstream's repair
+# (Sts2MobileLauncher tools/android, see NOTICE.md), plus its ordered
+# input-source bridge for the compat pack's touch/controller policy.
+INPUT_PATCH="$ROOT/tools/runtime/godot-input/patch-godot-input-pool.py"
+python3 "$INPUT_PATCH" "$AAR" --javac "$JAVA_HOME/bin/javac" --android-jar "$ANDROID_JAR"
+python3 "$INPUT_PATCH" "$AAR" --check
+
 # 4. Java classes the natives call into (FMOD, .NET crypto) -------------------
 J="$CACHE/java"
 rm -rf "$J" && mkdir -p "$J/classes" "$J/shim"
@@ -108,6 +116,7 @@ cp "$X/assets/bootstrap.pck" "$X/assets/port_compat.pck" "$ASSETS/"
   echo "  \"sts2re_tag\": \"$TAG\","
   echo "  \"sts2re_apk_sha256\": \"$(sha "$APK")\","
   echo "  \"godot_aar\": \"$GODOT_VERSION\","
+  echo "  \"godot_input_patch_sha256\": \"$(unzip -p "$AAR" classes.jar | python3 -c 'import io,json,sys,zipfile; print(json.loads(zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())).read("META-INF/sts2-input-source.json"))["source_sha256"])')\","
   echo "  \"libgodot_android_sha256\": \"$(sha "$X/lib/arm64-v8a/libgodot_android.so")\","
   echo "  \"libmonosgen_sha256\": \"$(sha "$JNI/libmonosgen-2.0.so")\","
   echo "  \"libfmod_sha256\": \"$(sha "$JNI/libfmod.so")\""
