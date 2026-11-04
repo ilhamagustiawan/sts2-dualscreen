@@ -40,17 +40,19 @@ android {
             // The runtime only has release engine binaries.
             isJniDebuggable = false
         }
+        // For playing: not debuggable, so ART compiles it fully. No R8: Godot
+        // and JavaSteam look classes up by name. Signed with the debug key;
+        // sign with your own key to distribute.
         getByName("release") {
-            // Kept debuggable so `adb shell run-as` can pull logs and saves.
-            isDebuggable = true
+            isDebuggable = false
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
-        // For playing: not debuggable, so ART compiles it fully; `run-as` no
-        // longer works. No R8: Godot and JavaSteam look classes up by name.
-        create("prod") {
+        // For development: the release build, debuggable, so `adb shell
+        // run-as dev.sts2ds` can pull logs and saves (`make dev-apk`).
+        create("devel") {
             initWith(getByName("release"))
-            isDebuggable = false
+            isDebuggable = true
             matchingFallbacks += "release"
         }
     }

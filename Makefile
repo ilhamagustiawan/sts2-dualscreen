@@ -4,12 +4,13 @@
 #   make runtime   take the engine runtime from the Sts2MobileLauncher release APK
 #   make compat    rebuild one compat pack target from source (COMPAT_REF=<dir with sts2.dll>)
 #   make managed   build the entry shim and the dual-screen layer (C#)
-#   make apk       build dist/sts2-dualscreen-<version>.apk
+#   make apk       build dist/sts2-dualscreen-<version>.apk (for playing)
 #   make install   adb install it
-#   make prod      build dist/sts2-dualscreen-<version>-prod.apk (not debuggable)
-#   make install-prod  adb install that
-#   make dev       apk + install + launch + follow the log
+#   make dev-apk   build dist/sts2-dualscreen-<version>-dev.apk (debuggable: run-as works)
+#   make install-dev   adb install that
+#   make dev       dev-apk + install-dev + launch + follow the log
 #   make test      unit tests
+#   make logcat    follow the app's log
 
 SHELL := /bin/bash
 JAVA_HOME ?= $(shell brew --prefix openjdk@21 2>/dev/null)/libexec/openjdk.jdk/Contents/Home
@@ -30,7 +31,7 @@ GODOT_AAR_STOCK := .cache/runtime/$(RUNTIME_TAG)/godot-4.5.1.stable.aar
 GODOT_INPUT := tools/runtime/godot-input
 ANDROID_JAR := $(ANDROID_HOME)/platforms/android-35/android.jar
 
-.PHONY: setup runtime compat managed apk install prod install-prod dev test test-runtime clean logcat
+.PHONY: setup runtime compat managed apk install dev-apk install-dev dev test test-runtime clean logcat
 
 setup:
 	./tools/setup-mac.sh
@@ -63,22 +64,22 @@ apk: managed launcher/local.properties
 install:
 	adb install -r $(DIST)
 
-PROD_APK := launcher/app/build/outputs/apk/prod/sts2-dualscreen-$(VERSION)-prod.apk
-PROD_DIST := dist/sts2-dualscreen-$(VERSION)-prod.apk
+DEV_APK := launcher/app/build/outputs/apk/devel/sts2-dualscreen-$(VERSION)-devel.apk
+DEV_DIST := dist/sts2-dualscreen-$(VERSION)-dev.apk
 
-prod: managed launcher/local.properties
-	cd launcher && ./gradlew --no-daemon -q assembleProd
+dev-apk: managed launcher/local.properties
+	cd launcher && ./gradlew --no-daemon -q assembleDevel
 	mkdir -p dist
-	cp $(PROD_APK) $(PROD_DIST)
-	@echo "Built $(PROD_DIST)"
+	cp $(DEV_APK) $(DEV_DIST)
+	@echo "Built $(DEV_DIST)"
 
-install-prod:
-	adb install -r $(PROD_DIST)
+install-dev:
+	adb install -r $(DEV_DIST)
 
 logcat:
 	adb logcat -v time -s STS2DualScreen Sts2Launcher GameActivity godot FMOD AndroidRuntime DEBUG
 
-dev: apk install
+dev: dev-apk install-dev
 	adb shell am start -n $(PACKAGE)/dev.sts2ds.launcher.LauncherActivity
 	$(MAKE) logcat
 
