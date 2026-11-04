@@ -36,7 +36,10 @@ Copied with the package renamed to `dev.sts2ds.launcher`, then adapted:
 | `tools/runtime/godot-input/` | `tools/android/patch-godot-input-pool.py`, `input-shim/`, `test-godot-input-source.py`, `tests/input-source/` (commit `d25b77a`), unchanged; applied to the Godot AAR by `make-runtime.sh` |
 
 The compat pack inside the runtime (`ModinMobileSTS/sts2-android-compat`) is
-used unmodified, as shipped in that release.
+used unmodified, as shipped in that release. `tools/runtime/make-compat.sh`
+can rebuild one of its targets, unmodified, from a pinned commit of that
+repository (default `450082d`) with its own `tools/build-compat-matrix.sh`.
+That repository states no license.
 
 ## Not included
 

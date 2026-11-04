@@ -2,6 +2,7 @@
 #
 #   make setup     install the toolchain (Homebrew + Android SDK + .NET 9)
 #   make runtime   take the engine runtime from the Sts2MobileLauncher release APK
+#   make compat    rebuild one compat pack target from source (COMPAT_REF=<dir with sts2.dll>)
 #   make managed   build the entry shim and the dual-screen layer (C#)
 #   make apk       build dist/sts2-dualscreen-<version>.apk
 #   make install   adb install it
@@ -29,7 +30,7 @@ GODOT_AAR_STOCK := .cache/runtime/$(RUNTIME_TAG)/godot-4.5.1.stable.aar
 GODOT_INPUT := tools/runtime/godot-input
 ANDROID_JAR := $(ANDROID_HOME)/platforms/android-35/android.jar
 
-.PHONY: setup runtime managed apk install prod install-prod dev test test-runtime clean logcat
+.PHONY: setup runtime compat managed apk install prod install-prod dev test test-runtime clean logcat
 
 setup:
 	./tools/setup-mac.sh
@@ -39,6 +40,9 @@ $(RUNTIME_STAMP):
 
 runtime:
 	./tools/runtime/make-runtime.sh
+
+compat: $(RUNTIME_STAMP)
+	./tools/runtime/make-compat.sh
 
 managed: $(RUNTIME_STAMP)
 	$(DOTNET) build managed/STS2DsEntry/STS2DsEntry.csproj -c Release -nologo -v q

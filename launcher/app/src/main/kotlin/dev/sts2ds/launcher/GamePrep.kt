@@ -358,6 +358,10 @@ object GamePrep {
             }
         }
         if (!dll.isFile || !overlay.isFile) throw NotReady("Compat pack $packId/$targetId is incomplete")
+
+        // A target rebuilt from source (make compat) carries its own commit.
+        val build = target.optJSONObject("build_info") ?: manifest.optJSONObject("build_info")
+        LauncherLog.log("Compat $packId/$targetId built from ${build?.optString("commit") ?: "unknown"}")
         return Compat(packId, targetId, dll, overlay)
     }
 
