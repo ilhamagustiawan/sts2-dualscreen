@@ -14,23 +14,36 @@ would anywhere else.
 ## What it does
 
 - **Steam sign-in** (QR code or password + Steam Guard), then the game is
-  downloaded straight from your Steam library onto the device.
-- **Steam Cloud saves**: download before playing, upload after, or both
-  automatically.
+  downloaded straight from your Steam library onto the device. Stable or the
+  public beta branch.
+- **Steam Cloud saves**: newer saves are downloaded before you play and yours
+  uploaded after, with a prompt when both sides changed.
 - **Lower screen**
-  - **Map**: the game's own map screen. It opens down here at the end of a
-    room and when you tap the map button; choose your path with a tap.
+  - **Map**: the game's own map screen, always shown. Scroll it, read room
+    tips and draw on it by touch.
   - **Draw / Discard / Exhaust / Deck**: the game's own pile views, updated
     live. The pile buttons on the top screen switch the lower screen instead
     of covering the fight.
 - **Controller and touch** both work; the controller always drives the top
   screen.
+- **Tuned for handhelds**: settings for frame pacing, refresh rate, particle
+  density, warmups and more. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
+
+## Requirements
+
+- An arm64 Android 8.0+ device. A second display is optional; the AYN Thor is
+  the one it is built and tested on.
+- Slay the Spire 2 in your Steam library, and room on the device for the game.
 
 ## Install
 
-1. Build the APK (below) and install it: `adb install -r dist/sts2-dualscreen-*.apk`.
+1. Download the APK from the releases page, or build it (below), and install
+   it: `adb install -r dist/sts2-dualscreen-<version>.apk`.
 2. Open **STS2 Dual Screen**, **Log in to Steam**, then **Download game**.
 3. **Launch game**.
+
+The first launch prepares the game and takes longer; later ones start in
+seconds.
 
 ## Building
 
@@ -39,7 +52,6 @@ On macOS:
 ```bash
 make setup     # JDK 21, Android SDK/NDK, .NET 9, GNU bash/coreutils, dex2jar (no sudo)
 make apk       # → dist/sts2-dualscreen-<version>.apk
-make dev       # build, install, launch, follow the log
 make test
 ```
 
@@ -48,6 +60,29 @@ make test
 release APK (MIT) and takes its prebuilt engine runtime: the custom Godot 4.5.1
 Mono engine, Mono, FMOD, spine-godot and the compatibility packs. The Godot Java
 library comes from Maven Central. No game files are needed to build.
+
+The APK is signed with the Android debug key. To publish your own build, sign
+it with your own key.
+
+### Development
+
+```bash
+make dev-apk   # → dist/sts2-dualscreen-<version>-dev.apk, debuggable
+make dev       # dev-apk, install, launch, follow the log
+make logcat    # follow the log
+make compat COMPAT_REF=<dir with sts2.dll>   # rebuild one compat pack target from source
+```
+
+The dev build is debuggable, so `adb shell run-as dev.sts2ds` reaches the
+app's files (logs, saves, `dualscreen_overrides.json`). Both builds share a
+package name but not a debuggable flag: uninstall one before installing the
+other.
+
+## Logs and bug reports
+
+The launcher's **Log** screen shows the launcher and game logs and can share,
+save or copy them. They hold no account name, Steam ID or token. Attach them
+to an issue together with your device and game version.
 
 ## How it works
 
@@ -59,8 +94,9 @@ GodotApp (top screen)  ─ custom Godot engine ─ STS2Mobile.dll (our entry shi
 DualScreenController ─ Presentation on display 2 ◄─ libsts2ds.so ◄───────┘
 ```
 
-See [docs/DUALSCREEN.md](docs/DUALSCREEN.md) for the design and
-[NOTICE.md](NOTICE.md) for what came from where.
+See [docs/DUALSCREEN.md](docs/DUALSCREEN.md) for the design and its known
+limits, [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for performance and its
+settings, and [NOTICE.md](NOTICE.md) for what came from where.
 
 ## Licence and credits
 

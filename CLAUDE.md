@@ -18,10 +18,15 @@ dual-screen handheld (AYN Thor), with the map and card piles on the lower screen
   `AccessTools`; no compile-time sts2.dll. No Godot subclasses (no source
   generators): use `SceneTree.ProcessFrame` and signals.
 - `tools/runtime/make-runtime.sh` — runtime from the Sts2MobileLauncher release APK.
+- `docs/DUALSCREEN.md` — lower-screen design; `docs/PERFORMANCE.md` — frame
+  costs, the settings and override keys, how to measure. Keep both current.
 
 ## Rules
 
 - Sources are only SilksongAndroid and Sts2MobileLauncher (both MIT). Do not
   use Ekyso/StS2-Launcher or balatro-dualscreen. Record anything copied in NOTICE.md.
 - Never commit game files or the extracted runtime (see .gitignore).
-- `make apk`, `make test`; `make dev` needs a device on adb.
+- `make apk` (not debuggable, for playing), `make dev-apk` (debuggable, for
+  `run-as`), `make test`; `make dev` needs a device on adb.
+- Public repo: no internal notes, plan numbers or commit hashes in code or
+  docs (NOTICE.md's upstream pins are the exception).

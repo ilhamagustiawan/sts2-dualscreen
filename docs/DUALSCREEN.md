@@ -36,9 +36,9 @@ The tab bar is docked along the bottom edge of the lower screen.
   capture differed, for 0.25 s), at an ambient rate while something loops
   forever, else once a second to catch changes nobody announced. A window
   owes one more capture after it ends, so the frame a motion ends on is
-  always drawn. In a fight
-  the pile pages stay at 15 FPS even while their cards move
-  (`combat_motion_fps`), and lower still while the game is dropping frames.
+  always drawn. In a fight the pile pages stay at 15 FPS even while their
+  cards move (`combat_motion_fps`), and lower still while the game is
+  dropping frames.
 - **Stagger.** At most one part starts a render per game frame (the one that
   has waited longest; the pages first under a finger, unless another part has
   been owed a frame for 0.25 s or its window is over), and at most one frame
@@ -57,23 +57,9 @@ The tab bar is docked along the bottom edge of the lower screen.
   the same runs on the game's thread inside the call. A new or destroyed
   surface (`nativeSetSurface`) waits for a post in progress, so a destroyed
   surface is never touched.
-- **Measuring.** Every 10 s the log has a stats line (captures, render times,
-  pipeline compiles, GC, callback and present times, pile rebuilds), and a
-  `hitch` line for any game frame over 20 ms (rate-limited). libsts2ds and
-  `DsBottomScreen.TraceBegin`/`TraceEnd` add app trace sections for Perfetto.
-- **Switches.** The launcher rewrites `dualscreen.json` on every launch.
-  `present_thread`, `stagger_captures` and `pause_hidden_pages` (all on by
-  default) are launcher settings, under Advanced > Lower screen.
-  `files/dualscreen_overrides.json`, if there, is laid over `dualscreen.json`
-  (same keys; it wins) by both `DsConfig` and `DsRuntimeConfig`, for keys
-  with no setting (`combat_motion_fps`, `canvas_scale`) or to force one
-  (`perf_hint`, the switches above). For example:
-
-  ```sh
-  echo '{"present_thread": false}' > overrides.json
-  adb push overrides.json /data/local/tmp/
-  adb shell run-as dev.sts2ds cp /data/local/tmp/overrides.json files/dualscreen_overrides.json
-  ```
+- **Settings and measuring.** The switches for all of this, the override
+  file and the stats and `hitch` log lines are in
+  [PERFORMANCE.md](PERFORMANCE.md).
 
 ## What is on the lower screen
 
@@ -98,7 +84,7 @@ Every game type is looked up by name. A missing type or method logs
   still reach it. A pile's card motion is run to its end as its tab is left,
   and a pile changed while hidden rebuilds when its tab opens.
 
-## Known limits / next
+## Known limits
 
 - The map tab is a copy: touch scrolls it, shows room tips and draws, but
   tapping a travelable room doesn't travel (`MapPointReleasePrefix` skips the
@@ -119,6 +105,6 @@ Every game type is looked up by name. A missing type or method logs
   copies that toast label's font and outline, and the tabs use its font.
 - Every changed frame still crosses the CPU (GPU → staging buffer → mailbox
   → shadow → window). Rendering into an `AHardwareBuffer` the window can post
-  directly would remove those copies (see docs/PERF-PLAN.md, 3.6).
+  directly would remove those copies (see [PERFORMANCE.md](PERFORMANCE.md)).
 - Hover tooltips from cards on the lower screen are drawn by the game's global
   hover-tip layer, which is on the top screen.
