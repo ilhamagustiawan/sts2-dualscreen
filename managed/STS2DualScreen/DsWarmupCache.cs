@@ -48,11 +48,9 @@ internal static class DsWarmupCache
 
     [HarmonyPrefix]
     private static void WarmupCriticalScenesPrefix(
-        object loadingScreen,
         string mode,
         ref bool treeWarmup,
         int treeWarmupFrames,
-        bool retainCache,
         string treeWarmupScope)
     {
         DsShakeGuard.Begin();
@@ -80,9 +78,7 @@ internal static class DsWarmupCache
     private static void WarmupCriticalScenesPostfix(
         Task __result,
         string mode,
-        bool treeWarmup,
         int treeWarmupFrames,
-        bool retainCache,
         string treeWarmupScope)
     {
         if (__result == null)

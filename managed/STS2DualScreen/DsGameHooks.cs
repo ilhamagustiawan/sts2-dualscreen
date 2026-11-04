@@ -300,7 +300,7 @@ internal static class DsGameHooks
 
     // ── bottom screen lifecycle ────────────────────────────────────────────
 
-    public static void OnBottomScreenReady(DsBottomScreen screen)
+    public static void OnBottomScreenReady()
     {
         SetCombatTabs(_inCombat);
         QueueRebuild();

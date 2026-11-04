@@ -9,7 +9,6 @@ namespace STS2DualScreen;
 internal static class DsNodePaths
 {
     public static readonly NodePath Position = "position";
-    public static readonly NodePath PositionY = "position:y";
     public static readonly NodePath Size = "size";
     public static readonly NodePath Scale = "scale";
     public static readonly NodePath Rotation = "rotation";

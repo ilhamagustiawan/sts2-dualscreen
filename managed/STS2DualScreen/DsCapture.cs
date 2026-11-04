@@ -16,7 +16,6 @@ namespace STS2DualScreen;
 internal sealed class DsCapture
 {
     private const ulong IdleIntervalUsec = 1_000_000;
-    private const ulong ActiveWindowUsec = 1_000_000;
     private const int MaxInFlight = 3;
     // A changed capture keeps the active rate this much longer, until it has
     // changed on every capture for MaxReArmUsec.
@@ -110,8 +109,6 @@ internal sealed class DsCapture
 
     /// <summary>Frames are posted (false: dropped, as while the surface is gone).</summary>
     public bool Enabled { get; set; } = true;
-
-    public bool Active(ulong now) => now < _activeUntilUsec;
 
     /// <summary>Post frames as the whole surface (the compositor scales them to fit).</summary>
     public void TargetWhole()

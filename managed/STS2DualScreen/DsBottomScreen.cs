@@ -357,7 +357,7 @@ internal sealed class DsBottomScreen
             return;
         Instance = new DsBottomScreen(tree, config);
         DsLog.Info("bottom screen host created");
-        DsGameHooks.OnBottomScreenReady(Instance);
+        DsGameHooks.OnBottomScreenReady();
     }
 
     public Control Page(string tab) => _pages[tab];
@@ -1381,8 +1381,6 @@ internal sealed class DsBottomScreen
             GlobalPosition = pos,
             ButtonMask = pressed ? MouseButtonMask.Left : 0,
         };
-
-    private void Push(InputEvent e) => PushAsTouch(_viewport, e);
 
     private void PushPointer(InputEvent e) => PushAsTouch(_pointerPart?.Viewport ?? _viewport, e);
 
