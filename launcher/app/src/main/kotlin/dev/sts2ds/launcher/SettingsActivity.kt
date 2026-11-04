@@ -37,6 +37,10 @@ class SettingsActivity : Activity() {
             LauncherLog.log("Settings: dual screen → $it")
         }
         bindBranch()
+        bind(R.id.sw_input_policy, settings.inputPolicy) {
+            settings.inputPolicy = it
+            LauncherLog.log("Settings: auto touch/controller switching → $it")
+        }
         bind(R.id.sw_dual_screen_60, settings.dualScreenFps >= 60) {
             settings.dualScreenFps = if (it) 60 else 30
             LauncherLog.log("Settings: lower screen ${settings.dualScreenFps} FPS")

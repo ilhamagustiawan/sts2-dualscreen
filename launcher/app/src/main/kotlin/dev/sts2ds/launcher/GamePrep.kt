@@ -54,6 +54,7 @@ object GamePrep {
         val dualScreen: Boolean,
         val renderer: String,
         val refreshRate: String,
+        val inputPolicy: Boolean,
     )
 
     class NotReady(message: String) : IOException(message)
@@ -183,7 +184,7 @@ object GamePrep {
         )
         return Prepared(
             gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen,
-            settings.renderer, settings.refreshRate,
+            settings.renderer, settings.refreshRate, settings.inputPolicy,
         )
     }
 

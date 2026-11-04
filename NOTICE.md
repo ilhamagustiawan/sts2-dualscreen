@@ -32,6 +32,7 @@ Copied with the package renamed to `dev.sts2ds.launcher`, then adapted:
 | `GameSettingsFile.kt` | `settings.save` performance keys, their defaults, the Recommended graphics preset and the vector format of `ExtraSettingsRepository.java`; the warmup set is the `--preload aggressive` profile of `tools/debug/sts2-adb-debug.sh` (commit `11025d4`) |
 | `RefreshRate.java` | mode choice of `HighRefreshRateController.java` (commit `11025d4`), trimmed to one window request and a surface vote |
 | `GodotApp.java`, `GamePrep.kt` | `--rendering-method gl_compatibility` of `RendererPreference.java`; the `launcher/enable_debug_menu.flag` overlay switch of `GodotApp.java` (commit `11025d4`) |
+| `GodotInputSourceHost.java` | `android/src/com/godot/game/GodotInputSourceHost.java` (commit `d25b77a`), unchanged; registered by `GodotApp.getHostPlugins` as upstream |
 | `tools/runtime/godot-input/` | `tools/android/patch-godot-input-pool.py`, `input-shim/`, `test-godot-input-source.py`, `tests/input-source/` (commit `d25b77a`), unchanged; applied to the Godot AAR by `make-runtime.sh` |
 
 The compat pack inside the runtime (`ModinMobileSTS/sts2-android-compat`) is

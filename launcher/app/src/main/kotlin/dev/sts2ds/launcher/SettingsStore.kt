@@ -178,6 +178,15 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_PAUSE_HIDDEN_PAGES, true)
         set(value) { prefs.edit().putBoolean(KEY_PAUSE_HIDDEN_PAGES, value).apply() }
 
+    /**
+     * Register the input-source plugin (GodotInputSourceHost), which turns on
+     * the compat pack's automatic touch/controller switching on the top
+     * screen. On by default, as in Sts2MobileLauncher; here to rule it out.
+     */
+    var inputPolicy: Boolean
+        get() = prefs.getBoolean(KEY_INPUT_POLICY, true)
+        set(value) { prefs.edit().putBoolean(KEY_INPUT_POLICY, value).apply() }
+
     /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
     var animWarmupCrashed: Boolean
         get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
@@ -217,6 +226,7 @@ class SettingsStore(context: Context) {
         private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
         private const val KEY_FRAME_PACING = "frame_pacing"
         private const val KEY_PRESENT_THREAD = "present_thread"
+        private const val KEY_INPUT_POLICY = "input_policy"
         private const val KEY_STAGGER_CAPTURES = "stagger_captures"
         private const val KEY_PAUSE_HIDDEN_PAGES = "pause_hidden_pages"
         private const val KEY_AUTO_PULL = "auto_pull_before_launch"
