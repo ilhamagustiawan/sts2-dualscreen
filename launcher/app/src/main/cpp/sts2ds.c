@@ -113,9 +113,6 @@ static int32_t g_thread_on, g_thread_quit;
 static int32_t g_release_slots;
 // The game ended a frame (ds_present) or sent a whole one: the thread has work.
 static int32_t g_commit, g_whole_due;
-#ifdef DS_HOST_TEST
-static int64_t g_pass_begin, g_pass_end;
-#endif
 
 static int64_t g_frames_posted, g_frames_skipped; // atomics
 
@@ -543,9 +540,6 @@ static void *present_main(void *arg) {
         if (g_thread_quit) break;
         int32_t commit = g_commit;
         g_commit = g_whole_due = 0;
-#ifdef DS_HOST_TEST
-        g_pass_begin++;
-#endif
         pthread_mutex_unlock(&g_lock);
 
         pthread_mutex_lock(&g_render);
@@ -591,9 +585,6 @@ static void *present_main(void *arg) {
         pthread_mutex_lock(&g_lock);
         for (int32_t s = 0; s < SOURCE_COUNT; s++)
             if (take[s]) note_result_locked(&g_mail[s], results[s]);
-#ifdef DS_HOST_TEST
-        g_pass_end++;
-#endif
     }
     pthread_mutex_unlock(&g_lock);
     return NULL;

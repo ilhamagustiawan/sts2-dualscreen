@@ -115,9 +115,3 @@ DS_EXPORT int ds_perf_frame(void) {
     }
     return 1;
 }
-
-DS_EXPORT void ds_perf_stop(void) {
-    if (!session) return;
-    p_close_session(session);
-    session = NULL;
-}
