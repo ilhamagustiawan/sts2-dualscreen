@@ -23,8 +23,13 @@ DIST := dist/sts2-dualscreen-$(VERSION).apk
 ASSETS := launcher/app/src/main/assets
 RUNTIME_STAMP := $(ASSETS)/runtime_manifest.json
 PACKAGE := dev.sts2ds
+RUNTIME_TAG ?= v0.1.11
+GODOT_AAR := launcher/app/libs/godot-lib.template_release.aar
+GODOT_AAR_STOCK := .cache/runtime/$(RUNTIME_TAG)/godot-4.5.1.stable.aar
+GODOT_INPUT := tools/runtime/godot-input
+ANDROID_JAR := $(ANDROID_HOME)/platforms/android-35/android.jar
 
-.PHONY: setup runtime managed apk install prod install-prod dev test clean logcat
+.PHONY: setup runtime managed apk install prod install-prod dev test test-runtime clean logcat
 
 setup:
 	./tools/setup-mac.sh
@@ -73,8 +78,15 @@ dev: apk install
 	adb shell am start -n $(PACKAGE)/dev.sts2ds.launcher.LauncherActivity
 	$(MAKE) logcat
 
-test: launcher/local.properties
+test: launcher/local.properties test-runtime
 	cd launcher && ./gradlew --no-daemon -q testReleaseUnitTest
+
+# The staged Godot AAR carries the input repair, and the repair passes
+# upstream's regression on the stock AAR.
+test-runtime: $(RUNTIME_STAMP)
+	python3 $(GODOT_INPUT)/patch-godot-input-pool.py --check $(GODOT_AAR)
+	python3 $(GODOT_INPUT)/test-godot-input-source.py --javac $(JAVA_HOME)/bin/javac \
+	  --android-jar $(ANDROID_JAR) $(GODOT_AAR_STOCK)
 
 clean:
 	cd launcher && ./gradlew --no-daemon -q clean
