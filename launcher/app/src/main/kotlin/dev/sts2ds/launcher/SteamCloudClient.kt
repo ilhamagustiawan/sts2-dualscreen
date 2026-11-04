@@ -1,13 +1,12 @@
-// SteamCloudClient — wraps JavaSteam's `Cloud` unified service for the
-// two operations Phase 1b/1c need:
+// SteamCloudClient — wraps JavaSteam's `Cloud` unified service:
 //
 //   enumerateFiles(appId)            → list all CloudFile metadata
 //   downloadFile(appId, filename)    → byte[] (HTTP fetch + ZIP decompress
 //                                      if Steam served compressed)
+//   upload / delete                  → the push side of cloud saves
 //
-// Mirrors the .NET launcher's SteamKit2CloudSaveStore architecture but
-// flat — no manifest cache or write queue (Phase 1c/1d adds the upload
-// side). The download protocol is straight from the C# implementation:
+// Mirrors SilksongAndroid's .NET launcher's SteamKit2CloudSaveStore, flat
+// (no manifest cache or write queue). The download protocol:
 //
 //   1. Cloud.ClientFileDownload returns { url_host, url_path, use_https,
 //      request_headers, file_size, raw_file_size }.
@@ -16,7 +15,7 @@
 //      payload begins with the PK\x03\x04 ZIP magic, decompress as a
 //      single-entry ZIP archive.
 //
-// HTTP is via OkHttp 5 (already a transitive dep through ktor/JavaSteam).
+// HTTP is via OkHttp 5.
 
 package dev.sts2ds.launcher
 

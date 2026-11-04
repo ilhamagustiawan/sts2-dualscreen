@@ -1,7 +1,6 @@
 // LauncherLog — single global event log for the launcher UI. Any
-// component (SteamSession, LauncherActivity itself)
-// can append lines via [log]; LauncherActivity subscribes via
-// [setListener] and mirrors them into the on-screen log panel.
+// component (SteamSession, LauncherActivity itself) can append lines via
+// [log]; screens subscribe via [addListener] and mirror them on screen.
 //
 // Why a manual pubsub instead of LiveData/Flow: we want this object
 // reachable from anywhere (including non-Android code paths like
@@ -70,25 +69,11 @@ object LauncherLog {
     //                       looking for a log file thinks to look, which is
     //                       reason enough on its own.
     //
-    // BuildReset leaves this file alone: it names the directories it deletes,
+    // GameReset leaves this file alone: it names the directories it deletes,
     // and the log sits beside them rather than in one. A log is at its most
-    // useful directly after the reset that a failed build provoked.
+    // useful directly after the reset that a failed launch provoked.
 
     private const val LOG_NAME = "launcher.log"
-
-    /**
-     * Must match GAME_LOG / ERROR_LOG in GameActivity.java, which writes them.
-     * The two cannot share a constant: that class is compiled into the
-     * hand-assembled game shell rather than into this module.
-     */
-    private const val GAME_LOG_NAME = "game.log"
-    private const val ERROR_LOG_NAME = "errors.log"
-
-    /**
-     * Must match BOOT_LOG in GameActivity.java. On INTERNAL storage, unlike
-     * the two above, which is the whole point of it -- see [gameLogs].
-     */
-    private const val GAME_BOOT_NAME = "game-boot.log"
     private const val MAX_FILE_BYTES = 256L * 1024L
     private const val MAX_FILE_LINES = 4000
     private val fileLock = Any()
@@ -99,13 +84,6 @@ object LauncherLog {
 
     /**
      * Lines logged before [attach] had a file to write them to.
-     *
-     * Not an edge case: [Sts2App.onCreate] runs before its own
-     * onCreate, and that is where [UnityDex.inject] reports whether the
-     * player classes made it into the class loader -- the one fact that says
-     * whether the game was ever going to start. Dropping those lines meant a
-     * launch that failed there and a launch that succeeded produced byte-for
-     * byte the same log. (Issue #24.)
      *
      * Capped, because a process that never attaches must not grow this
      * without bound, and held under [fileLock] so that a line cannot be
@@ -122,19 +100,10 @@ object LauncherLog {
         context.getExternalFilesDir(null)?.let { File(it, LOG_NAME) }
 
     /**
-     * The game's logs, most useful first.
+     * The game's logs, oldest first.
      *
-     * A separate set of files written by a separate process, and it has to be:
-     * the engine's C# logging is the only place a save failure ever appears --
-     * DesktopPlatform.WriteSaveSlot puts the reason in Debug.LogException and
-     * nowhere else -- and that runs in the game's process, not this one. See
-     * GameActivity.startLogCapture, which is what writes these.
-     *
-     * errors.log leads because it is the distilled one: faults only, appended
-     * across sessions rather than rotated per launch, so it still holds the
-     * run that went wrong after the player has relaunched five times. game.log
-     * is the full session and both of its generations follow, because the
-     * context around a fault is worth having when it is still there.
+     * A separate set of files written by the game's process, which is where
+     * the engine, the compat pack and the game itself log.
      */
     fun gameLogs(context: Context): List<File> {
         // Written by the game's process: Godot's own log (GodotApp passes
@@ -199,13 +168,10 @@ object LauncherLog {
         val line = "$stamped\n"
         for (f in out) f.appendText(line)
 
-        // Enforced on the way out and not only at attach(). A port
-        // runs for the better part of an hour and emits a
-        // compiler's worth of output, all of it in ONE process --
-        // so a cap applied only at startup is no cap at all, and
-        // the file the log screen has to render grows to whatever
-        // that build felt like saying. Which is how a log screen
-        // becomes a crash.
+        // Enforced on the way out and not only at attach(): a long download
+        // logs a lot in ONE process, so a cap applied only at startup is no
+        // cap at all, and the file the log screen has to render would grow
+        // without bound.
         written += line.length
         if (written > MAX_FILE_BYTES) {
             for (f in out) trim(f)
@@ -219,13 +185,11 @@ object LauncherLog {
      * Bounded by BYTES first and lines second, and cut back to half the cap
      * rather than to the cap. Trimming to exactly the limit would leave the
      * next line over it again, and this function reads and rewrites the whole
-     * file -- doing that once per logged line, during the build that is
-     * producing them, is its own outage.
+     * file -- doing that once per logged line is its own outage.
      *
      * The line cap is generous where the in-memory [MAX_LINES] is not: that
      * one backs a panel on a screen, this one backs the thing a user is asked
-     * to send, and a port that failed an hour in did not fail in its last 500
-     * lines.
+     * to send.
      */
     private fun trim(f: File) {
         if (!f.isFile || f.length() <= MAX_FILE_BYTES) return

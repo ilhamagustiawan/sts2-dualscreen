@@ -1,8 +1,8 @@
 // Sts2App — the Application class: runs once per process, before any activity.
 //
-// Adapted from SilksongAndroid's SilksongApp (MIT). Its Unity dex injection is
-// gone; what is left is the launcher log, a crash handler that records
-// uncaught exceptions from every process, and BouncyCastle for JavaSteam.
+// Adapted from SilksongAndroid's SilksongApp (MIT): the launcher log, a crash
+// handler that records uncaught exceptions from every process, and
+// BouncyCastle for JavaSteam.
 
 package dev.sts2ds.launcher
 
@@ -11,33 +11,22 @@ import android.os.Build
 
 class Sts2App : Application() {
 
-    // Before any class in this app is loaded, which rules out onCreate.
-    //
-    // The APK links against com.unity3d.player.* and ships none of it: the
-    // player classes are dexed on the device out of the module the app
-    // downloads. GameActivity's superclass is one of the types that resolves
-    // from there, so the dex has to be in the class loader before the
-    // framework instantiates the activity. attachBaseContext is the first
-    // point in the process where that is possible.
     override fun onCreate() {
         super.onCreate()
 
         // First, so that everything below is recorded too. The log is written
         // to a file from here on, which is what makes it survivable enough to
-        // be worth asking a user for. It also drains whatever
-        // attachBaseContext logged above, which had nowhere to go yet.
+        // be worth asking a user for. It also drains whatever was logged
+        // before, which had nowhere to go yet.
         LauncherLog.attach(this)
 
-        // Which process this is. The log is shared by all of them and every
-        // session in it opens with the same two lines, so until now a header
-        // could not be told from :launcher, :builder or the game -- and
-        // "the game's process started and then nothing" was not a readable
-        // fact. It is the first thing worth knowing about a launch that
-        // failed. (Issue #24.)
+        // Which process this is. The log is shared by the launcher and the
+        // game, and every session in it opens with the same header, so this
+        // line is what tells them apart -- and makes "the game's process
+        // started and then nothing" a readable fact.
         LauncherLog.log("process ${processTag()} started")
 
-        // Before the engine's own handler, which cannot be installed until
-        // GameActivity exists -- see installCrashHandler.
+        // Before the engine starts, so a crash during its startup is recorded.
         installCrashHandler()
 
         // Before anything else, and in every process: JavaSteam's crypto

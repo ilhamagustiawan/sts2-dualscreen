@@ -1,5 +1,5 @@
-// SteamSession — JavaSteam wrapper used by Phase 1 features
-// (QR auth + cloud-save list/push/pull).
+// SteamSession — JavaSteam wrapper for sign-in, the depot download and
+// cloud saves.
 //
 // Owns a single SteamClient + CallbackManager + a pump thread that
 // drives runWaitCallbacks. Subscribers register callback handlers and

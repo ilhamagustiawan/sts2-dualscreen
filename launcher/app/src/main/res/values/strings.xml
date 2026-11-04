@@ -4,7 +4,6 @@
     <!-- Godot's library looks this one up. -->
     <string name="godot_project_name_string">Slay the Spire 2</string>
 
-    <string name="launcher_title">Slay the Spire 2</string>
     <string name="launcher_title_words">Slay the Spire</string>
     <string name="launcher_title_numeral">II</string>
     <string name="launcher_subtitle">Dual Screen · the map and your piles below</string>

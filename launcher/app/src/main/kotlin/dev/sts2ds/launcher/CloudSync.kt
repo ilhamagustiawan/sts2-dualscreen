@@ -52,8 +52,6 @@ object CloudSync {
 
     /** Phases emitted by [pullItems] and [pushItems]. */
     sealed class Event {
-        data class EnumeratingFiles(val message: String) : Event()
-        data class FilesListed(val files: List<SteamCloudClient.CloudFile>) : Event()
         data class FileStarted(val filename: String, val index: Int, val total: Int) : Event()
         data class FileDone(val filename: String, val bytesWritten: Long) : Event()
         data class FileFailed(val filename: String, val error: String) : Event()

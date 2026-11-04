@@ -51,11 +51,9 @@ object GamePrep {
     private const val ANIM_WARMUP_MARKER = "dualscreen_anim_warmup.running"
 
     class Prepared(
-        val gameDir: File,
         val pck: File,
         val logsDir: File,
         val version: String,
-        val compatTarget: String,
         val dualScreen: Boolean,
         val renderer: String,
         val refreshRate: String,
@@ -206,7 +204,7 @@ object GamePrep {
                 if (cachedCompat != null) " (cached)" else " (full)"
         )
         return Prepared(
-            gameDir, pck, logsDir, version, "${compat.packId}/${compat.targetId}", dualScreen,
+            pck, logsDir, version, dualScreen,
             settings.renderer, settings.refreshRate, settings.inputPolicy,
             if (compat.isOffline) OfflineGuard.tuple(compat.packId, compat.targetId, compat.version, version, dllSha) else null,
         )
