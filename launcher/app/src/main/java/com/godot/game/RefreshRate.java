@@ -75,7 +75,7 @@ public final class RefreshRate {
             modeId = modes[chosen].getModeId();
             hz = modes[chosen].getRefreshRate();
         } else if (!SYSTEM.equals(mode)) {
-            Log.i(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
+            if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
         }
 
         WindowManager.LayoutParams lp = window.getAttributes();
@@ -96,7 +96,7 @@ public final class RefreshRate {
                 }
             }
         }
-        Log.i(TAG, "Refresh rate " + mode + ": mode " + modeId + " (" + hz + " Hz), display now " + display.getRefreshRate() + " Hz");
+        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Refresh rate " + mode + ": mode " + modeId + " (" + hz + " Hz), display now " + display.getRefreshRate() + " Hz");
     }
 
     private static SurfaceView findSurfaceView(View view) {

@@ -177,7 +177,7 @@ internal sealed class DsCapture
         }
         if (_inFlight > 0 && now - _lastRequestUsec > 2_000_000)
         {
-            DsLog.Info($"{Name} readback: {_inFlight} request(s) never answered; resetting");
+            DsLog.Warn($"{Name} readback: {_inFlight} request(s) never answered; resetting");
             _inFlight = 0;
             // An answer that still comes is dropped (its slot is no longer busy).
             Array.Clear(_requests);

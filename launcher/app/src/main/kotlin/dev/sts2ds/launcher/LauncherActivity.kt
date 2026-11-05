@@ -154,7 +154,7 @@ class LauncherActivity : Activity() {
 
     private fun showLaunchError(intent: Intent) {
         intent.getStringExtra(EXTRA_ERROR)?.let {
-            LauncherLog.log("Game did not start: $it")
+            LauncherLog.warn("Game did not start: $it")
             notice = getString(R.string.launcher_status_error, it)
             intent.removeExtra(EXTRA_ERROR)
         }
@@ -450,7 +450,7 @@ class LauncherActivity : Activity() {
             .setTitle(R.string.auth_expired_title)
             .setMessage(getString(R.string.auth_expired_message, account))
             .setPositiveButton(R.string.auth_sign_in) { _, _ ->
-                LauncherLog.log("Saved Steam sign-in rejected; signing in again")
+                LauncherLog.warn("Saved Steam sign-in rejected; signing in again")
                 tokenStore.clear()
                 creds = null
                 settings.lastSyncError = null
@@ -474,7 +474,7 @@ class LauncherActivity : Activity() {
         val account = data.getStringExtra(LoginActivity.EXTRA_ACCOUNT)
         val token = data.getStringExtra(LoginActivity.EXTRA_TOKEN)
         if (account.isNullOrEmpty() || token.isNullOrEmpty()) {
-            LauncherLog.log("Login returned without account/token")
+            LauncherLog.warn("Login returned without account/token")
             return
         }
         val newCreds = TokenStore.Credentials(account, token)

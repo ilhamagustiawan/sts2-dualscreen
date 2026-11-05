@@ -233,16 +233,34 @@ object LauncherLog {
         fun onLog(line: String, full: List<String>)
     }
 
-    fun log(message: String) {
+    /**
+     * The dev build keeps every line. The release build keeps only [warn]
+     * lines in logcat and the files; routine lines still reach the launcher's
+     * status line through the in-memory buffer, and go no further.
+     */
+    @JvmField var verbose: Boolean = dev.sts2ds.BuildConfig.DEBUG
+
+    /** A routine line: the status line always, logcat and the files in the dev build only. */
+    fun log(message: String) = append(message, warning = false)
+
+    /** Something went wrong: logcat and the files in every build. */
+    fun warn(message: String) = append(message, warning = true)
+
+    private fun append(message: String, warning: Boolean, logcat: Boolean = true) {
         val stamped = "[${timeFormat.format(Date())}] $message"
-        Log.i(TAG, message)
+        val persist = warning || verbose
+        if (logcat) {
+            if (warning) Log.w(TAG, message) else if (verbose) Log.i(TAG, message)
+        }
         buffer.add(stamped)
         // Trim if needed. CopyOnWriteArrayList is O(n) on remove but
         // n stays small (capped at 500).
         while (buffer.size > MAX_LINES) buffer.removeAt(0)
 
         val out = sinks
-        if (out.isNotEmpty()) {
+        if (!persist) {
+            // Kept in memory for the status line only.
+        } else if (out.isNotEmpty()) {
             // A log line must never be the reason something fails, so a full
             // disk or a revoked directory is swallowed rather than thrown.
             try {
@@ -285,8 +303,9 @@ object LauncherLog {
      * from, and the frames are the only thing that says which one it was.
      */
     fun log(message: String, error: Throwable) {
+        // A failure: kept in every build. The stack trace goes to logcat only.
         Log.w(TAG, message, error)
-        log("$message: $error")
+        append("$message: $error", warning = true, logcat = false)
     }
 
     fun snapshot(): List<String> = buffer.toList()

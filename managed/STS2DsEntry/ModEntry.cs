@@ -88,7 +88,8 @@ public static class ModEntry
         var path = Path.Combine(STS2DualScreen.DsPaths.PublishDir, CompatFileName);
         var assembly = AssemblyLoadContext.Default.LoadFromAssemblyPath(path);
         _compatEntry = assembly.GetType("STS2Mobile.ModEntry", throwOnError: true);
-        Log($"compat pack loaded: {assembly.FullName} from {path}");
+        if (STS2DualScreen.DsLog.Verbose)
+            Log($"compat pack loaded: {assembly.FullName} from {path}");
         return _compatEntry;
     }
 

@@ -87,7 +87,7 @@ internal sealed class DsConfig
         }
         catch (Exception ex)
         {
-            DsLog.Info($"{Path.GetFileName(path)} unreadable, using defaults for it: {ex.Message}");
+            DsLog.Warn($"{Path.GetFileName(path)} unreadable, using defaults for it: {ex.Message}");
             return false;
         }
     }

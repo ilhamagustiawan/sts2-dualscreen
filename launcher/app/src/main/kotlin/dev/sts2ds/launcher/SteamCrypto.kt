@@ -48,7 +48,7 @@ object SteamCrypto {
             LauncherLog.log("BouncyCastle available as \"$PROVIDER\" (position ${at + 1} of " +
                 "${Security.getProviders().size})")
         } catch (t: Throwable) {
-            LauncherLog.log("Could not install BouncyCastle: $t")
+            LauncherLog.warn("Could not install BouncyCastle: $t")
         }
     }
 

@@ -47,7 +47,7 @@ class Sts2App : Application() {
             runCatching {
                 val stack = java.io.StringWriter()
                 error.printStackTrace(java.io.PrintWriter(stack))
-                LauncherLog.log(
+                LauncherLog.warn(
                     "FATAL in ${processTag()} on thread ${thread.name}\n" +
                         stack.toString().take(MAX_STACK_CHARS),
                 )

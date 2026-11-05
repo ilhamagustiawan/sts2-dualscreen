@@ -103,7 +103,7 @@ public final class DualScreenController implements DisplayManager.DisplayListene
         float hz = main.getRefreshRate();
         if (Math.abs(hz - lastTopHz) < 0.5f) return;
         if (lastTopHz > 0 && topRateChanges++ < 20) {
-            Log.i(TAG, "Top screen refresh " + Math.round(lastTopHz) + " -> " + Math.round(hz) + " Hz");
+            if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Top screen refresh " + Math.round(lastTopHz) + " -> " + Math.round(hz) + " Hz");
         }
         lastTopHz = hz;
     }
@@ -139,7 +139,7 @@ public final class DualScreenController implements DisplayManager.DisplayListene
             });
             presentation.show();
             DsNative.nativeSetVisible(true);
-            Log.i(TAG, "Bottom screen on display " + target.getDisplayId() + " (" + target.getName() + ")");
+            if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Bottom screen on display " + target.getDisplayId() + " (" + target.getName() + ")");
         } catch (RuntimeException e) {
             // WindowManager.InvalidDisplayException and friends: the display
             // went away between finding it and showing on it.

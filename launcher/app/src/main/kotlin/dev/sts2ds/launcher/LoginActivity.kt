@@ -247,7 +247,7 @@ class LoginActivity : Activity() {
     }
 
     private fun showError(t: Throwable) {
-        LauncherLog.log("Login error: ${t.message}")
+        LauncherLog.warn("Login error: ${t.message}")
         submitCode = null
         progress.visibility = View.GONE
         rowGuard.visibility = View.GONE

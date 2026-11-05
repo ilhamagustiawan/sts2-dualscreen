@@ -254,7 +254,7 @@ class SteamCloudClient(session: SteamSession) {
             try {
                 cloud.clientCommitFileUpload(commitReq).toFuture().get(30, TimeUnit.SECONDS)
             } catch (t: Throwable) {
-                LauncherLog.log("Cloud commit failed for $cloudPath: ${t.message}")
+                LauncherLog.warn("Cloud commit failed for $cloudPath: ${t.message}")
             }
         }
 

@@ -26,7 +26,7 @@ internal static class DsShakeGuard
         var game = AccessTools.TypeByName("MegaCrit.Sts2.Core.Nodes.NGame");
         if (game == null)
         {
-            DsLog.Info("shake guard: NGame not found; warmup shakes not suppressed");
+            DsLog.Warn("shake guard: NGame not found; warmup shakes not suppressed");
             return;
         }
         var prefix = new HarmonyMethod(typeof(DsShakeGuard), nameof(Prefix));
@@ -43,7 +43,7 @@ internal static class DsShakeGuard
             }
             catch (Exception ex)
             {
-                DsLog.Info($"shake guard: could not patch NGame.{name}: {ex.Message}");
+                DsLog.Warn($"shake guard: could not patch NGame.{name}: {ex.Message}");
             }
         }
         DsLog.Info($"shake guard: patched {patched} NGame shake method(s)");

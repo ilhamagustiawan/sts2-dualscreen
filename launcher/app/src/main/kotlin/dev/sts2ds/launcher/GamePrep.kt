@@ -189,7 +189,7 @@ object GamePrep {
                     "perf hint ${settings.perfHint}"
             )
         } catch (e: Exception) {
-            LauncherLog.log("Could not write engine overrides: ${e.message}")
+            LauncherLog.warn("Could not write engine overrides: ${e.message}")
         }
 
         LauncherLog.log(
@@ -247,7 +247,7 @@ object GamePrep {
             val flag = File(files, "launcher/enable_debug_menu.flag")
             if (overlay) flag.writeText("1") else flag.delete()
         } catch (e: Exception) {
-            LauncherLog.log("Could not apply performance settings: ${e.message}")
+            LauncherLog.warn("Could not apply performance settings: ${e.message}")
         }
     }
 
@@ -470,7 +470,7 @@ object GamePrep {
             if (gc != null) Os.setenv("MONO_GC_PARAMS", gc, true) else Os.unsetenv("MONO_GC_PARAMS")
             LauncherLog.log("MONO_GC_PARAMS=${gc ?: "(runtime default)"}")
         } catch (e: Exception) {
-            LauncherLog.log("Could not set runtime environment: ${e.message}")
+            LauncherLog.warn("Could not set runtime environment: ${e.message}")
         }
     }
 

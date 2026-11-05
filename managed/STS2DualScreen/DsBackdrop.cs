@@ -48,7 +48,7 @@ internal static class DsBackdrop
         var ready = AccessTools.TypeByName(MainMenuType) is { } type ? AccessTools.Method(type, "_Ready") : null;
         if (ready == null)
         {
-            DsLog.Info("backdrop: NMainMenu._Ready not found");
+            DsLog.Warn("backdrop: NMainMenu._Ready not found");
             return;
         }
         harmony.Patch(ready, postfix: new HarmonyMethod(typeof(DsBackdrop), nameof(MainMenuReadyPostfix)));
@@ -97,7 +97,7 @@ internal static class DsBackdrop
         }
         if (!ResourceLoader.Exists(ArtScene) || ResourceLoader.LoadThreadedRequest(ArtScene) != Error.Ok)
         {
-            DsLog.Info("backdrop: menu art not available");
+            DsLog.Warn("backdrop: menu art not available");
             return;
         }
         _tree = tree;
@@ -127,7 +127,7 @@ internal static class DsBackdrop
         }
         catch (Exception e)
         {
-            DsLog.Info($"backdrop: failed: {e.Message}");
+            DsLog.Warn($"backdrop: failed: {e.Message}");
             Finish();
         }
     }
@@ -141,7 +141,7 @@ internal static class DsBackdrop
         }
         if (status != ResourceLoader.ThreadLoadStatus.Loaded || ResourceLoader.LoadThreadedGet(ArtScene) is not PackedScene scene)
         {
-            DsLog.Info($"backdrop: menu art failed to load ({status})");
+            DsLog.Warn($"backdrop: menu art failed to load ({status})");
             Finish();
             return;
         }
@@ -241,7 +241,7 @@ internal static class DsBackdrop
             }
             catch (Exception e)
             {
-                DsLog.Info($"backdrop: save failed: {e.Message}");
+                DsLog.Warn($"backdrop: save failed: {e.Message}");
             }
         });
     }
@@ -254,7 +254,7 @@ internal static class DsBackdrop
         var error = format == Format.Jpg ? image.SaveJpg(temp, JpgQuality) : image.SavePng(temp);
         if (error != Error.Ok)
         {
-            DsLog.Info($"backdrop: saving {Path.GetFileName(path)} failed ({error})");
+            DsLog.Warn($"backdrop: saving {Path.GetFileName(path)} failed ({error})");
             return false;
         }
         File.Move(temp, path, overwrite: true);

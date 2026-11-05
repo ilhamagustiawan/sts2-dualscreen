@@ -134,9 +134,9 @@ public final class PckPatcher {
 			}
 		}
 		if (result.changed()) {
-			Log.i(TAG, "Patched Sentry metadata in PCK: " + result.toJson());
+			if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Patched Sentry metadata in PCK: " + result.toJson());
 		} else {
-			Log.i(TAG, "PCK Sentry metadata already patched or absent: " + result.toJson());
+			if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "PCK Sentry metadata already patched or absent: " + result.toJson());
 		}
 		return result;
 	}

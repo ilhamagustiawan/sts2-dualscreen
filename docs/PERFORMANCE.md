@@ -112,7 +112,9 @@ adb shell run-as dev.sts2ds cp /data/local/tmp/overrides.json files/dualscreen_o
 
 ## Measuring
 
-`make logcat` follows the log (tag `STS2DualScreen`).
+`make logcat` follows the log (tag `STS2DualScreen`). Use the dev build
+(`make dev-apk`): the release build logs warnings and failures only, so the
+stats and `hitch` lines below are not in it.
 
 - **Stats line, every 10 s:** frames posted and unchanged, frame average and
   maximum, `hitches=` (frames over 20 ms) out of all frames, `gc_minor` and

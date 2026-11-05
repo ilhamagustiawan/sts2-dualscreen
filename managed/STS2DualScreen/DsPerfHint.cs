@@ -42,7 +42,7 @@ internal static class DsPerfHint
             _targetNs = FrameTargetNs();
             if (Start(_targetNs) == 0)
             {
-                DsLog.Info("perf hint: not available; nothing reported");
+                DsLog.Warn("perf hint: not available; nothing reported");
                 return;
             }
             _tree = tree;
@@ -51,7 +51,7 @@ internal static class DsPerfHint
         }
         catch (Exception e)
         {
-            DsLog.Info($"perf hint: could not start: {e.Message}");
+            DsLog.Warn($"perf hint: could not start: {e.Message}");
         }
     }
 
@@ -81,7 +81,7 @@ internal static class DsPerfHint
         catch (Exception e)
         {
             _tree.ProcessFrame -= OnFrame;
-            DsLog.Info($"perf hint: stopped: {e.Message}");
+            DsLog.Warn($"perf hint: stopped: {e.Message}");
         }
     }
 

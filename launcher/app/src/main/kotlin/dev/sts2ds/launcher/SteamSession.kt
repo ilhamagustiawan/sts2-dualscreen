@@ -63,7 +63,7 @@ class SteamSession : Closeable {
                 // our exit signal — break the loop.
                 break
             } catch (t: Throwable) {
-                LauncherLog.log("Steam callback pump error: ${t.message}")
+                LauncherLog.warn("Steam callback pump error: ${t.message}")
             }
         }
     }, "SteamSession-pump").apply {
@@ -93,7 +93,7 @@ class SteamSession : Closeable {
     /** Blocks until the licence list has arrived, or gives up and returns what it has. */
     fun licenses(timeoutSeconds: Long = 15): List<License> {
         if (!licensesArrived.await(timeoutSeconds, TimeUnit.SECONDS)) {
-            LauncherLog.log("No licence list after ${timeoutSeconds}s; continuing without it")
+            LauncherLog.warn("No licence list after ${timeoutSeconds}s; continuing without it")
         }
         return licenseList.get()
     }

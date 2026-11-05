@@ -8,3 +8,7 @@ project(sts2ds C)
 add_library(sts2ds SHARED sts2ds.c perf_hint.c)
 target_compile_options(sts2ds PRIVATE -O2 -Wall -Wextra -fvisibility=hidden)
 target_link_libraries(sts2ds android log dl)
+# Info lines (LOGI, ds_log, perf hint) only in the dev build; warnings always.
+if(DS_VERBOSE_LOG)
+    target_compile_definitions(sts2ds PRIVATE DS_VERBOSE_LOG=1)
+endif()

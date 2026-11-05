@@ -27,7 +27,7 @@ class GameSettingsFile(val file: File) {
     fun read(): JSONObject? = try {
         if (exists) JSONObject(file.readText()) else null
     } catch (e: Exception) {
-        LauncherLog.log("settings.save unreadable: ${e.message}")
+        LauncherLog.warn("settings.save unreadable: ${e.message}")
         null
     }
 

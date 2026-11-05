@@ -34,14 +34,14 @@ internal static class DsBootCover
             var target = AccessTools.TypeByName(typeName) is { } type ? AccessTools.Method(type, method) : null;
             if (target == null)
             {
-                DsLog.Info($"boot cover: {typeName}.{method} not found");
+                DsLog.Warn($"boot cover: {typeName}.{method} not found");
                 return;
             }
             harmony.Patch(target, postfix: new HarmonyMethod(typeof(DsBootCover), nameof(GameDrawnPostfix)));
         }
         catch (Exception e)
         {
-            DsLog.Info($"boot cover: failed to patch {typeName}.{method}: {e.Message}");
+            DsLog.Warn($"boot cover: failed to patch {typeName}.{method}: {e.Message}");
         }
     }
 
@@ -100,7 +100,7 @@ internal static class DsBootCover
         }
         catch (Exception e)
         {
-            DsLog.Info($"boot cover: {method} failed: {e.Message}");
+            DsLog.Warn($"boot cover: {method} failed: {e.Message}");
         }
     }
 }

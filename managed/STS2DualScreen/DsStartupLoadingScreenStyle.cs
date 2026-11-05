@@ -22,7 +22,7 @@ internal static class DsStartupLoadingScreenStyle
 
         if (ensureUi == null)
         {
-            DsLog.Info("startup style: AndroidStartupLoadingScreen.EnsureUiBuilt not found; keeping original style");
+            DsLog.Warn("startup style: AndroidStartupLoadingScreen.EnsureUiBuilt not found; keeping original style");
             return;
         }
 
@@ -35,7 +35,7 @@ internal static class DsStartupLoadingScreenStyle
         }
         catch (Exception ex)
         {
-            DsLog.Info($"startup style: failed to patch EnsureUiBuilt: {ex.Message}");
+            DsLog.Warn($"startup style: failed to patch EnsureUiBuilt: {ex.Message}");
         }
     }
 
@@ -56,7 +56,7 @@ internal static class DsStartupLoadingScreenStyle
         }
         catch (Exception ex)
         {
-            DsLog.Info($"startup style: error applying theme: {ex.Message}");
+            DsLog.Warn($"startup style: error applying theme: {ex.Message}");
         }
     }
 

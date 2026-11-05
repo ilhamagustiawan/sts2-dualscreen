@@ -250,7 +250,7 @@ class SaveSync(
         } catch (t: Throwable) {
             val auth = t.isSteamAuthExpired()
             val msg = t.message ?: t.javaClass.simpleName
-            LauncherLog.log("Cloud $what failed: $msg")
+            LauncherLog.warn("Cloud $what failed: $msg")
             android.util.Log.e("Sts2Launcher.Cloud", "$what failed", t)
             settings.lastSyncError = if (auth) AUTH_EXPIRED else msg
             if (auth) Outcome.AUTH_EXPIRED else Outcome.FAILED

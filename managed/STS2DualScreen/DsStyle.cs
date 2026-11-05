@@ -46,10 +46,13 @@ internal static class DsStyle
         }
         catch (Exception e)
         {
-            DsLog.Info($"icon {path} failed: {e.Message}");
+            DsLog.Warn($"icon {path} failed: {e.Message}");
         }
         Icons[path] = texture;
-        DsLog.Info(texture != null ? $"icon {path}" : $"icon {path} not found; text only");
+        if (texture != null)
+            DsLog.Info($"icon {path}");
+        else
+            DsLog.Warn($"icon {path} not found; text only");
         return texture;
     }
 
@@ -65,9 +68,12 @@ internal static class DsStyle
             }
             catch (Exception e)
             {
-                DsLog.Info($"hsv shader failed: {e.Message}");
+                DsLog.Warn($"hsv shader failed: {e.Message}");
             }
-            DsLog.Info(_hsv != null ? "hsv shader found" : "hsv shader not found; tabs dim by modulate");
+            if (_hsv != null)
+                DsLog.Info("hsv shader found");
+            else
+                DsLog.Warn("hsv shader not found; tabs dim by modulate");
         }
         if (_hsv == null)
             return null;
@@ -165,14 +171,17 @@ internal static class DsStyle
                 _sfxLooked = true;
                 var sfx = AccessTools.TypeByName("MegaCrit.Sts2.Core.Commands.SfxCmd");
                 _sfxPlay = sfx == null ? null : AccessTools.Method(sfx, "Play", new[] { typeof(string), typeof(float) });
-                DsLog.Info(_sfxPlay != null ? "ui sounds found" : "ui sounds not found; tabs are silent");
+                if (_sfxPlay != null)
+                    DsLog.Info("ui sounds found");
+                else
+                    DsLog.Warn("ui sounds not found; tabs are silent");
             }
             _sfxPlay?.Invoke(null, new object[] { path, 1f });
         }
         catch (Exception e)
         {
             _sfxPlay = null;
-            DsLog.Info($"ui sound failed, tabs are silent: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"ui sound failed, tabs are silent: {e.InnerException?.Message ?? e.Message}");
         }
     }
 
@@ -193,7 +202,7 @@ internal static class DsStyle
                 if (_debugAudio == null || _debugPlay == null || _noPitchVariance == null)
                 {
                     _debugPlay = null;
-                    DsLog.Info("game placeholder sounds not found; pile tabs open silently");
+                    DsLog.Warn("game placeholder sounds not found; pile tabs open silently");
                 }
             }
             if (_debugPlay != null && _debugAudio.GetValue(null) is { } instance)
@@ -202,7 +211,7 @@ internal static class DsStyle
         catch (Exception e)
         {
             _debugPlay = null;
-            DsLog.Info($"placeholder sound failed, pile tabs open silently: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"placeholder sound failed, pile tabs open silently: {e.InnerException?.Message ?? e.Message}");
         }
     }
 

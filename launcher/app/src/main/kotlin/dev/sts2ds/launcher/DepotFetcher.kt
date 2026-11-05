@@ -283,8 +283,8 @@ object DepotFetcher {
             forward("ERROR ", clazz, message, throwable)
 
         private fun forward(level: String, clazz: Class<*>, message: String?, throwable: Throwable?) {
-            LauncherLog.log("[${clazz.simpleName}] $level${message.orEmpty()}" +
-                (throwable?.let { " — $it" } ?: ""))
+            val line = "[${clazz.simpleName}] $level${message.orEmpty()}" + (throwable?.let { " — $it" } ?: "")
+            if (level.isNotEmpty() || throwable != null) LauncherLog.warn(line) else LauncherLog.log(line)
         }
     }
 }

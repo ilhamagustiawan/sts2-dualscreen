@@ -61,7 +61,7 @@ public static class DsEntry
         }
         catch (Exception e)
         {
-            DsLog.Info($"bottom screen failed: {e}");
+            DsLog.Warn($"bottom screen failed: {e}");
             DsBootCover.LiftBottom();
         }
     }

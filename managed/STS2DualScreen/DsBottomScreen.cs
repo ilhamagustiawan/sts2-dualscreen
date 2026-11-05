@@ -292,14 +292,15 @@ internal sealed class DsBottomScreen
         }
         try
         {
-            DsLog.Info(DsNative.PresentThread(true)
-                ? "bottom present: native thread"
-                : "bottom present: native thread failed to start; on the game's thread");
+            if (DsNative.PresentThread(true))
+                DsLog.Info("bottom present: native thread");
+            else
+                DsLog.Warn("bottom present: native thread failed to start; on the game's thread");
         }
         catch (Exception e)
         {
             // An older libsts2ds without the thread.
-            DsLog.Info($"bottom present: on the game's thread ({e.GetType().Name})");
+            DsLog.Warn($"bottom present: on the game's thread ({e.GetType().Name})");
         }
     }
 
@@ -601,7 +602,7 @@ internal sealed class DsBottomScreen
                 if (!ResourceLoader.Exists(IdleArtScene) || ResourceLoader.LoadThreadedRequest(IdleArtScene) != Error.Ok)
                 {
                     _idleArtFailed = true;
-                    DsLog.Info($"menu art not available ({IdleArtScene}); lower screen stays black outside a run");
+                    DsLog.Warn($"menu art not available ({IdleArtScene}); lower screen stays black outside a run");
                     DsBootCover.LiftBottom();
                     return;
                 }
@@ -615,7 +616,7 @@ internal sealed class DsBottomScreen
             if (status != ResourceLoader.ThreadLoadStatus.Loaded || ResourceLoader.LoadThreadedGet(IdleArtScene) is not PackedScene scene)
             {
                 _idleArtFailed = true;
-                DsLog.Info($"menu art failed to load ({status})");
+                DsLog.Warn($"menu art failed to load ({status})");
                 DsBootCover.LiftBottom();
                 return;
             }
@@ -643,7 +644,7 @@ internal sealed class DsBottomScreen
         {
             _idleArtFailed = true;
             _idleArtLoading = false;
-            DsLog.Info($"menu art failed: {e.Message}");
+            DsLog.Warn($"menu art failed: {e.Message}");
             DsBootCover.LiftBottom();
         }
     }
@@ -761,7 +762,7 @@ internal sealed class DsBottomScreen
         }
         catch (Exception e)
         {
-            DsLog.Info($"frame failed, bottom screen stopped: {e}");
+            DsLog.Warn($"frame failed, bottom screen stopped: {e}");
             DsBootCover.LiftBottom();
             _tree.ProcessFrame -= OnProcessFrame;
         }
@@ -902,7 +903,7 @@ internal sealed class DsBottomScreen
         }
         catch (Exception e)
         {
-            DsLog.Info($"present failed, bottom screen stopped: {e.Message}");
+            DsLog.Warn($"present failed, bottom screen stopped: {e.Message}");
             RenderingServer.FramePostDraw -= OnPostDraw;
         }
     }

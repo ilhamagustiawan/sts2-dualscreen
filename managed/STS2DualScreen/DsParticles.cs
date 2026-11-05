@@ -38,7 +38,7 @@ internal static class DsParticles
         if (!Patch(harmony))
         {
             tree.NodeAdded += OnNodeAdded;
-            DsLog.Info($"particles at {ratio:P0} (every node added; the game's add helpers were not found)");
+            DsLog.Warn($"particles at {ratio:P0} (every node added; the game's add helpers were not found)");
             return;
         }
         // Whatever the game added before the patch went in.
@@ -63,7 +63,7 @@ internal static class DsParticles
         }
         catch (Exception e)
         {
-            DsLog.Info($"particles: could not patch the game's add helpers: {e.Message}");
+            DsLog.Warn($"particles: could not patch the game's add helpers: {e.Message}");
             return false;
         }
     }
@@ -101,7 +101,7 @@ internal static class DsParticles
         catch (Exception e)
         {
             _failed = true;
-            DsLog.Info($"could not thin particles, leaving them be: {e.Message}");
+            DsLog.Warn($"could not thin particles, leaving them be: {e.Message}");
         }
     }
 
@@ -145,7 +145,7 @@ internal static class DsParticles
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not thin particles, leaving them be: {e.Message}");
+            DsLog.Warn($"could not thin particles, leaving them be: {e.Message}");
             ((SceneTree)Engine.GetMainLoop()).NodeAdded -= OnNodeAdded;
         }
     }

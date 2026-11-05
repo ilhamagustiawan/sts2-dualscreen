@@ -50,10 +50,17 @@ internal static unsafe class DsNative
     [DllImport(Lib, EntryPoint = "ds_stats")]
     private static extern void ds_stats(long* outStats);
 
-    [DllImport(Lib, EntryPoint = "ds_log")]
-    private static extern void ds_log([MarshalAs(UnmanagedType.LPUTF8Str)] string message);
+    [DllImport(Lib, EntryPoint = "ds_log_level")]
+    private static extern void ds_log_level(int level, [MarshalAs(UnmanagedType.LPUTF8Str)] string message);
 
-    public static void Log(string message) => ds_log(message);
+    /// <summary>level 0: info (dropped unless libsts2ds is the dev build's); 1: warning.</summary>
+    public static void Log(int level, string message) => ds_log_level(level, message);
+
+    [DllImport(Lib, EntryPoint = "ds_verbose")]
+    private static extern int ds_verbose();
+
+    /// <summary>True when libsts2ds was built with info logging (the dev build).</summary>
+    public static bool Verbose() => ds_verbose() != 0;
 
     [DllImport(Lib, EntryPoint = "ds_trace_begin")]
     private static extern void ds_trace_begin(IntPtr name);

@@ -64,7 +64,7 @@ internal static class DsStartup
             if (createSession == null || _sessionTask == null || !typeof(Task).IsAssignableFrom(_sessionTask.PropertyType))
             {
                 CommonPreloaded = true;
-                DsLog.Info("startup: Common preload can't be watched; nothing deferred");
+                DsLog.Warn("startup: Common preload can't be watched; nothing deferred");
                 return;
             }
             _hooked = _setAsset != null;
@@ -76,7 +76,7 @@ internal static class DsStartup
         catch (Exception e)
         {
             CommonPreloaded = true;
-            DsLog.Info($"startup hooks failed: {e.Message}");
+            DsLog.Warn($"startup hooks failed: {e.Message}");
         }
     }
 
@@ -104,7 +104,7 @@ internal static class DsStartup
         }
         catch (Exception e)
         {
-            DsLog.Info($"startup: could not split the Common preload: {e.Message}");
+            DsLog.Warn($"startup: could not split the Common preload: {e.Message}");
         }
     }
 
@@ -168,7 +168,7 @@ internal static class DsStartup
         }
         catch (Exception e)
         {
-            DsLog.Info($"startup: warming debug sounds stopped: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"startup: warming debug sounds stopped: {e.InnerException?.Message ?? e.Message}");
             ToWarm.Clear();
             Warming.Clear();
         }

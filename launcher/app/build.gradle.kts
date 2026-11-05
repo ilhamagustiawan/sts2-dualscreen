@@ -52,6 +52,8 @@ android {
             initWith(getByName("release"))
             isDebuggable = true
             matchingFallbacks += "release"
+            // Info logging in libsts2ds; the release build keeps warnings only.
+            externalNativeBuild { cmake { arguments += "-DDS_VERBOSE_LOG=ON" } }
         }
     }
 

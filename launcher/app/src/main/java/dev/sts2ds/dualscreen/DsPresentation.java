@@ -85,7 +85,7 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
                 Log.w(TAG, "bottom setFrameRate failed", e);
             }
         }
-        Log.i(TAG, "Bottom screen refresh " + mode + ": mode " + modeId + " (" + hz + " Hz)");
+        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Bottom screen refresh " + mode + ": mode " + modeId + " (" + hz + " Hz)");
     }
 
     @Override

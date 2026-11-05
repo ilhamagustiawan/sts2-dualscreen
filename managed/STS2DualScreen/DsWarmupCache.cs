@@ -28,7 +28,7 @@ internal static class DsWarmupCache
 
         if (warmupMethod == null)
         {
-            DsLog.Info("warmup cache: AndroidStartupLoadingScreen.WarmupCriticalScenesAsync not found; cache disabled");
+            DsLog.Warn("warmup cache: AndroidStartupLoadingScreen.WarmupCriticalScenesAsync not found; cache disabled");
             return;
         }
 
@@ -42,7 +42,7 @@ internal static class DsWarmupCache
         }
         catch (Exception ex)
         {
-            DsLog.Info($"warmup cache: failed to patch WarmupCriticalScenesAsync: {ex.Message}");
+            DsLog.Warn($"warmup cache: failed to patch WarmupCriticalScenesAsync: {ex.Message}");
         }
     }
 
@@ -211,7 +211,7 @@ internal static class DsWarmupCache
         }
         catch (Exception ex)
         {
-            DsLog.Info($"warmup cache: could not record stamp: {ex.Message}");
+            DsLog.Warn($"warmup cache: could not record stamp: {ex.Message}");
         }
     }
 

@@ -35,7 +35,7 @@ internal static class DsAnimWarmup
 
         if (warmupMethod == null)
         {
-            DsLog.Info("anim warmup: CombatAnimationWarmupPatches.WarmupCombatAnimationsAsync not found; safety net disabled");
+            DsLog.Warn("anim warmup: CombatAnimationWarmupPatches.WarmupCombatAnimationsAsync not found; safety net disabled");
             return;
         }
 
@@ -49,7 +49,7 @@ internal static class DsAnimWarmup
         }
         catch (Exception ex)
         {
-            DsLog.Info($"anim warmup: could not patch WarmupCombatAnimationsAsync: {ex.Message}");
+            DsLog.Warn($"anim warmup: could not patch WarmupCombatAnimationsAsync: {ex.Message}");
         }
 
         PatchPreviewCreate(harmony);
@@ -78,7 +78,7 @@ internal static class DsAnimWarmup
         }
         catch (Exception ex)
         {
-            DsLog.Info($"anim warmup: could not patch RemoveWarmupMask: {ex.Message}");
+            DsLog.Warn($"anim warmup: could not patch RemoveWarmupMask: {ex.Message}");
         }
     }
 
@@ -113,7 +113,7 @@ internal static class DsAnimWarmup
         }
         catch (Exception ex)
         {
-            DsLog.Info($"anim warmup: could not patch SpineWarmupPreview.Create: {ex.Message}");
+            DsLog.Warn($"anim warmup: could not patch SpineWarmupPreview.Create: {ex.Message}");
         }
     }
 
@@ -128,7 +128,7 @@ internal static class DsAnimWarmup
         }
         catch (Exception ex)
         {
-            DsLog.Info($"anim warmup: skeleton check failed, warming anyway: {ex.Message}");
+            DsLog.Warn($"anim warmup: skeleton check failed, warming anyway: {ex.Message}");
             return true;
         }
     }
@@ -162,7 +162,7 @@ internal static class DsAnimWarmup
         }
         catch (Exception ex)
         {
-            DsLog.Info($"anim warmup: could not write crash marker: {ex.Message}");
+            DsLog.Warn($"anim warmup: could not write crash marker: {ex.Message}");
         }
     }
 
@@ -187,7 +187,7 @@ internal static class DsAnimWarmup
             }
             catch (Exception ex)
             {
-                DsLog.Info($"anim warmup: could not clean crash marker: {ex.Message}");
+                DsLog.Warn($"anim warmup: could not clean crash marker: {ex.Message}");
             }
         }
 

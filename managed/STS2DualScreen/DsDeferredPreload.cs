@@ -34,7 +34,7 @@ internal static class DsDeferredPreload
             var screen = AccessTools.TypeByName(ScreenType);
             if (patches == null || screen == null)
             {
-                DsLog.Info("deferred preload: compat preload not found; left as is");
+                DsLog.Warn("deferred preload: compat preload not found; left as is");
                 return;
             }
             var showScreen = AccessTools.Method(patches, "ShowDeferredPreloadScreenAsync", new[] { typeof(Godot.Node) });
@@ -61,7 +61,7 @@ internal static class DsDeferredPreload
         }
         catch (Exception e)
         {
-            DsLog.Info($"deferred preload: patch failed: {e.Message}");
+            DsLog.Warn($"deferred preload: patch failed: {e.Message}");
         }
     }
 
@@ -88,7 +88,7 @@ internal static class DsDeferredPreload
         }
         catch (Exception e)
         {
-            DsLog.Info($"deferred preload: keeping the loading screen: {e.Message}");
+            DsLog.Warn($"deferred preload: keeping the loading screen: {e.Message}");
             return true;
         }
     }
@@ -105,7 +105,7 @@ internal static class DsDeferredPreload
         }
         catch (Exception e)
         {
-            DsLog.Info($"deferred preload: running the second Common pass: {e.Message}");
+            DsLog.Warn($"deferred preload: running the second Common pass: {e.Message}");
             return true;
         }
     }
@@ -115,7 +115,7 @@ internal static class DsDeferredPreload
         var started = DateTime.UtcNow;
         var done = await Task.WhenAny(DsStartup.CommonPreloadTask, Task.Delay(CommonWaitLimit));
         if (done != DsStartup.CommonPreloadTask)
-            DsLog.Info($"deferred preload: Common still loading after {CommonWaitLimit.TotalSeconds:0} s; warming up anyway");
+            DsLog.Warn($"deferred preload: Common still loading after {CommonWaitLimit.TotalSeconds:0} s; warming up anyway");
         else
             DsLog.Info($"deferred preload: waited {(DateTime.UtcNow - started).TotalMilliseconds:0} ms for the game's Common preload");
     }

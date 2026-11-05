@@ -21,6 +21,12 @@
 
 #define DS_EXPORT __attribute__((visibility("default")))
 #define TAG "STS2DualScreen"
+// Status lines, dev build only (see CMakeLists.txt).
+#ifdef DS_VERBOSE_LOG
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
+#else
+#define LOGI(...) ((void)0)
+#endif
 
 typedef struct ds_hint_manager ds_hint_manager;
 typedef struct ds_hint_session ds_hint_session;
@@ -61,24 +67,24 @@ static int resolve(void) {
 DS_EXPORT int ds_perf_start(int64_t target) {
     if (session) return 1;
     if (target <= 0 || !resolve()) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "perf hint: not available on this device");
+        LOGI("perf hint: not available on this device");
         return 0;
     }
     ds_hint_manager *manager = p_get_manager();
     if (!manager) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "perf hint: no manager (ADPF not supported)");
+        LOGI("perf hint: no manager (ADPF not supported)");
         return 0;
     }
     int32_t tid = (int32_t)gettid();
     session = p_create_session(manager, &tid, 1, target);
     if (!session) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "perf hint: could not create a session");
+        LOGI("perf hint: could not create a session");
         return 0;
     }
     target_ns = target;
     last_cpu_ns = thread_cpu_ns();
     failures = 0;
-    __android_log_print(ANDROID_LOG_INFO, TAG, "perf hint: session for thread %d, target %.2f ms",
+    LOGI("perf hint: session for thread %d, target %.2f ms",
                         tid, target / 1e6);
     return 1;
 }
@@ -108,7 +114,7 @@ DS_EXPORT int ds_perf_frame(void) {
     // EPIPE: the system closed the session. Anything else repeated: stop
     // asking rather than pay for a failing call every frame.
     if (result == EPIPE || result == -EPIPE || ++failures >= 30) {
-        __android_log_print(ANDROID_LOG_INFO, TAG, "perf hint: reporting failed (%d); stopped", result);
+        __android_log_print(ANDROID_LOG_WARN, TAG, "perf hint: reporting failed (%d); stopped", result);
         p_close_session(session);
         session = NULL;
         return 0;

@@ -220,7 +220,7 @@ object CloudSync {
                         } catch (t: Throwable) {
                             failed.incrementAndGet()
                             val msg = t.message ?: t.javaClass.simpleName
-                            LauncherLog.log("  ↓ ${item.localFile.name}: FAILED — $msg")
+                            LauncherLog.warn("  ↓ ${item.localFile.name}: FAILED — $msg")
                             android.util.Log.e("Sts2Launcher.Cloud", "pull failed for ${item.cloudFile.filename}", t)
                             send(Event.FileFailed(item.localFile.name, msg))
                         }
@@ -228,7 +228,7 @@ object CloudSync {
                 }
             }.joinAll()
 
-            LauncherLog.log("Cloud pull (safe) done: ${ok.get()} ok, ${failed.get()} failed, ${totalBytes.get()} bytes")
+            (if (failed.get() > 0) LauncherLog::warn else LauncherLog::log)("Cloud pull (safe) done: ${ok.get()} ok, ${failed.get()} failed, ${totalBytes.get()} bytes")
             send(Event.Complete(ok.get(), failed.get(), totalBytes.get()))
         }
     }.flowOn(Dispatchers.IO)
@@ -421,7 +421,7 @@ object CloudSync {
                         } catch (t: Throwable) {
                             failed.incrementAndGet()
                             val msg = t.message ?: t.javaClass.simpleName
-                            LauncherLog.log("  ↑ ${item.localFile.name}: FAILED — $msg")
+                            LauncherLog.warn("  ↑ ${item.localFile.name}: FAILED — $msg")
                             android.util.Log.e("Sts2Launcher.Cloud", "push failed for ${item.cloudPath}", t)
                             send(Event.FileFailed(item.localFile.name, msg))
                         }
@@ -444,7 +444,7 @@ object CloudSync {
                             LauncherLog.log("  ✗ deleted cloud orphan: ${orphan.filename}")
                         } catch (t: Throwable) {
                             val msg = t.message ?: t.javaClass.simpleName
-                            LauncherLog.log("  ✗ delete failed for ${orphan.filename}: $msg")
+                            LauncherLog.warn("  ✗ delete failed for ${orphan.filename}: $msg")
                             android.util.Log.e("Sts2Launcher.Cloud", "delete failed for ${orphan.filename}", t)
                         }
                     }
@@ -475,7 +475,7 @@ object CloudSync {
                 }
             }
 
-            LauncherLog.log("Cloud push done: ${ok.get()} ok, ${failed.get()} failed, ${totalBytes.get()} bytes, ${toDelete.size} deleted")
+            (if (failed.get() > 0) LauncherLog::warn else LauncherLog::log)("Cloud push done: ${ok.get()} ok, ${failed.get()} failed, ${totalBytes.get()} bytes, ${toDelete.size} deleted")
             send(Event.Complete(ok.get(), failed.get(), totalBytes.get()))
         }
     }.flowOn(Dispatchers.IO)

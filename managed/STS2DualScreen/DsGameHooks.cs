@@ -274,14 +274,14 @@ internal static class DsGameHooks
     {
         if (type == null)
         {
-            DsLog.Info($"hook skipped, type not found for {method} ({prefix ?? postfix ?? finalizer})");
+            DsLog.Warn($"hook skipped, type not found for {method} ({prefix ?? postfix ?? finalizer})");
             return;
         }
         try
         {
             if (target == null)
             {
-                DsLog.Info($"hook skipped, {type.Name}.{method} not found");
+                DsLog.Warn($"hook skipped, {type.Name}.{method} not found");
                 return;
             }
             harmony.Patch(
@@ -294,7 +294,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"hook {type.Name}.{method} failed: {e.Message}");
+            DsLog.Warn($"hook {type.Name}.{method} failed: {e.Message}");
         }
     }
 
@@ -428,7 +428,7 @@ internal static class DsGameHooks
         else if (!CanSwitchModes()) missing.Add($"a way to set {_mode.Name}");
         if (_gameFocused == null) missing.Add("NGame.IsGameFocusedWindow");
         if (missing.Count > 0)
-            DsLog.Info($"controller manager has no {string.Join(", ", missing)}"
+            DsLog.Warn($"controller manager has no {string.Join(", ", missing)}"
                 + (CanSwitchModes() ? "" : "; the game switches input modes its own way"));
         else
             DsLog.Info($"input mode: {_mode.Name} ({_mouseMode} / {_controllerMode})");
@@ -571,7 +571,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not switch to controller mode ({why}): {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not switch to controller mode ({why}): {e.InnerException?.Message ?? e.Message}");
             return false;
         }
     }
@@ -675,7 +675,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not guard {type.Name}.{method}: {e.Message}");
+            DsLog.Warn($"could not guard {type.Name}.{method}: {e.Message}");
             return null;
         }
     }
@@ -711,7 +711,7 @@ internal static class DsGameHooks
         catch (Exception e)
         {
             // Better the game's own handling than a press that does nothing.
-            DsLog.Info($"{compatPrefix.Name} failed, using the game's handling: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"{compatPrefix.Name} failed, using the game's handling: {e.InnerException?.Message ?? e.Message}");
             runOriginal = true;
         }
         var key = compatPrefix.Name;
@@ -777,7 +777,7 @@ internal static class DsGameHooks
             }
             catch (Exception e)
             {
-                DsLog.Info($"could not take the map copy down: {e.Message}");
+                DsLog.Warn($"could not take the map copy down: {e.Message}");
             }
             _map.QueueFree();
         }
@@ -954,7 +954,7 @@ internal static class DsGameHooks
             var scene = ResourceLoader.Load<PackedScene>(path);
             if (scene?.Instantiate() is not Control copy)
             {
-                DsLog.Info($"map scene not found ({path}); no map on the bottom screen");
+                DsLog.Warn($"map scene not found ({path}); no map on the bottom screen");
                 return false;
             }
             copy.Name = "DsMap";
@@ -972,7 +972,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not make the map copy: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not make the map copy: {e.InnerException?.Message ?? e.Message}");
             if (MapValid())
                 _map.QueueFree();
             _map = null;
@@ -992,7 +992,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"map copy: could not {what}: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"map copy: could not {what}: {e.InnerException?.Message ?? e.Message}");
         }
         finally
         {
@@ -1038,7 +1038,7 @@ internal static class DsGameHooks
         if (AccessTools.Field(_mapType, "_scrollLimitTop") is { IsLiteral: true } high && high.GetRawConstantValue() is float h)
             _mapScrollHigh = h;
         if (_mapContainer == null || _mapTargetDrag == null || _mapDragging == null)
-            DsLog.Info("map scroll fields not found; the map scrolls its own way");
+            DsLog.Warn("map scroll fields not found; the map scrolls its own way");
         var missing = new List<string>();
         if (_mapRunState == null) missing.Add("_runState");
         if (_mapActMap == null) missing.Add("_map");
@@ -1048,7 +1048,7 @@ internal static class DsGameHooks
         if (_mapTravelEnabled?.CanWrite != true) missing.Add("a settable IsTravelEnabled");
         if (_mapDrawings == null) missing.Add("Drawings");
         if (missing.Count > 0)
-            DsLog.Info($"map screen has no {string.Join(", ", missing)}; the bottom map may lag behind the top one");
+            DsLog.Warn($"map screen has no {string.Join(", ", missing)}; the bottom map may lag behind the top one");
     }
 
     private static void UpdateMapPlaceholder()
@@ -1085,7 +1085,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not show the closed map: {e.Message}");
+            DsLog.Warn($"could not show the closed map: {e.Message}");
         }
     }
 
@@ -1271,7 +1271,7 @@ internal static class DsGameHooks
         Patch(harmony, type, "UpdateLocalCursor", prefix: nameof(DrawingCursorPrefix));
         if (_drawIsDrawing == null || _drawMode == null || _drawToNet == null || _drawFromNet == null)
         {
-            DsLog.Info("map drawings can't be mirrored on this version; the two maps draw separately");
+            DsLog.Warn("map drawings can't be mirrored on this version; the two maps draw separately");
             return;
         }
         Patch(harmony, type, "BeginLineLocal", postfix: nameof(DrawBeginPostfix));
@@ -1306,7 +1306,7 @@ internal static class DsGameHooks
         catch (Exception e)
         {
             if (_mirrorFailures++ < 5)
-                DsLog.Info($"could not mirror a map line: {e.InnerException?.Message ?? e.Message}");
+                DsLog.Warn($"could not mirror a map line: {e.InnerException?.Message ?? e.Message}");
         }
         finally
         {
@@ -1368,7 +1368,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not copy the map drawings: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not copy the map drawings: {e.InnerException?.Message ?? e.Message}");
         }
         finally
         {
@@ -1432,7 +1432,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not read the deck count: {e.Message}");
+            DsLog.Warn($"could not read the deck count: {e.Message}");
         }
     }
 
@@ -1577,7 +1577,7 @@ internal static class DsGameHooks
         catch (Exception e)
         {
             // Dropped, not left stale: the next change schedules them afresh.
-            DsLog.Info($"pile refresh failed: {e.Message}");
+            DsLog.Warn($"pile refresh failed: {e.Message}");
             foreach (var node in PendingPiles.Keys)
                 StalePiles.Remove(node);
             PendingPiles.Clear();
@@ -1638,7 +1638,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not note a pile's layout: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not note a pile's layout: {e.InnerException?.Message ?? e.Message}");
         }
         // Its cards are about to go back to the game's pool: at rest first.
         SettleCards(tab);
@@ -1653,7 +1653,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not refresh a pile: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not refresh a pile: {e.InnerException?.Message ?? e.Message}");
         }
         finally
         {
@@ -1777,7 +1777,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not settle a pile's cards: {e.Message}");
+            DsLog.Warn($"could not settle a pile's cards: {e.Message}");
         }
     }
 
@@ -1942,7 +1942,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not animate cards out: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not animate cards out: {e.InnerException?.Message ?? e.Message}");
             ExitingPiles.Remove(node);
             return false;
         }
@@ -1996,7 +1996,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not animate a pile change: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not animate a pile change: {e.InnerException?.Message ?? e.Message}");
             SettleCards(tab);
         }
     }
@@ -2031,7 +2031,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not animate a card touch: {e.Message}");
+            DsLog.Warn($"could not animate a card touch: {e.Message}");
         }
     }
 
@@ -2078,7 +2078,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not move a hover tip: {e.Message}");
+            DsLog.Warn($"could not move a hover tip: {e.Message}");
         }
     }
 
@@ -2196,7 +2196,7 @@ internal static class DsGameHooks
             var scene = path == null ? null : ResourceLoader.Load<PackedScene>(path);
             if (scene == null)
             {
-                DsLog.Info($"card pile scene not found ({path})");
+                DsLog.Warn($"card pile scene not found ({path})");
                 return;
             }
             var node = scene.Instantiate();
@@ -2243,7 +2243,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not show {tab} pile: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not show {tab} pile: {e.InnerException?.Message ?? e.Message}");
         }
     }
 
@@ -2358,7 +2358,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not hold the map: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not hold the map: {e.InnerException?.Message ?? e.Message}");
             return false;
         }
     }
@@ -2381,7 +2381,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not scroll the map: {e.Message}");
+            DsLog.Warn($"could not scroll the map: {e.Message}");
             return false;
         }
     }
@@ -2403,7 +2403,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not hold the pile: {e.Message}");
+            DsLog.Warn($"could not hold the pile: {e.Message}");
             return false;
         }
     }
@@ -2431,7 +2431,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not scroll the pile: {e.InnerException?.Message ?? e.Message}");
+            DsLog.Warn($"could not scroll the pile: {e.InnerException?.Message ?? e.Message}");
             return false;
         }
     }
@@ -2483,7 +2483,7 @@ internal static class DsGameHooks
         }
         catch (Exception e)
         {
-            DsLog.Info($"could not animate the pile in: {e.Message}");
+            DsLog.Warn($"could not animate the pile in: {e.Message}");
             SettleCards(tab);
         }
     }

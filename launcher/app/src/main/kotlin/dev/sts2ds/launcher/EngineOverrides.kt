@@ -63,7 +63,7 @@ object EngineOverrides {
         val file = File(dir, FILE_NAME)
         val existing = if (file.isFile) file.readText() else null
         if (existing != null && !existing.startsWith(MARKER)) {
-            LauncherLog.log("$FILE_NAME in the game folder is not ours; leaving it as it is")
+            LauncherLog.warn("$FILE_NAME in the game folder is not ours; leaving it as it is")
             return
         }
         if (text == null) {

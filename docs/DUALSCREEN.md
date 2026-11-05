@@ -72,6 +72,11 @@ The tab bar is docked along the bottom edge of the lower screen.
 Every game type is looked up by name. A missing type or method logs
 `hook skipped` and leaves that feature on the top screen.
 
+Logging: `DsLog.Warn` (failures, missing hooks) goes out in every build;
+`DsLog.Info` (status, stats, hitches) only in the dev build, whose
+libsts2ds is built with `DS_VERBOSE_LOG`. The launcher's `LauncherLog.warn`
+and `log` split the same way.
+
 ## Lifecycle
 
 - Activity `onStop` hides the presentation (not focus loss: touching the other

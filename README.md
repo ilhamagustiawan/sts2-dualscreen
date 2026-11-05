@@ -84,6 +84,9 @@ The launcher's **Log** screen shows the launcher and game logs and can share,
 save or copy them. They hold no account name, Steam ID or token. Attach them
 to an issue together with your device and game version.
 
+The release build records warnings and failures only. For the full log
+(startup steps, settings, performance stats), reproduce with the dev build.
+
 ## How it works
 
 ```

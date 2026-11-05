@@ -43,7 +43,7 @@ internal sealed class DsRuntimeConfig
         }
         catch (Exception ex)
         {
-            DsLog.Info($"{Path.GetFileName(path)} runtime keys unreadable, using defaults for them: {ex.Message}");
+            DsLog.Warn($"{Path.GetFileName(path)} runtime keys unreadable, using defaults for them: {ex.Message}");
         }
     }
 }

@@ -134,7 +134,7 @@ public class GodotApp extends GodotActivity {
             return;
         }
         bootCover = null;
-        Log.i(TAG, "Boot cover lifted (" + why + ")");
+        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Boot cover lifted (" + why + ")");
         cover.animate().alpha(0f).setDuration(BOOT_COVER_FADE_MS).withEndAction(() -> {
             if (cover.getParent() instanceof ViewGroup) {
                 ((ViewGroup) cover.getParent()).removeView(cover);
@@ -161,7 +161,7 @@ public class GodotApp extends GodotActivity {
         // Steam side is the launcher's job.
         args.add("--force-steam");
         args.add("off");
-        Log.i(TAG, "Godot command line: " + args);
+        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Godot command line: " + args);
         return args;
     }
 
