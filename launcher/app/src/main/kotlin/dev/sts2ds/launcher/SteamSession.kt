@@ -34,6 +34,7 @@ import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackManager
 import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackMsg
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
+import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
 import `in`.dragonbra.javasteam.util.compat.Consumer
 import java.io.Closeable
 import java.util.concurrent.CountDownLatch
@@ -49,7 +50,9 @@ class SteamSession : Closeable {
         SteamCrypto.install()
     }
 
-    private val client = SteamClient()
+    private val client = SteamClient(
+        SteamConfiguration.create { it.withConnectionFactory(SafeConnection.FACTORY) },
+    )
     private val callbacks = CallbackManager(client)
     private val pumpRunning = AtomicBoolean(true)
 
@@ -133,8 +136,34 @@ class SteamSession : Closeable {
                     throw RuntimeException("connect interrupted")
                 }
             }
-            try { client.disconnect() } catch (_: Throwable) { }
+            disconnectAndWait()
             attempt++
+        }
+    }
+
+    /**
+     * Disconnects and waits until JavaSteam has finished tearing the
+     * connection down. Its disconnect is asynchronous: connecting again
+     * before the teardown lands lets the old connection's teardown run
+     * against the new one, which loses the new connection's events and
+     * (in 1.8.0) can crash the process. See [SafeConnection].
+     */
+    private fun disconnectAndWait(timeoutMs: Long = 3_000) {
+        if (client.isDisconnected) return
+        val gone = CountDownLatch(1)
+        val onDisconnect = subscribe(DisconnectedCallback::class.java) { gone.countDown() }
+        try {
+            try { client.disconnect() } catch (_: Throwable) { }
+            val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+            while (!client.isDisconnected && System.nanoTime() < deadline) {
+                if (gone.await(50, TimeUnit.MILLISECONDS) && client.isDisconnected) break
+            }
+            if (!client.isDisconnected) LauncherLog.warn("Steam disconnect still pending after ${timeoutMs} ms")
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw RuntimeException("disconnect interrupted")
+        } finally {
+            onDisconnect.close()
         }
     }
 
@@ -197,7 +226,7 @@ class SteamSession : Closeable {
                     throw RuntimeException("LogOn failed: ${t.result}")
                 }
                 LauncherLog.log("LogOn returned TryAnotherCM (attempt $attempt/$maxAttempts), reconnecting…")
-                try { client.disconnect() } catch (_: Throwable) { }
+                disconnectAndWait()
                 // Brief backoff before the retry to give the CM dispatcher
                 // a chance to rotate to a different server.
                 try { Thread.sleep(500L * attempt) } catch (_: InterruptedException) {
