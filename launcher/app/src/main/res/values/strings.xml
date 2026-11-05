@@ -172,6 +172,14 @@
     <string name="settings_overlay_subtitle">Shows FPS and frame times over the game.</string>
     <string name="settings_section_cloud">Steam Cloud</string>
     <string name="settings_section_game">Game</string>
+    <string name="settings_shortcut">Add game icon to home screen</string>
+    <string name="settings_shortcut_subtitle">Pins a shortcut to this launcher with the game\'s own icon, fetched from your Steam account. The app icon can\'t be the game\'s: nothing from the game ships in the app.</string>
+    <string name="settings_shortcut_signed_out">Sign in to Steam first.</string>
+    <string name="settings_shortcut_offline">No connection: the icon comes from Steam.</string>
+    <string name="settings_shortcut_updated">Home-screen shortcut updated.</string>
+    <string name="settings_shortcut_unsupported">This home screen can\'t pin shortcuts.</string>
+    <string name="settings_shortcut_reauth">Steam sign-in expired; sign in again from the launcher</string>
+    <string name="settings_shortcut_failed">Couldn\'t get the icon: %1$s</string>
     <string name="settings_reset">Reset and re-prepare</string>
     <string name="settings_reset_subtitle">Re-stages the game from the downloaded files and clears its texture cache; the next launch takes longer while it rebuilds. Saves, the download and your Steam sign-in are kept.</string>
     <string name="settings_reset_done">Reset. The game is prepared again on next launch.</string>

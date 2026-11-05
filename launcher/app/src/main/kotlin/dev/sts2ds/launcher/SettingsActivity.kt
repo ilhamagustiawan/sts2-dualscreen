@@ -21,10 +21,17 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import dev.sts2ds.R
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class SettingsActivity : Activity() {
 
     private lateinit var settings: SettingsStore
+    private val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +87,7 @@ class SettingsActivity : Activity() {
         showAdvanced(false)
         advancedButton.setOnClickListener { showAdvanced(advanced.visibility != View.VISIBLE) }
 
+        findViewById<Button>(R.id.btn_home_shortcut).setOnClickListener { addShortcut(it as Button) }
         findViewById<Button>(R.id.btn_reset).setOnClickListener { confirmReset() }
         findViewById<Button>(R.id.btn_settings_logs).setOnClickListener {
             startActivity(Intent(this, LogActivity::class.java))
@@ -243,6 +251,46 @@ class SettingsActivity : Activity() {
         sw.isChecked = initial
         sw.setOnCheckedChangeListener { _, checked -> onChange(checked) }
     }
+
+    override fun onDestroy() {
+        uiScope.cancel()
+        super.onDestroy()
+    }
+
+    // The game's icon comes from Steam, so this needs the sign-in and a connection.
+    private fun addShortcut(button: Button) {
+        val credentials = TokenStore(this).read()
+        if (credentials == null) {
+            toast(getString(R.string.settings_shortcut_signed_out))
+            return
+        }
+        if (!Network.isOnline(this)) {
+            toast(getString(R.string.settings_shortcut_offline))
+            return
+        }
+
+        button.isEnabled = false
+        uiScope.launch {
+            try {
+                when (HomeShortcut.add(this@SettingsActivity, credentials)) {
+                    // The home screen shows its own confirmation.
+                    HomeShortcut.Result.REQUESTED -> Unit
+                    HomeShortcut.Result.UPDATED -> toast(getString(R.string.settings_shortcut_updated))
+                    HomeShortcut.Result.UNSUPPORTED -> toast(getString(R.string.settings_shortcut_unsupported))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LauncherLog.warn("Home shortcut failed: $e")
+                val reason = if (e.isSteamAuthExpired()) getString(R.string.settings_shortcut_reauth) else e.message ?: e.javaClass.simpleName
+                toast(getString(R.string.settings_shortcut_failed, reason))
+            } finally {
+                button.isEnabled = true
+            }
+        }
+    }
+
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 
     private fun confirmReset() {
         AlertDialog.Builder(this)

@@ -25,6 +25,8 @@ package dev.sts2ds.launcher
 
 import `in`.dragonbra.javasteam.enums.EResult
 import `in`.dragonbra.javasteam.steam.handlers.steamapps.License
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.PICSRequest
+import `in`.dragonbra.javasteam.steam.handlers.steamapps.SteamApps
 import `in`.dragonbra.javasteam.steam.handlers.steamapps.callback.LicenseListCallback
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.LogOnDetails
 import `in`.dragonbra.javasteam.steam.handlers.steamuser.SteamUser
@@ -35,6 +37,7 @@ import `in`.dragonbra.javasteam.steam.steamclient.callbackmgr.CallbackMsg
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.ConnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.callbacks.DisconnectedCallback
 import `in`.dragonbra.javasteam.steam.steamclient.configuration.SteamConfiguration
+import `in`.dragonbra.javasteam.types.KeyValue
 import `in`.dragonbra.javasteam.util.compat.Consumer
 import java.io.Closeable
 import java.util.concurrent.CountDownLatch
@@ -99,6 +102,20 @@ class SteamSession : Closeable {
             LauncherLog.warn("No licence list after ${timeoutSeconds}s; continuing without it")
         }
         return licenseList.get()
+    }
+
+    /**
+     * The app's PICS product info: the "appinfo" tree (common, depots, …).
+     * Null when Steam does not know the app. Needs a logged-on session.
+     */
+    fun appInfo(appId: Int, timeoutSeconds: Long = 15): KeyValue? {
+        val apps = client.getHandler(SteamApps::class.java)
+            ?: throw RuntimeException("SteamApps handler missing")
+
+        // One request, possibly answered in parts: take whichever part has the app.
+        val job = apps.picsGetProductInfo(listOf(PICSRequest(appId)), emptyList())
+        val answer = job.toFuture().get(timeoutSeconds, TimeUnit.SECONDS)
+        return answer.results.firstNotNullOfOrNull { it.apps[appId] }?.keyValues
     }
 
     /**
