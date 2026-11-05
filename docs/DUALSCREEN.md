@@ -79,6 +79,10 @@ and `log` split the same way.
 
 ## Lifecycle
 
+- Boot: the presentation shows the launcher's backdrop from launch. The
+  lower screen itself (viewports, capture, present thread) is built only once
+  the top screen's main menu is up (`DsBootCover.OnMenuReady`), so it doesn't
+  compete with the game's boot; the menu art follows the Common preload.
 - Activity `onStop` hides the presentation (not focus loss: touching the other
   screen moves focus while the game is still visible), `onStart` brings it back.
 - Display added or removed (the Thor can turn its lower screen off): re-evaluated.

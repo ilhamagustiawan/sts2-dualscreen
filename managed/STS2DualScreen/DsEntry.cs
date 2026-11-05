@@ -57,6 +57,15 @@ public static class DsEntry
         DsPerfHint.Attach(tree);
         if (!Config.Enabled)
             return;
+
+        // The bottom screen's viewports and capture start once the top
+        // screen's menu is up, not alongside the game's boot. Until then the
+        // bottom shows the launcher's backdrop (its boot cover).
+        DsBootCover.OnMenuReady(() => CreateBottom(tree));
+    }
+
+    private static void CreateBottom(SceneTree tree)
+    {
         try
         {
             DsBottomScreen.Create(tree, Config);
