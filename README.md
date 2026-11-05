@@ -59,7 +59,18 @@ make test
 [Sts2MobileLauncher](https://github.com/ModinMobileSTS/Sts2MobileLauncher)
 release APK (MIT) and takes its prebuilt engine runtime: the custom Godot 4.5.1
 Mono engine, Mono, FMOD, spine-godot and the compatibility packs. The Godot Java
-library comes from Maven Central. No game files are needed to build.
+library comes from Maven Central.
+
+It then rebuilds your game version's compatibility pack from source with the
+patches in `tools/runtime/compat-patches/` (the combat VFX pool). That needs
+your own `sts2.dll` once, pulled from the device after the game downloads:
+
+```bash
+mkdir -p g && adb pull /sdcard/Android/data/dev.sts2ds/files/depot/data_sts2_windows_x86_64/sts2.dll g/
+make compat COMPAT_REF=g   # saved under .cache; later builds reuse it
+```
+
+`make apk COMPAT=release` skips this and ships the released pack as is.
 
 The APK is signed with the Android debug key. To publish your own build, sign
 it with your own key.
@@ -70,7 +81,7 @@ it with your own key.
 make dev-apk   # → dist/sts2-dualscreen-<version>-dev.apk, debuggable
 make dev       # dev-apk, install, launch, follow the log
 make logcat    # follow the log
-make compat COMPAT_REF=<dir with sts2.dll>   # rebuild one compat pack target from source
+make compat COMPAT_REF=<dir with sts2.dll>   # rebuild the game's compat target with the VFX pool
 ```
 
 The dev build is debuggable, so `adb shell run-as dev.sts2ds` reaches the

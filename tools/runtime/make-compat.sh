@@ -12,11 +12,12 @@
 #                  device depot's data_sts2_windows_x86_64). GodotSharp.dll and
 #                  0Harmony.dll are taken from it if present, else from the
 #                  runtime's dotnet_bcl (what the game loads on Android).
+#                  Saved under .cache/runtime/compat/game, the default after.
 #   COMPAT_COMMIT  sts2-android-compat commit (default below)
 #   COMPAT_TARGET  target id to build (default: the one whose sts2.dll sha matches)
 #
 # Nothing built here is committed: the assets are gitignored.
-# make runtime restores the released pack: run this again after it.
+# make apk runs this whenever the runtime or a patch is newer than its build.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
@@ -28,15 +29,28 @@ ASSETS="$ROOT/launcher/app/src/main/assets"
 PACK="$ASSETS/compat_packs/sts2-android-compat.zip"
 BCL="$ASSETS/dotnet_bcl"
 PATCHES="$ROOT/tools/runtime/compat-patches"
+GAME="$CACHE/game"
+DEPOT_DLL="/sdcard/Android/data/dev.sts2ds/files/depot/data_sts2_windows_x86_64/sts2.dll"
 DOTNET="${DOTNET:-$(command -v dotnet 2>/dev/null || echo "$HOME/.dotnet/dotnet")}"
 
 die() { echo "make-compat: $*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null || die "missing '$1'"; }
 need git; need python3; need zip; need sha256sum
 [[ -x "$DOTNET" ]] || die "no dotnet at $DOTNET"
-[[ -n "${COMPAT_REF:-}" ]] || die "set COMPAT_REF to a dir holding the game's sts2.dll"
-[[ -f "$COMPAT_REF/sts2.dll" ]] || die "no sts2.dll in $COMPAT_REF"
 [[ -f "$PACK" ]] || die "no bundled pack at $PACK (run make runtime)"
+
+# The game's own sts2.dll: COMPAT_REF once, then the saved copy. -------------
+COMPAT_REF="${COMPAT_REF:-$GAME}"
+[[ -f "$COMPAT_REF/sts2.dll" ]] || die "no sts2.dll in $COMPAT_REF.
+  Pull it from the device once: mkdir -p g && adb pull $DEPOT_DLL g/
+  then: make compat COMPAT_REF=g"
+if [[ "$(cd "$COMPAT_REF" && pwd -P)" != "$(mkdir -p "$GAME" && cd "$GAME" && pwd -P)" ]]; then
+  rm -f "$GAME"/*.dll
+  for dll in sts2.dll GodotSharp.dll 0Harmony.dll; do
+    [[ -f "$COMPAT_REF/$dll" ]] && cp "$COMPAT_REF/$dll" "$GAME/"
+  done
+  COMPAT_REF="$GAME"
+fi
 
 # 1. Source at the pinned commit ----------------------------------------------
 if [[ ! -d "$SRC/.git" ]]; then

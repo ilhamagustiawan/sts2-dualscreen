@@ -2,9 +2,11 @@
 #
 #   make setup     install the toolchain (Homebrew + Android SDK + .NET 9)
 #   make runtime   take the engine runtime from the Sts2MobileLauncher release APK
-#   make compat    rebuild one compat pack target from source (COMPAT_REF=<dir with sts2.dll>)
+#   make compat    rebuild the game's compat pack target from source, with the
+#                  pool patches (COMPAT_REF=<dir with sts2.dll> once; saved)
 #   make managed   build the entry shim and the dual-screen layer (C#)
-#   make apk       build dist/sts2-dualscreen-<version>.apk (for playing)
+#   make apk       build dist/sts2-dualscreen-<version>.apk (for playing);
+#                  COMPAT=release keeps the released compat pack as is
 #   make install   adb install it
 #   make dev-apk   build dist/sts2-dualscreen-<version>-dev.apk (debuggable: run-as works)
 #   make install-dev   adb install that
@@ -24,6 +26,10 @@ APK := launcher/app/build/outputs/apk/release/sts2-dualscreen-$(VERSION)-release
 DIST := dist/sts2-dualscreen-$(VERSION).apk
 ASSETS := launcher/app/src/main/assets
 RUNTIME_STAMP := $(ASSETS)/runtime_manifest.json
+# The patched compat pack: rebuilt when the runtime or a patch is newer.
+COMPAT_STAMP := .cache/runtime/compat/stamp
+COMPAT ?= patched
+COMPAT_DEP := $(if $(filter release,$(COMPAT)),,$(COMPAT_STAMP))
 PACKAGE := dev.sts2ds
 RUNTIME_TAG ?= v0.1.11
 GODOT_AAR := launcher/app/libs/godot-lib.template_release.aar
@@ -44,6 +50,11 @@ runtime:
 
 compat: $(RUNTIME_STAMP)
 	./tools/runtime/make-compat.sh
+	touch $(COMPAT_STAMP)
+
+$(COMPAT_STAMP): $(RUNTIME_STAMP) tools/runtime/make-compat.sh $(wildcard tools/runtime/compat-patches/*.patch)
+	./tools/runtime/make-compat.sh
+	touch $@
 
 managed: $(RUNTIME_STAMP)
 	$(DOTNET) build managed/STS2DsEntry/STS2DsEntry.csproj -c Release -nologo -v q
@@ -55,7 +66,7 @@ managed: $(RUNTIME_STAMP)
 launcher/local.properties:
 	echo "sdk.dir=$(ANDROID_HOME)" > $@
 
-apk: managed launcher/local.properties
+apk: managed $(COMPAT_DEP) launcher/local.properties
 	cd launcher && ./gradlew --no-daemon -q assembleRelease
 	mkdir -p dist
 	cp $(APK) $(DIST)
@@ -67,7 +78,7 @@ install:
 DEV_APK := launcher/app/build/outputs/apk/devel/sts2-dualscreen-$(VERSION)-devel.apk
 DEV_DIST := dist/sts2-dualscreen-$(VERSION)-dev.apk
 
-dev-apk: managed launcher/local.properties
+dev-apk: managed $(COMPAT_DEP) launcher/local.properties
 	cd launcher && ./gradlew --no-daemon -q assembleDevel
 	mkdir -p dist
 	cp $(DEV_APK) $(DEV_DIST)

@@ -60,8 +60,9 @@ how to measure.
   seldom gives the engine the clean exit that otherwise saves it.
 - **VFX pool.** Some 60 combat effect families are reused within a room
   instead of instantiated per card play (`preload_vfx_pool_scope`, `all`).
-  `make compat` builds it from `tools/runtime/compat-patches/vfx-pool.patch`
-  over the pinned compat commit; card-moving families stay unpooled.
+  `make apk` builds it into the game version's compat target from
+  `tools/runtime/compat-patches/vfx-pool.patch` over the pinned compat commit
+  (`COMPAT=release` skips it); card-moving families stay unpooled.
 - **GC nursery.** `MONO_GC_PARAMS=nursery-size=256m,major=marksweep-conc` by
   default: fewer minor collections in busy fights.
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
