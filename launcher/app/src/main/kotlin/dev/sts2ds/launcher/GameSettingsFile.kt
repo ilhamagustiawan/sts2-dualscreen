@@ -65,12 +65,17 @@ class GameSettingsFile(val file: File) {
 
         /**
          * The compat pack's combat animation warmup steps each creature's
-         * Spine clips as a fight loads; on game v0.107.1 it aborts the process
-         * (a StringName refcount underflow, then a JNI abort) a few ms in.
-         * Off unless the launcher's experimental toggle turns it on; then
-         * "safe", and the launcher turns it back off after a crash in it.
+         * Spine clips as a fight loads; its hit-effect warmup plays each
+         * room's hits once. Fights still crash with them on (a native fault,
+         * then Mono's exit prints "Unreferenced static string" lines), as
+         * Sts2MobileLauncher issue 109 reports, so both are forced off every launch.
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
+        const val KEY_HIT_EFFECT_WARMUP = "preload_combat_hit_effect_warmup_enabled"
+        private val FORCED_OFF: Map<String, Any> = linkedMapOf(
+            KEY_ANIMATION_WARMUP to "off",
+            KEY_HIT_EFFECT_WARMUP to false,
+        )
 
         /**
          * The compat pack's combat code warmup: while the game loads it runs
@@ -99,17 +104,16 @@ class GameSettingsFile(val file: File) {
         )
 
         /**
-         * Most of Sts2MobileLauncher's "aggressive" preload profile: every room
-         * warms its hit effects and VFX behind a mask as it loads, so the first
-         * attack of a fight does not hitch. Off there by default; on here,
-         * where the device has the memory for it. Two parts stay off: its
-         * Spine animation warmup (see [KEY_ANIMATION_WARMUP]) and the bulk
-         * gameplay warm cache, which loads every gameplay asset while the
-         * game starts; the per-room warmups already cover the first fight.
+         * Part of Sts2MobileLauncher's "aggressive" preload profile: every room
+         * warms its VFX behind a mask as it loads, so the first attack of a
+         * fight does not hitch. Off there by default; on here, where the
+         * device has the memory for it. Three parts stay off: the animation
+         * and hit-effect warmups ([FORCED_OFF]) and the bulk gameplay warm
+         * cache, which loads every gameplay asset while the game starts.
          */
         val WARMUPS_ON: Map<String, Any> = linkedMapOf(
             KEY_ANIMATION_WARMUP to "off",
-            "preload_combat_hit_effect_warmup_enabled" to true,
+            KEY_HIT_EFFECT_WARMUP to false,
             "preload_vfx_tree_warmup_enabled" to true,
             "preload_vfx_mode" to "hot",
             "preload_vfx_retain_cache_enabled" to true,
@@ -118,7 +122,7 @@ class GameSettingsFile(val file: File) {
 
         val WARMUPS_OFF: Map<String, Any> = linkedMapOf(
             KEY_ANIMATION_WARMUP to "off",
-            "preload_combat_hit_effect_warmup_enabled" to false,
+            KEY_HIT_EFFECT_WARMUP to false,
             "preload_vfx_tree_warmup_enabled" to false,
             "preload_vfx_mode" to "off",
             "preload_vfx_retain_cache_enabled" to false,
@@ -155,14 +159,12 @@ class GameSettingsFile(val file: File) {
         /**
          * Fills in missing performance keys. [firstTime] also applies the
          * Balanced preset and turns the warmups on over whatever is there.
-         * [animWarmup] configures creature Spine animation pre-warming ("safe" or "off");
-         * [combatCode] the combat code warmup ([KEY_COMBAT_CODE_WARMUP]).
+         * [FORCED_OFF] is applied every time. [combatCode] the combat code warmup ([KEY_COMBAT_CODE_WARMUP]).
          * Returns whether anything changed.
          */
         fun ensurePerformanceDefaults(
             json: JSONObject,
             firstTime: Boolean,
-            animWarmup: Boolean = false,
             combatCode: Boolean = true,
         ): Boolean {
             var changed = false
@@ -181,11 +183,7 @@ class GameSettingsFile(val file: File) {
             } else {
                 for ((key, value) in WARMUPS_ON) changed = putIfMissing(json, key, value) || changed
             }
-            val targetAnim = if (animWarmup) "safe" else "off"
-            if (json.optString(KEY_ANIMATION_WARMUP, "") != targetAnim) {
-                json.put(KEY_ANIMATION_WARMUP, targetAnim)
-                changed = true
-            }
+            changed = putAll(json, FORCED_OFF) || changed
             if (json.opt(KEY_COMBAT_CODE_WARMUP) != combatCode) {
                 json.put(KEY_COMBAT_CODE_WARMUP, combatCode)
                 changed = true
@@ -206,18 +204,11 @@ class GameSettingsFile(val file: File) {
         }
 
         fun warmupsEnabled(json: JSONObject): Boolean =
-            json.optBoolean("preload_combat_hit_effect_warmup_enabled", false) ||
+            json.optBoolean(KEY_HIT_EFFECT_WARMUP, false) ||
                 json.optBoolean("preload_vfx_tree_warmup_enabled", false)
 
-        fun setWarmups(json: JSONObject, enabled: Boolean, animWarmup: Boolean = false): Boolean {
-            var changed = putAll(json, if (enabled) WARMUPS_ON else WARMUPS_OFF)
-            val targetAnim = if (enabled && animWarmup) "safe" else "off"
-            if (json.optString(KEY_ANIMATION_WARMUP, "") != targetAnim) {
-                json.put(KEY_ANIMATION_WARMUP, targetAnim)
-                changed = true
-            }
-            return changed
-        }
+        fun setWarmups(json: JSONObject, enabled: Boolean): Boolean =
+            putAll(json, if (enabled) WARMUPS_ON else WARMUPS_OFF)
 
         fun renderSize(json: JSONObject): Pair<Int, Int> {
             val size = json.optJSONObject(KEY_RENDER_SIZE) ?: return 0 to 0

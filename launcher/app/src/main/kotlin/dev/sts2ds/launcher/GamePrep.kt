@@ -162,15 +162,8 @@ object GamePrep {
         val logsDir = File(files, "logs").apply { mkdirs() }
         writeLaunchContext(files, gameDir, accountRoot, modsDir, logsDir, version, compat)
 
-        val animCrashMarker = File(files, ANIM_WARMUP_MARKER)
-        if (animCrashMarker.exists()) {
-            animCrashMarker.delete()
-            if (settings.animWarmup) {
-                settings.animWarmup = false
-                settings.animWarmupCrashed = true
-                LauncherLog.log("Combat animation warmup crashed during last run; disabling it")
-            }
-        }
+        // Left by an older build whose animation warmup could be on.
+        File(files, ANIM_WARMUP_MARKER).delete()
 
         val dualScreen = settings.dualScreen
         File(files, "dualscreen.json").writeText(
@@ -231,7 +224,7 @@ object GamePrep {
                 )
                 if (refresh != settings.refreshRate) settings.refreshRate = refresh
                 var changed = GameSettingsFile.ensurePerformanceDefaults(
-                    json, firstTime, settings.animWarmup, settings.combatCodeWarmup,
+                    json, firstTime, settings.combatCodeWarmup,
                 )
                 val high = refresh == SettingsStore.REFRESH_HIGH
                 if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
@@ -246,7 +239,7 @@ object GamePrep {
                         "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
                         "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, fps_limit ${json.opt(GameSettingsFile.KEY_FPS_LIMIT)}, " +
                         "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}, " +
-                        "anim_warmup ${settings.animWarmup}, combat_code ${settings.combatCodeWarmup}" +
+                        "combat_code ${settings.combatCodeWarmup}" +
                         if (firstTime) " (defaults applied)" else ""
                 )
             }

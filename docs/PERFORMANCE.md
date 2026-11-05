@@ -49,8 +49,9 @@ how to measure.
   every node.
 - **Combat code warmup.** The compat pack JIT-compiles the combat code while
   the game loads (`preload_combat_code_enabled` in `settings.save`).
-- **Room warmups.** As each room loads, its hit effects and VFX are played once
-  out of sight (the compat pack's preload options).
+- **Room warmups.** As each room loads, its VFX are played once out of sight
+  (the compat pack's preload options). Its animation and hit-effect warmups
+  are forced off: fights still crashed with them on.
 - **Startup warmup cache.** The startup tree warmup is skipped when the
   shader cache and the Vulkan pipeline cache on disk are newer than the game
   build (`warmup cache: HIT` / `MISS` in the log).
@@ -87,7 +88,6 @@ or the game's `settings.save`.
 | Top screen refresh rate | — | 60 Hz |
 | Pre-compile combat code | `preload_combat_code_enabled` | on |
 | Pre-warm combat effects | compat pack preload keys | on |
-| Pre-warm creature animations (Experimental) | `preload_combat_animation_warmup_mode` | on; turns itself off after a crash |
 | Use OpenGL instead of Vulkan | `--rendering-method` | off |
 
 ### Overrides

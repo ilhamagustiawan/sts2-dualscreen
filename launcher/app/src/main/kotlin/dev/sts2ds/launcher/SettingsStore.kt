@@ -99,17 +99,6 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putBoolean(KEY_PERF_DEFAULTS, value).commit() }
 
     /**
-     * Pre-warm creature Spine animations when entering combat rooms. On by
-     * default: a compat pack rebuilt from 450082d or later (make compat)
-     * warms an isolated copy of each creature. The released pack's warmup
-     * aborts the engine ("Unreferenced static string to 0: markers") on some
-     * fights; then the crash marker turns this off at the next launch.
-     */
-    var animWarmup: Boolean
-        get() = prefs.getBoolean(KEY_ANIM_WARMUP, true)
-        set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP, value).apply() }
-
-    /**
      * Have the compat pack JIT-compile the combat code while the game loads
      * (GameSettingsFile.KEY_COMBAT_CODE_WARMUP). On by default: it only
      * prepares methods, so it costs a little load time and no fight stutters
@@ -189,11 +178,6 @@ class SettingsStore(context: Context) {
         get() = prefs.getBoolean(KEY_INPUT_POLICY, true)
         set(value) { prefs.edit().putBoolean(KEY_INPUT_POLICY, value).apply() }
 
-    /** Flag set when a combat room warmup crashed, so the launcher can notify the user. */
-    var animWarmupCrashed: Boolean
-        get() = prefs.getBoolean(KEY_ANIM_WARMUP_CRASHED, false)
-        set(value) { prefs.edit().putBoolean(KEY_ANIM_WARMUP_CRASHED, value).apply() }
-
     fun clear() {
         prefs.edit().clear().apply()
     }
@@ -220,8 +204,6 @@ class SettingsStore(context: Context) {
         private const val KEY_PARTICLE_AMOUNT = "particle_amount"
         private const val KEY_REFRESH_RATE = "refresh_rate"
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
-        private const val KEY_ANIM_WARMUP = "anim_warmup"
-        private const val KEY_ANIM_WARMUP_CRASHED = "anim_warmup_crashed"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_GC_NURSERY = "gc_nursery"
         private const val KEY_PERF_HINT = "perf_hint"

@@ -100,8 +100,6 @@
             <TextView style="@style/SettingsNote" android:text="@string/settings_particles_subtitle" />
             <Switch android:id="@+id/sw_warmups" style="@style/SettingsSwitch" android:text="@string/settings_warmups" />
             <TextView style="@style/SettingsNote" android:text="@string/settings_warmups_subtitle" />
-            <Switch android:id="@+id/sw_anim_warmup" style="@style/SettingsSwitch" android:text="@string/settings_anim_warmup" />
-            <TextView style="@style/SettingsNote" android:text="@string/settings_anim_warmup_subtitle" />
             <Switch android:id="@+id/sw_combat_code" style="@style/SettingsSwitch" android:text="@string/settings_combat_code" />
             <TextView style="@style/SettingsNote" android:text="@string/settings_combat_code_subtitle" />
             <Switch android:id="@+id/sw_preload" style="@style/SettingsSwitch" android:text="@string/settings_preload" />
