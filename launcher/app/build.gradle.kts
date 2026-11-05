@@ -4,14 +4,12 @@
 // The engine itself is not built here. tools/runtime/make-runtime.sh puts the
 // custom Godot 4.5.1 Mono runtime into libs/ and src/main/{jniLibs,assets}.
 
-import java.io.File
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
-val appVersion = File(rootDir.parentFile, "VERSION").readText().trim()
+val appVersion = providers.gradleProperty("sts2ds.version").get().trim()
 
 android {
     namespace = "dev.sts2ds"

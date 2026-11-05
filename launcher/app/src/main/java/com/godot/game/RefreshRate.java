@@ -15,7 +15,7 @@ import android.view.WindowManager;
  * Asks the top screen for a refresh rate while the game runs: 60 Hz, the
  * highest the panel offers, or nothing ("system"). The mode choice is
  * Sts2MobileLauncher's HighRefreshRateController (MIT), trimmed to one window
- * request plus a frame-rate vote on the game's surface; see NOTICE.md.
+ * request plus a frame-rate vote on the game's surface.
  *
  * Only the activity's own window is touched, so the bottom screen's
  * Presentation keeps whatever its display runs at.

@@ -5,7 +5,7 @@
 // settings: asset preloading, combat warmups, cheaper shaders, render size.
 // Its patches that need no option (VFX pooling, the asset-loading frame
 // budget) run regardless. Key names and defaults are Sts2MobileLauncher's
-// ExtraSettingsRepository (MIT); see NOTICE.md. The Balanced preset is ours,
+// ExtraSettingsRepository (MIT). The Balanced preset is ours,
 // built from those keys and two of the game's own (fps_limit, skip_intro_logo).
 //
 // The game writes the file on its first run. It is never created here: a file

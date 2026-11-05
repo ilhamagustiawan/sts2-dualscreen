@@ -95,8 +95,8 @@ DualScreenController ─ Presentation on display 2 ◄─ libsts2ds.so ◄──
 ```
 
 See [docs/DUALSCREEN.md](docs/DUALSCREEN.md) for the design and its known
-limits, [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for performance and its
-settings, and [NOTICE.md](NOTICE.md) for what came from where.
+limits, and [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for performance and its
+settings.
 
 ## Licence and credits
 

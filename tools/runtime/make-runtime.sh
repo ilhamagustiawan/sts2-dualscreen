@@ -79,7 +79,7 @@ zip -q -d "$AAR" 'jni/armeabi-v7a/*' 'jni/x86/*' 'jni/x86_64/*' >/dev/null 2>&1 
 
 # Godot 4.5.1 leaks a pooled input event per unsupported mouse action; once
 # the pool (1200) is empty, the game ignores all input. Upstream's repair
-# (Sts2MobileLauncher tools/android, see NOTICE.md), plus its ordered
+# (Sts2MobileLauncher tools/android, MIT), plus its ordered
 # input-source bridge for the compat pack's touch/controller policy.
 INPUT_PATCH="$ROOT/tools/runtime/godot-input/patch-godot-input-pool.py"
 python3 "$INPUT_PATCH" "$AAR" --javac "$JAVA_HOME/bin/javac" --android-jar "$ANDROID_JAR"

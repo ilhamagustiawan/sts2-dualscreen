@@ -19,7 +19,7 @@ DOTNET ?= $(shell command -v dotnet 2>/dev/null || echo $(HOME)/.dotnet/dotnet)
 export JAVA_HOME ANDROID_HOME
 export DOTNET_CLI_TELEMETRY_OPTOUT := 1
 
-VERSION := $(shell cat VERSION)
+VERSION := $(shell sed -n 's/^sts2ds\.version=//p' launcher/gradle.properties)
 APK := launcher/app/build/outputs/apk/release/sts2-dualscreen-$(VERSION)-release.apk
 DIST := dist/sts2-dualscreen-$(VERSION).apk
 ASSETS := launcher/app/src/main/assets
