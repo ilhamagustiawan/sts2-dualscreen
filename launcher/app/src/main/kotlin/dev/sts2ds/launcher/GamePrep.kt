@@ -93,6 +93,11 @@ object GamePrep {
         if (!pck.isFile || !gameDll.isFile) {
             throw NotReady("Slay the Spire 2 is not downloaded yet")
         }
+        try {
+            LaunchFiles.requireReady(gameDir, PCK_NAME, ASSEMBLY_DIR)
+        } catch (e: IOException) {
+            throw NotReady(e.message ?: "Game files are incomplete")
+        }
         val started = System.nanoTime()
         val settings = SettingsStore(context)
         configureEnvironment(files, settings.gcNursery)
@@ -133,14 +138,20 @@ object GamePrep {
         val publish = File(files, ".godot/mono/publish/arm64")
         publish.mkdirs()
         val bclStamp = "${BuildConfig.VERSION_CODE}:${BuildConfig.VERSION_NAME}:${apkStamp(context)}"
-        if (force || state.getString("bcl_stamp", "") != bclStamp || !File(publish, "GodotSharp.dll").isFile) {
-            for (name in context.assets.list("dotnet_bcl").orEmpty()) {
+        val bclNames = context.assets.list("dotnet_bcl").orEmpty().filter { it != "STS2Mobile.dll" }
+        val dualScreenNames = context.assets.list("dualscreen").orEmpty().toList()
+        if (bclNames.isEmpty() || !dualScreenNames.containsAll(listOf("STS2Mobile.dll", "STS2DualScreen.dll"))) {
+            throw NotReady("This APK is missing runtime assets. Reinstall a complete build of the app.")
+        }
+        val bundledNames = bclNames + dualScreenNames
+        if (force || state.getString("bcl_stamp", "") != bclStamp || !LaunchFiles.stagedFilesPresent(publish, bundledNames)) {
+            for (name in bclNames) {
                 // The runtime APK's STS2Mobile.dll is its own compat entry; ours
                 // replaces it below.
                 if (name == "STS2Mobile.dll") continue
                 copyAsset(context, "dotnet_bcl/$name", File(publish, name))
             }
-            for (name in context.assets.list("dualscreen").orEmpty()) {
+            for (name in dualScreenNames) {
                 copyAsset(context, "dualscreen/$name", File(publish, name))
             }
             state.edit().putString("bcl_stamp", bclStamp).commit()
@@ -148,11 +159,18 @@ object GamePrep {
         stageCompatFile(compat.dll, File(publish, COMPAT_DLL_NAME), cachedCompat == null)
 
         val gameStamp = "${gameDir.absolutePath}:$dllSha:$bclStamp"
-        if (force || state.getString("game_stamp", "") != gameStamp) {
-            val runtimeNames = context.assets.list("dotnet_bcl").orEmpty().toSet() +
-                context.assets.list("dualscreen").orEmpty() + COMPAT_DLL_NAME
+        val stagedGameNames = state.getStringSet(GAME_FILES_KEY, emptySet()).orEmpty()
+        if (force || state.getString("game_stamp", "") != gameStamp ||
+            !LaunchFiles.stagedFilesPresent(publish, stagedGameNames, allowEmpty = true)) {
+            val runtimeNames = bundledNames.toSet() + COMPAT_DLL_NAME
             copyGameAssemblies(assemblies, publish, runtimeNames, state)
             state.edit().putString("game_stamp", gameStamp).commit()
+        }
+
+        val gameNames = state.getStringSet(GAME_FILES_KEY, emptySet()).orEmpty()
+        if (!LaunchFiles.stagedFilesPresent(publish, bundledNames + COMPAT_DLL_NAME + "sts2.dll") ||
+            !LaunchFiles.stagedFilesPresent(publish, gameNames + "sts2.dll", allowEmpty = true)) {
+            throw NotReady("Required runtime files are missing or empty after preparation. Reinstall the app or download the game again.")
         }
 
         progress("Writing launch context…")
