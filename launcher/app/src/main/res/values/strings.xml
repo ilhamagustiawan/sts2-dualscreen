@@ -138,8 +138,14 @@
     <string name="settings_gc_default">Runtime default (4 MB)</string>
     <string name="settings_gc_16m">16 MB nursery</string>
     <string name="settings_gc_32m">32 MB nursery</string>
+    <string name="settings_gc_64m">64 MB nursery</string>
+    <string name="settings_gc_256m">256 MB nursery</string>
+    <string name="settings_room_gc">Clean memory between rooms</string>
+    <string name="settings_room_gc_subtitle">Runs a full cleanup while the room transition still covers the screen, so it does not pause a fight later. Applies on the next launch.</string>
     <string name="settings_gc_subtitle">How much new memory the game fills before a short cleanup pause. Bigger means fewer pauses in busy fights, for a little more memory. Applies on the next launch.</string>
     <string name="settings_combat_code">Pre-compile combat code</string>
+    <string name="settings_vfx_pool">Pool combat effects</string>
+    <string name="settings_vfx_pool_subtitle">Reuses card and hit effects within a room instead of building each one anew, which removes the stutter as cards are played. Off: only a few effects are reused. Needs the rebuilt compat pack; applies on the next launch.</string>
     <string name="settings_combat_code_subtitle">While the game loads, compiles the code for attacks, damage and effects ahead of time, so the first card of a fight does not stutter. Code only: no animations are played.</string>
     <string name="settings_preload">Preload game assets</string>
     <string name="settings_preload_subtitle">Loads common assets after the main menu and keeps them loaded between rooms, instead of loading mid-fight.</string>

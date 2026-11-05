@@ -103,6 +103,23 @@ class GameSettingsFileTest {
     }
 
     @Test
+    fun vfxPoolIsOnByDefault() {
+        val json = playerSettings()
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false)
+        assertEquals(GameSettingsFile.VFX_POOL_ALL, json.getString(GameSettingsFile.KEY_VFX_POOL_SCOPE))
+    }
+
+    @Test
+    fun vfxPoolFollowsTheLauncherSwitch() {
+        val json = playerSettings()
+        GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true, vfxPool = false)
+        assertEquals(GameSettingsFile.VFX_POOL_STOCK, json.getString(GameSettingsFile.KEY_VFX_POOL_SCOPE))
+        assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, vfxPool = false))
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false, vfxPool = true))
+        assertEquals(GameSettingsFile.VFX_POOL_ALL, json.getString(GameSettingsFile.KEY_VFX_POOL_SCOPE))
+    }
+
+    @Test
     fun renderSizeIsAVector() {
         val json = JSONObject()
         assertEquals(0 to 0, GameSettingsFile.renderSize(json))

@@ -109,15 +109,35 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putBoolean(KEY_COMBAT_CODE_WARMUP, value).apply() }
 
     /**
+     * Have the compat pack reuse combat effects per room instead of
+     * instantiating each card play's (GameSettingsFile.KEY_VFX_POOL_SCOPE).
+     * On by default; off pools only the release's few families. Written into
+     * settings.save every launch.
+     */
+    var vfxPool: Boolean
+        get() = prefs.getBoolean(KEY_VFX_POOL, true)
+        set(value) { prefs.edit().putBoolean(KEY_VFX_POOL, value).apply() }
+
+    /**
+     * Collect garbage while the room transition still covers the screen
+     * (DsRoomGc), so the pause falls where nothing is visible rather than
+     * later in a fight. On by default. Written into dualscreen.json.
+     */
+    var roomGc: Boolean
+        get() = prefs.getBoolean(KEY_ROOM_GC, true)
+        set(value) { prefs.edit().putBoolean(KEY_ROOM_GC, value).apply() }
+
+    /**
      * Mono's garbage collector young generation (nursery): [GC_DEFAULT] for
-     * the runtime's own (4 MB), or [GC_16M]/[GC_32M]. A bigger nursery fills
-     * up less often, so there are fewer minor collections, each a pause on
-     * the game thread, while cards and effects churn objects. 32 MB by
-     * default: the Thor has the memory, and pause time grows with what
-     * survives, not with the nursery's size. GamePrep sets MONO_GC_PARAMS.
+     * the runtime's own (4 MB), or [GC_16M] to [GC_256M]. A bigger nursery
+     * fills up less often, so there are fewer minor collections, each a pause
+     * on the game thread, while cards and effects churn objects. 256 MB by
+     * default: 64 MB still collects mid-fight, the Thor has the memory, and
+     * pause time grows with what survives, not with the nursery's size.
+     * GamePrep sets MONO_GC_PARAMS.
      */
     var gcNursery: String
-        get() = prefs.getString(KEY_GC_NURSERY, GC_32M) ?: GC_32M
+        get() = prefs.getString(KEY_GC_NURSERY, GC_256M) ?: GC_256M
         set(value) { prefs.edit().putString(KEY_GC_NURSERY, value).apply() }
 
     /**
@@ -191,6 +211,8 @@ class SettingsStore(context: Context) {
         const val GC_DEFAULT = "default"
         const val GC_16M = "16m"
         const val GC_32M = "32m"
+        const val GC_64M = "64m"
+        const val GC_256M = "256m"
         const val BRANCH_STABLE = "public"
         const val BRANCH_BETA = "public-beta"
 
@@ -206,6 +228,8 @@ class SettingsStore(context: Context) {
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_GC_NURSERY = "gc_nursery"
+        private const val KEY_VFX_POOL = "vfx_pool"
+        private const val KEY_ROOM_GC = "room_gc"
         private const val KEY_PERF_HINT = "perf_hint"
         private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
         private const val KEY_FRAME_PACING = "frame_pacing"

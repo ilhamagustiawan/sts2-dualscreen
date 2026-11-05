@@ -196,6 +196,7 @@ object GamePrep {
                 .put("perf_hint", settings.perfHint)
                 .put("compat", "${compat.packId}/${compat.targetId}")
                 .let { putCaptureSwitches(it, settings.presentThread, settings.staggerCaptures, settings.pauseHiddenPages) }
+                .put("room_gc", settings.roomGc)
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
@@ -242,7 +243,7 @@ object GamePrep {
                 )
                 if (refresh != settings.refreshRate) settings.refreshRate = refresh
                 var changed = GameSettingsFile.ensurePerformanceDefaults(
-                    json, firstTime, settings.combatCodeWarmup,
+                    json, firstTime, settings.combatCodeWarmup, settings.vfxPool,
                 )
                 val high = refresh == SettingsStore.REFRESH_HIGH
                 if (json.opt(GameSettingsFile.KEY_HIGH_REFRESH) != high) {
@@ -257,7 +258,7 @@ object GamePrep {
                         "render ${if (w > 0) "${w}x$h" else "native"}, msaa ${json.opt(GameSettingsFile.KEY_MSAA)}, " +
                         "vsync ${json.opt(GameSettingsFile.KEY_VSYNC)}, fps_limit ${json.opt(GameSettingsFile.KEY_FPS_LIMIT)}, " +
                         "skip_intro ${json.opt(GameSettingsFile.KEY_SKIP_INTRO)}, warmups ${GameSettingsFile.warmupsEnabled(json)}, " +
-                        "combat_code ${settings.combatCodeWarmup}" +
+                        "combat_code ${settings.combatCodeWarmup}, vfx_pool ${settings.vfxPool}" +
                         if (firstTime) " (defaults applied)" else ""
                 )
             }
@@ -493,13 +494,6 @@ object GamePrep {
     }
 
     /**
-     * SGen options for the launcher's GC setting, or null for the runtime's
-     * own. The shipped libmonosgen-2.0.so (Mono 9.0.7) takes nursery-size as
-     * a power of two (anything else is ignored with a warning) and reports
-     * "sgen (concurrent by default)", so major=marksweep-conc only says
-     * explicitly what it already does.
-     */
-    /**
      * The lower screen's capture switches, under the keys DsConfig reads
      * (dualscreen_overrides.json, laid over this file, still wins).
      */
@@ -508,9 +502,18 @@ object GamePrep {
             .put("stagger_captures", stagger)
             .put("pause_hidden_pages", pauseHidden)
 
+    /**
+     * SGen options for the launcher's GC setting, or null for the runtime's
+     * own. The shipped libmonosgen-2.0.so (Mono 9.0.7) takes nursery-size as
+     * a power of two (anything else is ignored with a warning) and reports
+     * "sgen (concurrent by default)", so major=marksweep-conc only says
+     * explicitly what it already does.
+     */
     fun gcParams(nursery: String): String? = when (nursery) {
         SettingsStore.GC_16M -> "nursery-size=16m,major=marksweep-conc"
         SettingsStore.GC_32M -> "nursery-size=32m,major=marksweep-conc"
+        SettingsStore.GC_64M -> "nursery-size=64m,major=marksweep-conc"
+        SettingsStore.GC_256M -> "nursery-size=256m,major=marksweep-conc"
         else -> null
     }
 

@@ -5,7 +5,8 @@
 # release. Upstream fixes land in ModinMobileSTS/sts2-android-compat first;
 # this builds a pinned commit of it with upstream's own matrix script, for the
 # game version in COMPAT_REF, and swaps that one target into the bundled
-# pack. Every other target stays as released.
+# pack. Every other target stays as released. Patches in compat-patches/
+# are applied on top of the commit, in name order.
 #
 #   COMPAT_REF     dir holding the user's own sts2.dll (e.g. adb pull of the
 #                  device depot's data_sts2_windows_x86_64). GodotSharp.dll and
@@ -26,6 +27,7 @@ SRC="$CACHE/src"
 ASSETS="$ROOT/launcher/app/src/main/assets"
 PACK="$ASSETS/compat_packs/sts2-android-compat.zip"
 BCL="$ASSETS/dotnet_bcl"
+PATCHES="$ROOT/tools/runtime/compat-patches"
 DOTNET="${DOTNET:-$(command -v dotnet 2>/dev/null || echo "$HOME/.dotnet/dotnet")}"
 
 die() { echo "make-compat: $*" >&2; exit 1; }
@@ -46,6 +48,14 @@ fi
 git -C "$SRC" checkout -q --force "$COMMIT"
 git -C "$SRC" clean -qfdx
 
+# Local patches over the commit, e.g. vfx-pool.patch: 450082d89416+vfx-pool.
+BUILD_ID="${COMMIT:0:12}"
+for patch in "$PATCHES"/*.patch; do
+  [[ -f "$patch" ]] || continue
+  git -C "$SRC" apply "$patch" || die "patch $(basename "$patch") does not apply to ${COMMIT:0:12}"
+  BUILD_ID="$BUILD_ID+$(basename "$patch" .patch)"
+done
+
 # 2. Target: the bundled manifest's entry for this sts2.dll --------------------
 DLL_SHA="$(sha256sum "$COMPAT_REF/sts2.dll" | cut -d' ' -f1)"
 read -r TARGET FLAVOR < <(python3 - "$PACK" "$DLL_SHA" "${COMPAT_TARGET:-}" <<'PY'
@@ -65,7 +75,7 @@ else:
     sys.exit(f"no target for sts2.dll {sha[:12]}; set COMPAT_TARGET")
 PY
 )
-echo "Building compat $TARGET ($FLAVOR) at ${COMMIT:0:12} for sts2.dll ${DLL_SHA:0:12}"
+echo "Building compat $TARGET ($FLAVOR) at $BUILD_ID for sts2.dll ${DLL_SHA:0:12}"
 
 # 3. Reference dir: the game's sts2.dll, the runtime's Godot/Harmony -----------
 REF="$CACHE/ref-$TARGET"
@@ -90,13 +100,13 @@ DOTNET_BIN="$DOTNET" "$SRC/tools/build-compat-matrix.sh" --target "$TARGET" --ou
 BUILT="$OUT/sts2-android-compat"
 
 # 5. Swap the target into the bundled pack --------------------------------------
-python3 - "$PACK" "$BUILT" "$TARGET" "$COMMIT" <<'PY'
+python3 - "$PACK" "$BUILT" "$TARGET" "$BUILD_ID" <<'PY'
 import hashlib, json, os, sys, zipfile
-pack, built, target, commit = sys.argv[1:]
+pack, built, target, build_id = sys.argv[1:]
 prefix = "sts2-android-compat/"
 fresh = json.load(open(os.path.join(built, "compat_manifest.json"), encoding="utf-8"))
 entry = next(t for t in fresh["targets"] if t["target_id"] == target)
-entry["build_info"] = dict(fresh["build_info"], commit=commit[:12])
+entry["build_info"] = dict(fresh["build_info"], commit=build_id)
 files = {f"{prefix}{entry['artifacts'][k]}": os.path.join(built, entry["artifacts"][k]) for k in ("dll", "overlay_pck")}
 
 with zipfile.ZipFile(pack) as src:
@@ -123,12 +133,12 @@ print(f"Swapped {target} into {pack}")
 PY
 
 # 6. Record it ----------------------------------------------------------------
-python3 - "$ASSETS/runtime_manifest.json" "$TARGET" "$COMMIT" <<'PY'
+python3 - "$ASSETS/runtime_manifest.json" "$TARGET" "$BUILD_ID" <<'PY'
 import json, sys
-path, target, commit = sys.argv[1:]
+path, target, build_id = sys.argv[1:]
 data = json.load(open(path))
 rebuilt = data.setdefault("compat_rebuilt", {})
-rebuilt[target] = commit[:12]
+rebuilt[target] = build_id
 json.dump(data, open(path, "w"), indent=2)
 open(path, "a").write("\n")
 PY

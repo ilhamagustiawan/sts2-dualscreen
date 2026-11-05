@@ -86,6 +86,17 @@ class GameSettingsFile(val file: File) {
          */
         const val KEY_COMBAT_CODE_WARMUP = "preload_combat_code_enabled"
 
+        /**
+         * The compat pack's combat VFX pool: [VFX_POOL_ALL] reuses some 60
+         * effect families per room instead of instantiating each card play's
+         * effects, [VFX_POOL_STOCK] pools only the release's few. Read by
+         * tools/runtime/compat-patches/vfx-pool.patch; other packs ignore it.
+         * Set from the launcher's switch every launch.
+         */
+        const val KEY_VFX_POOL_SCOPE = "preload_vfx_pool_scope"
+        const val VFX_POOL_ALL = "all"
+        const val VFX_POOL_STOCK = "stock"
+
         /** Always present; filled in only where missing so in-game changes stay. */
         private val BASE_DEFAULTS: Map<String, Any> = linkedMapOf(
             KEY_PRELOAD to true,
@@ -159,13 +170,15 @@ class GameSettingsFile(val file: File) {
         /**
          * Fills in missing performance keys. [firstTime] also applies the
          * Balanced preset and turns the warmups on over whatever is there.
-         * [FORCED_OFF] is applied every time. [combatCode] the combat code warmup ([KEY_COMBAT_CODE_WARMUP]).
+         * [FORCED_OFF] is applied every time. [combatCode] the combat code warmup ([KEY_COMBAT_CODE_WARMUP]),
+         * [vfxPool] the VFX pool scope ([KEY_VFX_POOL_SCOPE]).
          * Returns whether anything changed.
          */
         fun ensurePerformanceDefaults(
             json: JSONObject,
             firstTime: Boolean,
             combatCode: Boolean = true,
+            vfxPool: Boolean = true,
         ): Boolean {
             var changed = false
             for ((key, value) in BASE_DEFAULTS) changed = putIfMissing(json, key, value) || changed
@@ -186,6 +199,13 @@ class GameSettingsFile(val file: File) {
             changed = putAll(json, FORCED_OFF) || changed
             if (json.opt(KEY_COMBAT_CODE_WARMUP) != combatCode) {
                 json.put(KEY_COMBAT_CODE_WARMUP, combatCode)
+                changed = true
+            }
+
+            // The pool scope follows the launcher switch: all, or the release's own.
+            val scope = if (vfxPool) VFX_POOL_ALL else VFX_POOL_STOCK
+            if (json.opt(KEY_VFX_POOL_SCOPE) != scope) {
+                json.put(KEY_VFX_POOL_SCOPE, scope)
                 changed = true
             }
             return changed

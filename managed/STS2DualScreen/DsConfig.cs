@@ -22,6 +22,9 @@ internal sealed class DsConfig
     /// <summary>Pages not shown don't process (their game nodes' _Process and tweens).</summary>
     public bool PauseHiddenPages = true;
 
+    /// <summary>Collect garbage under each room transition (DsRoomGc).</summary>
+    public bool RoomGc = true;
+
     /// <summary>At most one lower-screen part renders, and one is copied out, a game frame.</summary>
     public bool StaggerCaptures = true;
 
@@ -69,6 +72,8 @@ internal sealed class DsConfig
                 CombatMotionFps = Math.Clamp(combatMotion, 10, 60);
             if (root.TryGetProperty("pause_hidden_pages", out var ph) && ph.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 PauseHiddenPages = ph.GetBoolean();
+            if (root.TryGetProperty("room_gc", out var rg) && rg.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                RoomGc = rg.GetBoolean();
             if (root.TryGetProperty("stagger_captures", out var sc) && sc.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 StaggerCaptures = sc.GetBoolean();
             if (root.TryGetProperty("present_thread", out var pt) && pt.ValueKind is JsonValueKind.True or JsonValueKind.False)

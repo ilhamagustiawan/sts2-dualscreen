@@ -58,8 +58,15 @@ how to measure.
 - **Pipeline cache saved often.** `override.cfg` next to the game sets
   `rendering_device/pipeline_cache/save_chunk_size_mb=0.25`, since Android
   seldom gives the engine the clean exit that otherwise saves it.
-- **GC nursery.** `MONO_GC_PARAMS=nursery-size=32m,major=marksweep-conc` by
+- **VFX pool.** Some 60 combat effect families are reused within a room
+  instead of instantiated per card play (`preload_vfx_pool_scope`, `all`).
+  `make compat` builds it from `tools/runtime/compat-patches/vfx-pool.patch`
+  over the pinned compat commit; card-moving families stay unpooled.
+- **GC nursery.** `MONO_GC_PARAMS=nursery-size=256m,major=marksweep-conc` by
   default: fewer minor collections in busy fights.
+- **Room GC.** A full collection, plus the finalizers it queues, runs at
+  `NTransition.RoomFadeIn`, while the transition still covers the screen
+  (`room gc: collected in … ms` in the log).
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
   Android's performance hint API (ADPF) against a one-frame target.
 - **Pacing.** The top screen is locked to 60 Hz by default; the FPS limit and
@@ -81,13 +88,15 @@ or the game's `settings.save`.
 | Advanced › Pause hidden tabs | `pause_hidden_pages` | on |
 | Particle effects | `particle_amount` | half |
 | CPU boost hint | `perf_hint` | on |
-| Memory cleanup (GC) | `MONO_GC_PARAMS` | 32 MB nursery |
+| Memory cleanup (GC) | `MONO_GC_PARAMS` | 256 MB nursery |
+| Clean memory between rooms | `room_gc` | on |
 | Keep compiled shaders | `override.cfg` | on |
 | Frame pacing | `override.cfg` | steady |
 | FPS limit | `fps_limit` (`settings.save`) | 60 |
 | Top screen refresh rate | — | 60 Hz |
 | Pre-compile combat code | `preload_combat_code_enabled` | on |
 | Pre-warm combat effects | compat pack preload keys | on |
+| Pool combat effects | `preload_vfx_pool_scope` (`settings.save`) | on (`all`) |
 | Use OpenGL instead of Vulkan | `--rendering-method` | off |
 
 ### Overrides
