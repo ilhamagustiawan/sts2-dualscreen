@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The app icon in one colour, for Android 13+ themed icons: the clamshell
+  handheld, the straw dummy on its top screen, the map on its bottom one.
+  Drawn on the icon art's 512 grid, shrunk to fit the 66 dp safe circle.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <group
+        android:pivotX="256"
+        android:pivotY="256"
+        android:scaleX="0.6"
+        android:scaleY="0.6">
+
+        <!-- Top shell, its screen cut out. -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M128,70 H384 A30,30 0 0 1 414,100 V232 A30,30 0 0 1 384,262 H128 A30,30 0 0 1 98,232 V100 A30,30 0 0 1 128,70 Z M138,94 H374 A14,14 0 0 1 388,108 V232 A14,14 0 0 1 374,246 H138 A14,14 0 0 1 124,232 V108 A14,14 0 0 1 138,94 Z" />
+
+        <!-- Hinge. -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M124,270 H388 A6,6 0 0 1 394,276 V282 A6,6 0 0 1 388,288 H124 A6,6 0 0 1 118,282 V276 A6,6 0 0 1 124,270 Z" />
+
+        <!-- Bottom shell: screen, direction pad and four buttons cut out. -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M108,296 H404 A30,30 0 0 1 434,326 V418 A30,30 0 0 1 404,448 H108 A30,30 0 0 1 78,418 V326 A30,30 0 0 1 108,296 Z M168,312 H344 A10,10 0 0 1 354,322 V420 A10,10 0 0 1 344,430 H168 A10,10 0 0 1 158,420 V322 A10,10 0 0 1 168,312 Z M116,346 h16 v-16 h16 v16 h16 v16 h-16 v16 h-16 v-16 h-16 Z M383,344 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z M365,362 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z M401,362 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z M383,380 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0 Z" />
+
+        <!-- Dummy: tied top tuft, sack head with button eyes and a stitched grin cut out. -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M242,106 L244,92 L222,64 L244,76 L256,52 L268,76 L290,64 L268,92 L270,106 Z M208,150 a48,48 0 1,0 96,0 a48,48 0 1,0 -96,0 Z M224,140 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 Z M268,140 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 Z M232,166 Q256,184 280,166 L281,174 Q256,194 231,174 Z" />
+
+        <!-- Crossbar arms with straw ends, and the body down to the screen's edge. -->
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M146,198 H366 V214 H146 Z M146,206 L120,184 L130,206 L118,228 Z M366,206 L392,184 L382,206 L394,228 Z M224,196 L288,196 L300,246 L212,246 Z" />
+
+        <!-- Map path and its nodes. -->
+        <path
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="7"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:pathData="M196,404 L240,362 L282,386 L322,340" />
+
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M184,404 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0 Z M228,362 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0 Z M270,386 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0 Z M307,340 a15,15 0 1,0 30,0 a15,15 0 1,0 -30,0 Z" />
+    </group>
+</vector>
