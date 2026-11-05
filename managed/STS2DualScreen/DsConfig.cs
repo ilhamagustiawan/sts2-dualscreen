@@ -25,6 +25,9 @@ internal sealed class DsConfig
     /// <summary>Collect garbage under each room transition (DsRoomGc).</summary>
     public bool RoomGc = true;
 
+    /// <summary>Grow the renderer's texture upload pool before the first preload (DsUploadWarmup).</summary>
+    public bool UploadWarmup = true;
+
     /// <summary>At most one lower-screen part renders, and one is copied out, a game frame.</summary>
     public bool StaggerCaptures = true;
 
@@ -74,6 +77,8 @@ internal sealed class DsConfig
                 PauseHiddenPages = ph.GetBoolean();
             if (root.TryGetProperty("room_gc", out var rg) && rg.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 RoomGc = rg.GetBoolean();
+            if (root.TryGetProperty("upload_warmup", out var uw) && uw.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                UploadWarmup = uw.GetBoolean();
             if (root.TryGetProperty("stagger_captures", out var sc) && sc.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 StaggerCaptures = sc.GetBoolean();
             if (root.TryGetProperty("present_thread", out var pt) && pt.ValueKind is JsonValueKind.True or JsonValueKind.False)

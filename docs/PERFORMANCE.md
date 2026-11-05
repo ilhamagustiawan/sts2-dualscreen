@@ -65,6 +65,12 @@ how to measure.
   (`COMPAT=release` skips it); card-moving families stay unpooled.
 - **GC nursery.** `MONO_GC_PARAMS=nursery-size=256m,major=marksweep-conc` by
   default: fewer minor collections in busy fights.
+- **Upload warmup.** Before the first preload session, one thread per core
+  uploads a small texture at the same moment while the main thread waits
+  (`upload_warmup`). That grows the renderer's pool of texture upload workers
+  to full size. Grown later by the game's threaded preload, it sometimes
+  aborted the engine (`Index p_index = 1 is out of bounds` under
+  `CompressedTexture2D::load`).
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
   `NTransition.RoomFadeIn`, while the transition still covers the screen
   (`room gc: collected in … ms` in the log).
@@ -104,12 +110,13 @@ or the game's `settings.save`.
 
 The launcher rewrites `dualscreen.json` on every launch.
 `files/dualscreen_overrides.json`, if present, is laid over it (same keys; it
-wins). It can force any key above, and also takes two that have no setting:
+wins). It can force any key above, and also takes three that have no setting:
 
 | Key | Default | Range |
 |---|---|---|
 | `combat_motion_fps` | 15 | 10–60 |
 | `canvas_scale` | 1.3 | 1–2 |
+| `upload_warmup` | true | true/false |
 
 The development build (`make dev-apk`) is debuggable, so it can be pushed with
 `run-as`:
