@@ -51,7 +51,8 @@ how to measure.
   the game loads (`preload_combat_code_enabled` in `settings.save`).
 - **Room warmups.** As each room loads, its VFX are played once out of sight
   (the compat pack's preload options). Its animation and hit-effect warmups
-  are forced off: fights still crashed with them on.
+  are forced off: fights still crashed with them on. That they were the
+  cause is unproven; fights crashed with them off too (see below).
 - **Startup warmup cache.** The startup tree warmup is skipped when the
   shader cache and the Vulkan pipeline cache on disk are newer than the game
   build (`warmup cache: HIT` / `MISS` in the log).
@@ -71,6 +72,14 @@ how to measure.
   to full size. Grown later by the game's threaded preload, it sometimes
   aborted the engine (`Index p_index = 1 is out of bounds` under
   `CompressedTexture2D::load`).
+- **Finalizers on the game thread.** Mono's finalizer thread releases a
+  dropped Godot object in two engine steps; the game thread can free the
+  object between them, and the finalizer then locks a destroyed mutex (the
+  process aborts with `FORTIFY: pthread_mutex_lock called on a destroyed
+  mutex`, then a run of `Unreferenced static string` lines). Fast play
+  makes it likely. Finalizer-initiated releases are held back and run on the
+  game thread each frame and under each room transition
+  (`main_thread_finalize`).
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
   `NTransition.RoomFadeIn`, while the transition still covers the screen
   (`room gc: collected in … ms` in the log).
@@ -110,13 +119,14 @@ or the game's `settings.save`.
 
 The launcher rewrites `dualscreen.json` on every launch.
 `files/dualscreen_overrides.json`, if present, is laid over it (same keys; it
-wins). It can force any key above, and also takes three that have no setting:
+wins). It can force any key above, and also takes four that have no setting:
 
 | Key | Default | Range |
 |---|---|---|
 | `combat_motion_fps` | 15 | 10–60 |
 | `canvas_scale` | 1.3 | 1–2 |
 | `upload_warmup` | true | true/false |
+| `main_thread_finalize` | true | true/false |
 
 The development build (`make dev-apk`) is debuggable, so it can be pushed with
 `run-as`:

@@ -25,6 +25,9 @@ internal sealed class DsConfig
     /// <summary>Collect garbage under each room transition (DsRoomGc).</summary>
     public bool RoomGc = true;
 
+    /// <summary>Release finalized Godot objects on the game thread, not Mono's finalizer thread (DsFinalizerGuard).</summary>
+    public bool MainThreadFinalize = true;
+
     /// <summary>Grow the renderer's texture upload pool before the first preload (DsUploadWarmup).</summary>
     public bool UploadWarmup = true;
 
@@ -77,6 +80,8 @@ internal sealed class DsConfig
                 PauseHiddenPages = ph.GetBoolean();
             if (root.TryGetProperty("room_gc", out var rg) && rg.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 RoomGc = rg.GetBoolean();
+            if (root.TryGetProperty("main_thread_finalize", out var mf) && mf.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                MainThreadFinalize = mf.GetBoolean();
             if (root.TryGetProperty("upload_warmup", out var uw) && uw.ValueKind is JsonValueKind.True or JsonValueKind.False)
                 UploadWarmup = uw.GetBoolean();
             if (root.TryGetProperty("stagger_captures", out var sc) && sc.ValueKind is JsonValueKind.True or JsonValueKind.False)

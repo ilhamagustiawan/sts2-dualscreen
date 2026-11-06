@@ -50,6 +50,7 @@ internal static class DsRoomGc
             var watch = Stopwatch.StartNew();
             GC.Collect();
             GC.WaitForPendingFinalizers();
+            DsFinalizerGuard.DrainAll();
             DsLog.Info($"room gc: collected in {watch.ElapsedMilliseconds} ms");
         }
         catch (Exception ex)
