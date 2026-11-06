@@ -118,6 +118,7 @@ internal static class DsStartup
             CommonPreloaded = true;
             return;
         }
+        DsLoadingDetail.WatchSession(__result);
         // Finishes on a worker or the main thread; carry on on the main one.
         task.ContinueWith(_ => Callable.From(() => OnCommonLoaded(started)).CallDeferred());
     }

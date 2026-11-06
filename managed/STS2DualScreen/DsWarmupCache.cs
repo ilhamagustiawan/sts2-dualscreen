@@ -65,6 +65,7 @@ internal static class DsWarmupCache
         if (hit)
         {
             DsLog.Info("warmup cache: HIT — skipping tree draw, keeping scene asset preload");
+            DsLoadingDetail.SetStep("Loading combat effects");
             treeWarmup = false;
         }
         else
@@ -89,6 +90,7 @@ internal static class DsWarmupCache
         __result.ContinueWith(t =>
         {
             DsShakeGuard.End();
+            DsLoadingDetail.SetStep(null);
             if (t.IsCompletedSuccessfully)
             {
                 RecordSuccess(mode, treeWarmupScope, treeWarmupFrames);
