@@ -45,7 +45,6 @@ internal static class DsAnimWarmup
                 warmupMethod,
                 prefix: new HarmonyMethod(typeof(DsAnimWarmup), nameof(WarmupCombatAnimationsPrefix)),
                 postfix: new HarmonyMethod(typeof(DsAnimWarmup), nameof(WarmupCombatAnimationsPostfix)));
-            DsLog.Info("anim warmup: safety net active (monitoring combat animation warmup)");
         }
         catch (Exception ex)
         {
@@ -67,14 +66,13 @@ internal static class DsAnimWarmup
         var remove = AccessTools.Method(warmupType, "RemoveWarmupMask");
         if (remove == null)
         {
-            DsLog.Info("anim warmup: no RemoveWarmupMask; warmup garbage left to the finalizer thread");
+            DsLog.Warn("anim warmup: no RemoveWarmupMask; warmup garbage left to the finalizer thread");
             return;
         }
 
         try
         {
             harmony.Patch(remove, prefix: new HarmonyMethod(typeof(DsAnimWarmup), nameof(DrainBeforeUnmask)));
-            DsLog.Info("anim warmup: warmup garbage drained before the mask lifts");
         }
         catch (Exception ex)
         {
@@ -91,7 +89,7 @@ internal static class DsAnimWarmup
         var watch = Stopwatch.StartNew();
         GC.Collect();
         GC.WaitForPendingFinalizers();
-        DsLog.Info($"anim warmup: drained warmup garbage in {watch.ElapsedMilliseconds} ms");
+        DsLog.Debug($"anim warmup: drained warmup garbage in {watch.ElapsedMilliseconds} ms");
     }
 
     // Compat packs from 450082d build an isolated SpineWarmupPreview per
@@ -102,14 +100,13 @@ internal static class DsAnimWarmup
         var create = previewType == null ? null : AccessTools.Method(previewType, "Create", new[] { typeof(Node2D) });
         if (create == null)
         {
-            DsLog.Info("anim warmup: no SpineWarmupPreview.Create; every fight warms all creatures");
+            DsLog.Warn("anim warmup: no SpineWarmupPreview.Create; every fight warms all creatures");
             return;
         }
 
         try
         {
             harmony.Patch(create, prefix: new HarmonyMethod(typeof(DsAnimWarmup), nameof(PreviewCreatePrefix)));
-            DsLog.Info("anim warmup: each skeleton warmed once per session");
         }
         catch (Exception ex)
         {

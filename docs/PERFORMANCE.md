@@ -82,7 +82,7 @@ how to measure.
   (`main_thread_finalize`).
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
   `NTransition.RoomFadeIn`, while the transition still covers the screen
-  (`room gc: collected in … ms` in the log).
+  (`room gc: collected in … ms` in the debug build's log).
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
   Android's performance hint API (ADPF) against a one-frame target.
 - **Pacing.** The top screen is locked to 60 Hz by default; the FPS limit and
@@ -139,9 +139,9 @@ adb shell run-as dev.sts2ds cp /data/local/tmp/overrides.json files/dualscreen_o
 
 ## Measuring
 
-`make logcat` follows the log (tag `STS2DualScreen`). Use the dev build
-(`make dev-apk`): the release build logs warnings and failures only, so the
-stats and `hitch` lines below are not in it.
+`make logcat` follows the log (tag `STS2DualScreen`). Use the debug build
+(`make debug-apk`): the release and dev builds log less, so the stats and
+`hitch` lines below are not in them.
 
 - **Stats line, every 10 s:** frames posted and unchanged, frame average and
   maximum, `hitches=` (frames over 20 ms) out of all frames, `gc_minor` and

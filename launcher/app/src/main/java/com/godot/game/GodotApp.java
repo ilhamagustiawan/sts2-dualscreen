@@ -135,7 +135,7 @@ public class GodotApp extends GodotActivity {
             return;
         }
         bootCover = null;
-        AppLog.i(TAG, "Boot cover lifted (" + why + ")");
+        AppLog.d(TAG, "Boot cover lifted (" + why + ")");
         cover.animate().alpha(0f).setDuration(BOOT_COVER_FADE_MS).withEndAction(() -> {
             if (cover.getParent() instanceof ViewGroup) {
                 ((ViewGroup) cover.getParent()).removeView(cover);

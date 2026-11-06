@@ -25,7 +25,6 @@ internal static class DsParticles
     private const string Extensions = "MegaCrit.Sts2.Core.Helpers.GodotTreeExtensions";
     private static readonly StringName Thinned = "ds_thinned";
     private static float _ratio = 1f;
-    private static int _count;
     private static int _mainThread;
     private static bool _failed;
 
@@ -43,7 +42,7 @@ internal static class DsParticles
         }
         // Whatever the game added before the patch went in.
         Thin(tree.Root);
-        DsLog.Info($"particles at {ratio:P0}");
+        DsLog.Debug($"particles at {ratio:P0}");
     }
 
     private static bool Patch(Harmony harmony)
@@ -132,8 +131,6 @@ internal static class DsParticles
             default:
                 return;
         }
-        if (++_count == 1)
-            DsLog.Info("first particle emitter thinned");
     }
 
     // Fallback only.

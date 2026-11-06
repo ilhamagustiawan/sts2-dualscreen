@@ -76,7 +76,7 @@ public final class RefreshRate {
             modeId = modes[chosen].getModeId();
             hz = modes[chosen].getRefreshRate();
         } else if (!SYSTEM.equals(mode)) {
-            AppLog.i(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
+            Log.w(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
         }
 
         WindowManager.LayoutParams lp = window.getAttributes();

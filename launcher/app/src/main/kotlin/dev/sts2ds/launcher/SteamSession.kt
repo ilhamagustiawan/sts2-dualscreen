@@ -147,7 +147,7 @@ class SteamSession : Closeable {
             val waitMs = minOf(leftMs, TimeUnit.SECONDS.toMillis(attemptSeconds))
             when (connectOnce(attempt, waitMs)) {
                 ConnectTry.CONNECTED -> return
-                ConnectTry.TIMED_OUT -> LauncherLog.log("Steam CM slow to answer after ${waitMs} ms; trying another")
+                ConnectTry.TIMED_OUT -> LauncherLog.debug("Steam CM slow to answer after ${waitMs} ms; trying another")
                 ConnectTry.DROPPED -> try { Thread.sleep(minOf(500L, leftMs)) } catch (_: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw RuntimeException("connect interrupted")
@@ -196,7 +196,7 @@ class SteamSession : Closeable {
         }
         val onDisconnect = subscribe(DisconnectedCallback::class.java) { cb ->
             if (connected.count > 0) {
-                LauncherLog.log("Steam disconnected before connect (user=${cb.isUserInitiated})")
+                LauncherLog.debug("Steam disconnected before connect (user=${cb.isUserInitiated})")
                 connected.countDown()
             }
         }
@@ -242,7 +242,7 @@ class SteamSession : Closeable {
                 if (t.result != EResult.TryAnotherCM || attempt == maxAttempts) {
                     throw RuntimeException("LogOn failed: ${t.result}")
                 }
-                LauncherLog.log("LogOn returned TryAnotherCM (attempt $attempt/$maxAttempts), reconnecting…")
+                LauncherLog.debug("LogOn returned TryAnotherCM (attempt $attempt/$maxAttempts), reconnecting…")
                 disconnectAndWait()
                 // Brief backoff before the retry to give the CM dispatcher
                 // a chance to rotate to a different server.

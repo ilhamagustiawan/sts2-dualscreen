@@ -39,10 +39,7 @@ internal static class DsUploadWarmup
     public static void Apply(Harmony harmony)
     {
         if (!DsEntry.Config.UploadWarmup)
-        {
-            DsLog.Info("upload warmup: off in overrides");
             return;
-        }
 
         try
         {

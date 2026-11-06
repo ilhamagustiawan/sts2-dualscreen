@@ -30,7 +30,6 @@ internal static class DsShakeGuard
             return;
         }
         var prefix = new HarmonyMethod(typeof(DsShakeGuard), nameof(Prefix));
-        var patched = 0;
         foreach (var name in new[] { "ScreenShake", "ScreenRumble", "ScreenShakeTrauma", "DoHitStop" })
         {
             var method = AccessTools.Method(game, name);
@@ -39,14 +38,12 @@ internal static class DsShakeGuard
             try
             {
                 harmony.Patch(method, prefix: prefix);
-                patched++;
             }
             catch (Exception ex)
             {
                 DsLog.Warn($"shake guard: could not patch NGame.{name}: {ex.Message}");
             }
         }
-        DsLog.Info($"shake guard: patched {patched} NGame shake method(s)");
     }
 
     public static void Begin() => Interlocked.Increment(ref _active);

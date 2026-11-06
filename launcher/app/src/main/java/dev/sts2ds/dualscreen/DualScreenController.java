@@ -104,7 +104,7 @@ public final class DualScreenController implements DisplayManager.DisplayListene
         float hz = main.getRefreshRate();
         if (Math.abs(hz - lastTopHz) < 0.5f) return;
         if (lastTopHz > 0 && topRateChanges++ < 20) {
-            AppLog.i(TAG, "Top screen refresh " + Math.round(lastTopHz) + " -> " + Math.round(hz) + " Hz");
+            AppLog.d(TAG, "Top screen refresh " + Math.round(lastTopHz) + " -> " + Math.round(hz) + " Hz");
         }
         lastTopHz = hz;
     }

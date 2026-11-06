@@ -64,7 +64,7 @@ object QrAuth {
             clientOSType = EOSType.Android9
         }
 
-        LauncherLog.log("Requesting QR challenge…")
+        LauncherLog.debug("Requesting QR challenge…")
         val qrSession: QrAuthSession = auth.beginAuthSessionViaQR(details)
             .get(20, TimeUnit.SECONDS)
             ?: throw RuntimeException("beginAuthSessionViaQR returned null")
@@ -81,7 +81,6 @@ object QrAuth {
             // s is a Java platform type — assume non-null (JavaSteam never
             // passes null to this callback).
             latestUrl.set(s!!.challengeUrl)
-            LauncherLog.log("QR URL rotated")
         }
 
         // pollingWaitForResult() blocks the calling thread until the

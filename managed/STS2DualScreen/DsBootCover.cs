@@ -136,7 +136,7 @@ internal static class DsBootCover
             var wrapper = Engine.GetSingleton("JavaClassWrapper");
             var app = wrapper.Call("wrap", "com.godot.game.GodotApp").AsGodotObject();
             var lifted = app?.Call(method);
-            DsLog.Info($"boot cover: {method} -> {lifted}");
+            DsLog.Debug($"boot cover: {method} -> {lifted}");
         }
         catch (Exception e)
         {

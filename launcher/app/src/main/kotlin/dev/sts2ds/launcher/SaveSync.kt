@@ -85,7 +85,7 @@ class SaveSync(
      * the analyser flagged or pulls nothing.
      */
     private suspend fun pullFlow(c: TokenStore.Credentials, beforeLaunch: Boolean): Outcome {
-        LauncherLog.log("Analyzing cloud vs local saves…")
+        LauncherLog.debug("Analyzing cloud vs local saves…")
         val analysis = CloudSync.analyzePull(context, c)
         val action = SyncPlan.decide(
             newerOnCloud = analysis.toDownload.size,
@@ -141,7 +141,7 @@ class SaveSync(
     }
 
     private suspend fun pushFlow(c: TokenStore.Credentials): Outcome {
-        LauncherLog.log("Analyzing local vs cloud saves…")
+        LauncherLog.debug("Analyzing local vs cloud saves…")
         val analysis = CloudSync.analyzePush(context, c)
         // Cloud orphans to prune count as device-side changes: without them a
         // "delete-only" push (a run that ended here, whose save the cloud

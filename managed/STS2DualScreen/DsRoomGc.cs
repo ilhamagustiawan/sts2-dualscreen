@@ -17,10 +17,7 @@ internal static class DsRoomGc
     public static void Apply(Harmony harmony)
     {
         if (!DsEntry.Config.RoomGc)
-        {
-            DsLog.Info("room gc: off in settings");
             return;
-        }
 
         try
         {
@@ -33,7 +30,6 @@ internal static class DsRoomGc
             }
 
             harmony.Patch(fadeIn, prefix: new HarmonyMethod(typeof(DsRoomGc), nameof(CollectUnderCover)));
-            DsLog.Info("room gc: collecting under each room transition");
         }
         catch (Exception ex)
         {
@@ -51,7 +47,7 @@ internal static class DsRoomGc
             GC.Collect();
             GC.WaitForPendingFinalizers();
             DsFinalizerGuard.DrainAll();
-            DsLog.Info($"room gc: collected in {watch.ElapsedMilliseconds} ms");
+            DsLog.Debug($"room gc: collected in {watch.ElapsedMilliseconds} ms");
         }
         catch (Exception ex)
         {

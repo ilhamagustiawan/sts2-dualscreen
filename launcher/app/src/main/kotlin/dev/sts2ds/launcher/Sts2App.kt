@@ -24,7 +24,7 @@ class Sts2App : Application() {
         // game, and every session in it opens with the same header, so this
         // line is what tells them apart -- and makes "the game's process
         // started and then nothing" a readable fact.
-        LauncherLog.log("process ${processTag()} started")
+        LauncherLog.debug("process ${processTag()} started")
 
         // Before the engine starts, so a crash during its startup is recorded.
         installCrashHandler()

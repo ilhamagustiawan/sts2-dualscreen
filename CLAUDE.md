@@ -28,6 +28,9 @@ dual-screen handheld (AYN Thor), with the map and card piles on the lower screen
   README's "Licence and credits".
 - Never commit game files or the extracted runtime (see .gitignore).
 - `make apk` (not debuggable, for playing), `make dev-apk` (debuggable, for
-  `run-as`), `make test`; `make dev` needs a device on adb.
+  `run-as`), `make debug-apk` (dev plus per-event logging), `make test`;
+  `make dev` needs a device on adb.
+- Log levels: Warn (release), Info (devel), Debug (debug); see
+  `docs/DUALSCREEN.md`. No new log line for a success whose failure already warns.
 - Public repo: no internal notes, plan numbers or commit hashes in code or
   docs (upstream pins such as the compat commit in `make-compat.sh` are the exception).

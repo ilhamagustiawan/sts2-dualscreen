@@ -30,7 +30,6 @@ internal static class DsStyle
     private const string PileOpenSound = "map_open.mp3";
 
     private static readonly Dictionary<string, Texture2D> Icons = new();
-    private static readonly HashSet<string> Logged = new();
     private static Shader _hsv;
     private static bool _hsvLooked;
 
@@ -49,9 +48,7 @@ internal static class DsStyle
             DsLog.Warn($"icon {path} failed: {e.Message}");
         }
         Icons[path] = texture;
-        if (texture != null)
-            DsLog.Info($"icon {path}");
-        else
+        if (texture == null)
             DsLog.Warn($"icon {path} not found; text only");
         return texture;
     }
@@ -70,9 +67,7 @@ internal static class DsStyle
             {
                 DsLog.Warn($"hsv shader failed: {e.Message}");
             }
-            if (_hsv != null)
-                DsLog.Info("hsv shader found");
-            else
+            if (_hsv == null)
                 DsLog.Warn("hsv shader not found; tabs dim by modulate");
         }
         if (_hsv == null)
@@ -135,8 +130,6 @@ internal static class DsStyle
             text = Spaces.Replace(text, " ").Trim();
         }
         var result = string.IsNullOrEmpty(text) ? fallback : text;
-        if (Logged.Add($"{table}/{key}={result}"))
-            DsLog.Info($"text {table}/{key}: \"{result}\"{(result == fallback && text != fallback ? " (fallback)" : "")}");
         return result;
     }
 
@@ -171,9 +164,7 @@ internal static class DsStyle
                 _sfxLooked = true;
                 var sfx = AccessTools.TypeByName("MegaCrit.Sts2.Core.Commands.SfxCmd");
                 _sfxPlay = sfx == null ? null : AccessTools.Method(sfx, "Play", new[] { typeof(string), typeof(float) });
-                if (_sfxPlay != null)
-                    DsLog.Info("ui sounds found");
-                else
+                if (_sfxPlay == null)
                     DsLog.Warn("ui sounds not found; tabs are silent");
             }
             _sfxPlay?.Invoke(null, new object[] { path, 1f });

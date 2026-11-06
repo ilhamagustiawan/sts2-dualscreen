@@ -290,7 +290,6 @@ internal static class DsGameHooks
                 postfix: postfix == null ? null : new HarmonyMethod(typeof(DsGameHooks), postfix),
                 finalizer: finalizer == null ? null : new HarmonyMethod(typeof(DsGameHooks), finalizer)
             );
-            DsLog.Info($"hooked {type.Name}.{method}");
         }
         catch (Exception e)
         {
@@ -363,7 +362,7 @@ internal static class DsGameHooks
             if (_focusOverridden)
             {
                 _focusOverridden = false;
-                DsLog.Info("game window focused again");
+                DsLog.Debug("game window focused again");
             }
             return;
         }
@@ -381,7 +380,7 @@ internal static class DsGameHooks
         if (!_focusOverridden)
         {
             _focusOverridden = true;
-            DsLog.Info("game window lost focus to the lower screen; still taking input");
+            DsLog.Debug("game window lost focus to the lower screen; still taking input");
         }
     }
 
@@ -484,7 +483,7 @@ internal static class DsGameHooks
         // The first few the game would have acted on, to tell where they come from.
         var counted = inputEvent is InputEventMouseButton || inputEvent is InputEventMouseMotion motion && motion.Velocity.LengthSquared() > 100f;
         if (counted && _mouseIgnoredLogged++ < 5 && inputEvent is InputEventMouse mouse)
-            DsLog.Info($"ignored {mouse.GetType().Name} for input mode: device={mouse.Device} at {mouse.Position}");
+            DsLog.Debug($"ignored {mouse.GetType().Name} for input mode: device={mouse.Device} at {mouse.Position}");
         return false;
     }
 
@@ -542,7 +541,7 @@ internal static class DsGameHooks
         if (ControllerManager() is not Node manager)
         {
             if (ModeLogged.Add(why))
-                DsLog.Info($"no controller manager to switch ({why})");
+                DsLog.Warn($"no controller manager to switch ({why})");
             return false;
         }
         try
@@ -645,7 +644,7 @@ internal static class DsGameHooks
     {
         var merchant = AccessTools.TypeByName(CompatMerchantConfirmType);
         if (merchant == null)
-            DsLog.Info("no compat shop confirmation; nothing to guard");
+            DsLog.Debug("no compat shop confirmation; nothing to guard");
         else
             Patch(harmony, merchant, "ShouldConfirmSlotSelection", prefix: nameof(MerchantConfirmPrefix));
         _tapPreviewPrefix = SwapForTouchOnly(harmony, PlayerHandType, "OnHolderPressed", "OnHolderPressedPrefix", nameof(HolderPressedPrefix));
@@ -665,12 +664,12 @@ internal static class DsGameHooks
                 .FirstOrDefault(p => p.PatchMethod.Name == compatPrefix && p.owner != harmony.Id);
             if (patch == null)
             {
-                DsLog.Info($"no {compatPrefix} on {type.Name}.{method}; nothing to guard");
+                DsLog.Debug($"no {compatPrefix} on {type.Name}.{method}; nothing to guard");
                 return null;
             }
             harmony.Unpatch(target, patch.PatchMethod);
             harmony.Patch(target, prefix: new HarmonyMethod(typeof(DsGameHooks), guard));
-            DsLog.Info($"{type.Name}.{method}: {compatPrefix} limited to touch ({patch.owner})");
+            DsLog.Debug($"{type.Name}.{method}: {compatPrefix} limited to touch ({patch.owner})");
             return patch.PatchMethod;
         }
         catch (Exception e)
@@ -720,7 +719,7 @@ internal static class DsGameHooks
         {
             PressesLogged[key] = count + 1;
             var game = IsUsingController();
-            DsLog.Info($"{instance?.GetType().Name} press: {(controller ? "controller" : "touch")}"
+            DsLog.Debug($"{instance?.GetType().Name} press: {(controller ? "controller" : "touch")}"
                 + (game != controller ? $" (game is in {(game ? "controller" : "mouse")} mode)" : "") + ", "
                 + (controller ? "game handles it" : runOriginal ? "compat passed it on" : "compat kept it (mark, then Confirm)"));
         }
@@ -866,7 +865,7 @@ internal static class DsGameHooks
             || _topMap != null && GodotObject.IsInstanceValid(_topMap) && _topMap.IsAncestorOf(node))
             return __exception;
         if (_pointExitFailures++ == 0)
-            DsLog.Info("a map copy room left after the game's map; ignored");
+            DsLog.Debug("a map copy room left after the game's map; ignored");
         return null;
     }
 
@@ -967,7 +966,7 @@ internal static class DsGameHooks
             _map = copy;
             screen.Page("map").AddChild(copy);
             StyleText(screen);
-            DsLog.Info($"map copy made for the bottom screen ({path})");
+            DsLog.Debug($"map copy made for the bottom screen ({path})");
             return true;
         }
         catch (Exception e)
@@ -1134,7 +1133,7 @@ internal static class DsGameHooks
         if (!_mapToolsLogged)
         {
             _mapToolsLogged = true;
-            DsLog.Info($"map {map.Size}: legend size {legend.Size} now bottom-right at y={legend.Position.Y:F0}, avoiding "
+            DsLog.Debug($"map {map.Size}: legend size {legend.Size} now bottom-right at y={legend.Position.Y:F0}, avoiding "
                 + (obstacles.Count == 0 ? "nothing" : string.Join(", ", obstacles.Select(o => $"{o.Name} {o.Rect}"))));
         }
     }
@@ -1253,7 +1252,7 @@ internal static class DsGameHooks
         var type = FindType(MapDrawingsType);
         if (type == null)
         {
-            DsLog.Info("no map drawings type; the two maps draw separately");
+            DsLog.Warn("no map drawings type; the two maps draw separately");
             return;
         }
         _drawBegin = AccessTools.Method(type, "BeginLineLocal");
@@ -2278,9 +2277,9 @@ internal static class DsGameHooks
         {
         }
         if (_pileRefresh == null)
-            DsLog.Info("card pile screen has no OnPileContentsChanged; lower-screen piles won't follow changes");
+            DsLog.Warn("card pile screen has no OnPileContentsChanged; lower-screen piles won't follow changes");
         // Interpreted delegates would cost more than the reflection they replace.
-        DsLog.Info($"game members read through {(System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled ? "compiled" : "interpreted")} delegates");
+        DsLog.Debug($"game members read through {(System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeCompiled ? "compiled" : "interpreted")} delegates");
     }
 
     private static Control PileGrid(string tab)
@@ -2633,5 +2632,5 @@ internal static class DsGameHooks
     }
 
     private static void NoteNotCompiled(MemberInfo member, Exception e) =>
-        DsLog.Info($"{member.DeclaringType?.Name}.{member.Name} read through reflection: {e.Message}");
+        DsLog.Debug($"{member.DeclaringType?.Name}.{member.Name} read through reflection: {e.Message}");
 }

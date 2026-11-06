@@ -48,7 +48,6 @@ internal static class DsDeferredPreload
             if (serialized != null && _originalCommonPreload != null)
             {
                 harmony.Patch(serialized, prefix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(SerializedPrefix)));
-                DsLog.Info("deferred preload: patched RunSerializedAndroidPreloadAsync");
             }
             if (showScreen != null && _treeWarmupEnabled != null && _vfxMode != null && _treeScope != null && _treeFrames != null)
             {
@@ -56,7 +55,6 @@ internal static class DsDeferredPreload
                     .MakeGenericMethod(screen)
                     .Invoke(null, new object[] { null });
                 harmony.Patch(showScreen, prefix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(ShowScreenPrefix)));
-                DsLog.Info("deferred preload: patched ShowDeferredPreloadScreenAsync");
             }
         }
         catch (Exception e)
@@ -99,7 +97,7 @@ internal static class DsDeferredPreload
         {
             if (!_originalCommonPreload())
                 return true;
-            DsLog.Info("deferred preload: second Common pass skipped; waiting for the game's own");
+            DsLog.Debug("deferred preload: second Common pass skipped; waiting for the game's own");
             __result = WaitForCommon();
             return false;
         }

@@ -286,10 +286,7 @@ internal sealed class DsBottomScreen
     private static void StartPresentThread(bool on)
     {
         if (!on)
-        {
-            DsLog.Info("bottom present: on the game's thread (present_thread off)");
             return;
-        }
         try
         {
             if (DsNative.PresentThread(true))
@@ -357,7 +354,6 @@ internal sealed class DsBottomScreen
         if (Instance != null)
             return;
         Instance = new DsBottomScreen(tree, config);
-        DsLog.Info("bottom screen host created");
         DsGameHooks.OnBottomScreenReady();
     }
 
@@ -538,7 +534,7 @@ internal sealed class DsBottomScreen
         _dock.ApplyFont(font);
         foreach (var label in _placeholderLabels.Values)
             label.AddThemeFontOverride("font", font);
-        DsLog.Info($"game font applied to the lower screen ({font.ResourcePath})");
+        DsLog.Debug($"game font applied to the lower screen ({font.ResourcePath})");
     }
 
     // ── layout ─────────────────────────────────────────────────────────────
@@ -625,7 +621,7 @@ internal sealed class DsBottomScreen
             if (art.GetNodeOrNull<CanvasItem>("BgContainer/Control/Logo") is { } logo)
                 logo.Visible = false;
             else
-                DsLog.Info("menu art: no logo node to hide");
+                DsLog.Debug("menu art: no logo node to hide");
             var holder = new Control { Name = "MenuArt", MouseFilter = Control.MouseFilterEnum.Ignore, Size = IdleArtSize };
             holder.AddChild(art);
             art.SetAnchorsPreset(Control.LayoutPreset.FullRect);
@@ -638,7 +634,6 @@ internal sealed class DsBottomScreen
             var fade = DsStyle.Animate(holder, 0.6);
             fade.TweenProperty(holder, "modulate:a", 1f, 0.6).SetEase(Tween.EaseType.Out).SetTrans(Tween.TransitionType.Cubic);
             fade.Finished += DsBootCover.LiftBottom;
-            DsLog.Info("menu art shown on the lower screen");
         }
         catch (Exception e)
         {
@@ -710,7 +705,7 @@ internal sealed class DsBottomScreen
                     _page.Retarget();
                     foreach (var part in _parts)
                         part.Capture.Retarget();
-                    DsLog.Info("bottom surface gone; paused");
+                    DsLog.Debug("bottom surface gone; paused");
                 }
                 return;
             }
@@ -857,7 +852,7 @@ internal sealed class DsBottomScreen
         _booted = true;
         _wokeUsec = Time.GetTicksUsec();
         if (!_inRun && !mainMenu)
-            DsLog.Info("no main menu after 30 s; lower screen wakes anyway");
+            DsLog.Warn("no main menu after 30 s; lower screen wakes anyway");
         MarkChanged();
         return false;
     }
@@ -924,7 +919,7 @@ internal sealed class DsBottomScreen
         ReleasePointer();
         ApplyLayout(_surfaceW, _surfaceH);
         MarkChanged();
-        DsLog.Info(inRun ? "run started; lower screen shown" : "no run; lower screen shows the menu art");
+        DsLog.Debug(inRun ? "run started; lower screen shown" : "no run; lower screen shows the menu art");
         if (!inRun)
             return;
         // The game's localization is up by now.
@@ -998,7 +993,7 @@ internal sealed class DsBottomScreen
         {
             _budget++;
             _budgetCleanUsec = 0;
-            DsLog.Info($"game dropping frames ({ratio:P0}); ambient capture down to {PageAmbientFps[_budget]}/{DockAmbientFps[_budget]} fps");
+            DsLog.Debug($"game dropping frames ({ratio:P0}); ambient capture down to {PageAmbientFps[_budget]}/{DockAmbientFps[_budget]} fps");
         }
         else if (ratio < 0.01)
         {
@@ -1007,7 +1002,7 @@ internal sealed class DsBottomScreen
             {
                 _budget--;
                 _budgetCleanUsec = 0;
-                DsLog.Info($"game frames clean; ambient capture up to {PageAmbientFps[_budget]}/{DockAmbientFps[_budget]} fps");
+                DsLog.Debug($"game frames clean; ambient capture up to {PageAmbientFps[_budget]}/{DockAmbientFps[_budget]} fps");
             }
         }
         else
@@ -1024,7 +1019,7 @@ internal sealed class DsBottomScreen
         var frame = _frameCount > 0 ? _frameUsecTotal / 1000.0 / _frameCount : 0;
         var gcMinor = GC.CollectionCount(0);
         var gcMajor = GC.CollectionCount(GC.MaxGeneration);
-        DsLog.Info($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred} ambient={PageAmbientFps[_budget]}/{DockAmbientFps[_budget]}"
+        DsLog.Debug($"frames posted={stats.Posted} unchanged={stats.Skipped} touch_overflows={stats.Overflows} tab={_active} combat={DsGameHooks.InCombat} deferred={_deferred} ambient={PageAmbientFps[_budget]}/{DockAmbientFps[_budget]}"
             + $" | {_page.TakeStats()} | {string.Join(" | ", Array.ConvertAll(_parts, part => part.Capture.TakeStats()))}"
             + $" | game frame_avg={frame:F1}ms frame_max={_frameUsecMax / 1000.0:F1}ms hitches={_hitches}/{_frameCount} gc_minor=+{gcMinor - _gcMinor} gc_major=+{gcMajor - _gcMajor}"
             + $" | {DsPerf.TakeStats()}");

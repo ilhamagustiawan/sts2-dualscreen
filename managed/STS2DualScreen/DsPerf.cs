@@ -81,7 +81,7 @@ internal static class DsPerf
             {
                 _hitchLines++;
                 _lastHitchLineUsec = now;
-                DsLog.Info($"hitch {dtUsec / 1000.0:F1}ms: compiles={compiles - _frameCompiles} gc_minor={gcMinor - _frameGcMinor} gc_major={gcMajor - _frameGcMajor}"
+                DsLog.Debug($"hitch {dtUsec / 1000.0:F1}ms: compiles={compiles - _frameCompiles} gc_minor={gcMinor - _frameGcMinor} gc_major={gcMajor - _frameGcMajor}"
                     + $" captures_cb={_callbacks} cb_ms={_callbackUsec / 1000.0:F1} present_ms={_presentUsec / 1000.0:F1}"
                     + $" pile_rebuilds={_pileRebuilds} tweens={_tweens} tab={tab} combat={combat}");
             }

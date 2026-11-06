@@ -468,7 +468,7 @@ class LauncherActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode != REQ_LOGIN) return
         if (resultCode != RESULT_OK || data == null) {
-            LauncherLog.log("Login cancelled")
+            LauncherLog.debug("Login cancelled")
             return
         }
         val account = data.getStringExtra(LoginActivity.EXTRA_ACCOUNT)
@@ -678,7 +678,7 @@ class LauncherActivity : Activity() {
                 }
                 val offline = prepared.offlineTuple
                 if (offline != null && !confirmOffline(offline, prepared.version)) {
-                    LauncherLog.log("Offline compat fallback declined")
+                    LauncherLog.debug("Offline compat fallback declined")
                     return@launch
                 }
                 if (offline != null) OfflineGuard.beforeLaunch(this@LauncherActivity, offline)

@@ -111,7 +111,7 @@ object GamePrep {
         val pckSchemaStale = state.getInt("pck_patch_schema", 0) != PckPatcher.PATCH_SCHEMA
         if (force || pckSchemaStale || state.getString("pck_stamp", "") != pckStamp) {
             val result = PckPatcher.patchSentry(pck)
-            LauncherLog.log("PCK: ${result.toJson()}")
+            LauncherLog.debug("PCK: ${result.toJson()}")
             state.edit()
                 .putString("pck_stamp", "${pck.length()}:${pck.lastModified()}")
                 .putInt("pck_patch_schema", PckPatcher.PATCH_SCHEMA)
@@ -202,7 +202,7 @@ object GamePrep {
         applyPerformanceSettings(context, files, settings)
         try {
             EngineOverrides.apply(gameDir, EngineOverrides.render(settings.savePipelinesOften, settings.framePacing))
-            LauncherLog.log(
+            LauncherLog.debug(
                 "Engine overrides: frame pacing ${settings.framePacing}, " +
                     "pipeline cache saved ${if (settings.savePipelinesOften) "every ${EngineOverrides.PIPELINE_SAVE_CHUNK_MB} MB" else "at engine default"}, " +
                     "perf hint ${settings.perfHint}"
@@ -232,7 +232,7 @@ object GamePrep {
         try {
             val json = game.read()
             if (json == null) {
-                LauncherLog.log("settings.save not created yet; performance defaults apply next launch")
+                LauncherLog.debug("settings.save not created yet; performance defaults apply next launch")
             } else {
                 val firstTime = !settings.perfDefaultsApplied
                 // The Balanced preset locks the panel to 60 Hz, over the
@@ -352,7 +352,7 @@ object GamePrep {
         val offline = readManifest(context, OFFLINE_PACK)
             ?: throw NotReady("No compatibility pack in this APK; rebuild with tools/runtime/make-runtime.sh")
         val any = offline.getJSONArray("targets").getJSONObject(0)
-        LauncherLog.log("No exact compat target for $version; using the generic offline fallback")
+        LauncherLog.warn("No exact compat target for $version; using the generic offline fallback")
         return extractTarget(context, OFFLINE_PACK, offline, any)
     }
 
@@ -389,7 +389,7 @@ object GamePrep {
 
         // A target rebuilt from source (make compat) carries its own commit.
         val build = target.optJSONObject("build_info") ?: manifest.optJSONObject("build_info")
-        LauncherLog.log("Compat $packId/$targetId built from ${build?.optString("commit") ?: "unknown"}")
+        LauncherLog.debug("Compat $packId/$targetId built from ${build?.optString("commit") ?: "unknown"}")
         val kind = manifest.optString("pack_kind", "")
         val version = manifest.optString("compat_version", "")
         return Compat(packId, targetId, kind, version, dll, overlay)
@@ -487,7 +487,7 @@ object GamePrep {
             System.setProperty("java.io.tmpdir", tmp.absolutePath)
             val gc = gcParams(gcNursery)
             if (gc != null) Os.setenv("MONO_GC_PARAMS", gc, true) else Os.unsetenv("MONO_GC_PARAMS")
-            LauncherLog.log("MONO_GC_PARAMS=${gc ?: "(runtime default)"}")
+            LauncherLog.debug("MONO_GC_PARAMS=${gc ?: "(runtime default)"}")
         } catch (e: Exception) {
             LauncherLog.warn("Could not set runtime environment: ${e.message}")
         }

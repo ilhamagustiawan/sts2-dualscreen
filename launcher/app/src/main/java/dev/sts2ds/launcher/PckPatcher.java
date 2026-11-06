@@ -135,8 +135,6 @@ public final class PckPatcher {
 		}
 		if (result.changed()) {
 			AppLog.i(TAG, "Patched Sentry metadata in PCK: " + result.toJson());
-		} else {
-			AppLog.i(TAG, "PCK Sentry metadata already patched or absent: " + result.toJson());
 		}
 		return result;
 	}

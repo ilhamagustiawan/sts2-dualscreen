@@ -44,9 +44,6 @@ object SteamCrypto {
             // runs pure-Java AES instead of the platform's hardware-backed
             // implementation, and the download becomes CPU-bound.
             Security.addProvider(BouncyCastleProvider())
-            val at = Security.getProviders().indexOfFirst { it.name == PROVIDER }
-            LauncherLog.log("BouncyCastle available as \"$PROVIDER\" (position ${at + 1} of " +
-                "${Security.getProviders().size})")
         } catch (t: Throwable) {
             LauncherLog.warn("Could not install BouncyCastle: $t")
         }

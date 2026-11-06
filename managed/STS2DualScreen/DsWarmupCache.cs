@@ -38,7 +38,6 @@ internal static class DsWarmupCache
                 warmupMethod,
                 prefix: new HarmonyMethod(typeof(DsWarmupCache), nameof(WarmupCriticalScenesPrefix)),
                 postfix: new HarmonyMethod(typeof(DsWarmupCache), nameof(WarmupCriticalScenesPostfix)));
-            DsLog.Info("warmup cache: patched WarmupCriticalScenesAsync");
         }
         catch (Exception ex)
         {
@@ -207,7 +206,7 @@ internal static class DsWarmupCache
 
             var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
             File.WriteAllText(stampPath, json);
-            DsLog.Info($"warmup cache: recorded stamp ({shaderCount} shaders, {shaderBytes} bytes, {pipelineBytes} pipeline cache bytes)");
+            DsLog.Debug($"warmup cache: recorded stamp ({shaderCount} shaders, {shaderBytes} bytes, {pipelineBytes} pipeline cache bytes)");
         }
         catch (Exception ex)
         {

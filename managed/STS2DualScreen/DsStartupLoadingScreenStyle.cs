@@ -31,7 +31,6 @@ internal static class DsStartupLoadingScreenStyle
             harmony.Patch(
                 ensureUi,
                 postfix: new HarmonyMethod(typeof(DsStartupLoadingScreenStyle), nameof(EnsureUiBuiltPostfix)));
-            DsLog.Info("startup style: patched EnsureUiBuilt");
         }
         catch (Exception ex)
         {
@@ -52,7 +51,6 @@ internal static class DsStartupLoadingScreenStyle
             screen.SetMeta(StyledMeta, true);
 
             Restyle(screen);
-            DsLog.Info("startup style: applied launcher dusk theme to startup screen");
         }
         catch (Exception ex)
         {

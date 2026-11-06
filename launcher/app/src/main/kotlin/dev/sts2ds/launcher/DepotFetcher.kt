@@ -171,7 +171,7 @@ object DepotFetcher {
         // Before anything is asked of Steam: a previous attempt that was
         // cancelled has left holes the resume cannot see. See dropUnwritten.
         val dropped = dropUnwritten(installDir)
-        if (dropped > 0) LauncherLog.log("dropped $dropped unwritten file(s) from a previous attempt")
+        if (dropped > 0) LauncherLog.debug("dropped $dropped unwritten file(s) from a previous attempt")
 
         completeMarker(installDir).delete()
         startedMarker(installDir).writeText(DEPOT_ID.toString())
@@ -190,7 +190,6 @@ object DepotFetcher {
                 // and Steam sends that on its own callback shortly after
                 // logon rather than in the reply.
                 val licenses = session.licenses()
-                LauncherLog.log("Account has ${licenses.size} licence(s)")
 
                 val finished = CountDownLatch(1)
                 val failure = AtomicReference<Throwable?>(null)
@@ -223,7 +222,7 @@ object DepotFetcher {
                             compressedBytes: Long,
                             uncompressedBytes: Long,
                         ) {
-                            LauncherLog.log("Depot $depotId complete: $uncompressedBytes bytes")
+                            LauncherLog.debug("Depot $depotId complete: $uncompressedBytes bytes")
                         }
 
                         override fun onDownloadCompleted(item: DownloadItem) {

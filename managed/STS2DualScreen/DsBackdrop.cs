@@ -63,10 +63,7 @@ internal static class DsBackdrop
         _started = true;
 
         if (IsCurrent())
-        {
-            DsLog.Info("backdrop: up to date");
             return;
-        }
         DsStartup.CommonPreloadTask.ContinueWith(_ => Callable.From(Begin).CallDeferred());
     }
 
@@ -172,7 +169,7 @@ internal static class DsBackdrop
         _backdrop = _viewport.GetTexture().GetImage();
         if (_logo == null)
         {
-            DsLog.Info("backdrop: no logo node; art only");
+            DsLog.Debug("backdrop: no logo node; art only");
             Save(null);
             return;
         }
@@ -237,7 +234,7 @@ internal static class DsBackdrop
                     return;
                 }
                 File.WriteAllText(Path.Combine(dir, StampName), build);
-                DsLog.Info($"backdrop: saved {art.GetWidth()}x{art.GetHeight()}, logo {(logo == null ? "none" : $"{logo.GetWidth()}x{logo.GetHeight()}")}");
+                DsLog.Debug($"backdrop: saved {art.GetWidth()}x{art.GetHeight()}, logo {(logo == null ? "none" : $"{logo.GetWidth()}x{logo.GetHeight()}")}");
             }
             catch (Exception e)
             {

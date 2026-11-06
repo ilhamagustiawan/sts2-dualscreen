@@ -58,7 +58,7 @@ The tab bar is docked along the bottom edge of the lower screen.
   surface (`nativeSetSurface`) waits for a post in progress, so a destroyed
   surface is never touched.
 - **Settings and measuring.** The switches for all of this, the override
-  file and the stats and `hitch` log lines are in
+  file and the stats and `hitch` log lines (debug build) are in
   [PERFORMANCE.md](PERFORMANCE.md).
 
 ## What is on the lower screen
@@ -72,10 +72,19 @@ The tab bar is docked along the bottom edge of the lower screen.
 Every game type is looked up by name. A missing type or method logs
 `hook skipped` and leaves that feature on the top screen.
 
-Logging: `DsLog.Warn` (failures, missing hooks) goes out in every build;
-`DsLog.Info` (status, stats, hitches) only in the dev build, whose
-libsts2ds is built with `DS_VERBOSE_LOG`. The launcher's `LauncherLog.warn`
-and `log` split the same way.
+Logging has three levels, each including the ones before it, set per build
+type (`LOG_LEVEL` in `build.gradle.kts`, shared with libsts2ds as
+`DS_LOG_LEVEL`):
+
+| Level | Build | Lines |
+|---|---|---|
+| Warn | release | failures, missing hooks, degraded behaviour |
+| Info | devel (`make dev-apk`) | startup milestones, modes picked, decisions |
+| Debug | debug (`make debug-apk`) | per-event detail, perf stats, hitches |
+
+`DsLog.Warn` / `Info` / `Debug` and `LauncherLog.warn` / `log` / `debug`
+follow it. Do not log what a failure path already reports, or a setting the
+launcher already logged.
 
 ## Lifecycle
 
@@ -108,7 +117,7 @@ and `log` split the same way.
   (`NPlayerHand.OnHolderPressed` prefix) ignores where a press came from. On a
   controller, A would pin a card and then put it back, never playing it. Its
   prefix is unpatched and re-run through ours only when the game isn't in
-  controller mode (log: `tap preview limited to touch`).
+  controller mode (debug log: `tap preview limited to touch`).
 - The game's "Controller detected" / "Mouse detected" toast
   (`NControllerManager.ControlModeChanged`) is not shown. The top-screen hint
   copies that toast label's font and outline, and the tabs use its font.

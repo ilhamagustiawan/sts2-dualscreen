@@ -116,11 +116,11 @@ object CloudSync {
         SteamSession().use { session ->
             session.logOn(credentials)
             val cloud = SteamCloudClient(session)
-            LauncherLog.log("Pull analyze: enumerating cloud files…")
+            LauncherLog.debug("Pull analyze: enumerating cloud files…")
             val allCloud = cloud.enumerateFiles(APP_ID)
             val cloudFiles = allCloud.filter { Sts2SavePaths.relative(it.filename) != null }
             if (cloudFiles.size != allCloud.size) {
-                LauncherLog.log("Pull analyze: ignoring ${allCloud.size - cloudFiles.size} cloud entr(ies) that are not saves")
+                LauncherLog.debug("Pull analyze: ignoring ${allCloud.size - cloudFiles.size} cloud entr(ies) that are not saves")
             }
 
             val toDownload = mutableListOf<PullItem>()
@@ -140,20 +140,20 @@ object CloudSync {
                 when {
                     localMtime < 0 -> {
                         toDownload.add(item)
-                        LauncherLog.log(
+                        LauncherLog.debug(
                             "  to-download (new): $basename cloud=${cf.timestampUnix} size=${cf.size}"
                         )
                     }
                     cf.timestampUnix > localMtime -> {
                         toDownload.add(item)
-                        LauncherLog.log(
+                        LauncherLog.debug(
                             "  to-download (cloud-newer): $basename local=$localMtime cloud=${cf.timestampUnix} delta=${cf.timestampUnix - localMtime}s sizes=${local.length()}↔${cf.size}"
                         )
                     }
                     cf.timestampUnix == localMtime -> skipped.add(basename)
                     else -> {
                         conflicts.add(item)
-                        LauncherLog.log(
+                        LauncherLog.debug(
                             "  local-newer: $basename local=$localMtime cloud=${cf.timestampUnix} delta=${localMtime - cf.timestampUnix}s"
                         )
                     }
@@ -215,7 +215,7 @@ object CloudSync {
                             item.localFile.setLastModified(item.cloudTimestampUnix * 1000L)
                             totalBytes.addAndGet(bytes.size.toLong())
                             ok.incrementAndGet()
-                            LauncherLog.log("  ↓ ${item.localFile.name}: ${bytes.size} bytes")
+                            LauncherLog.debug("  ↓ ${item.localFile.name}: ${bytes.size} bytes")
                             send(Event.FileDone(item.localFile.name, bytes.size.toLong()))
                         } catch (t: Throwable) {
                             failed.incrementAndGet()
@@ -295,12 +295,12 @@ object CloudSync {
     ): PushAnalysis = kotlinx.coroutines.withContext(Dispatchers.IO) {
         val saveDir = saveDirFor(context)
         val locals = collectLocalSaveFiles(saveDir)
-        LauncherLog.log("Push analyze: found ${locals.size} local save file(s) in ${saveDir.absolutePath}")
+        LauncherLog.debug("Push analyze: found ${locals.size} local save file(s) in ${saveDir.absolutePath}")
 
         SteamSession().use { session ->
             session.logOn(credentials)
             val cloud = SteamCloudClient(session)
-            LauncherLog.log("Push analyze: enumerating cloud files…")
+            LauncherLog.debug("Push analyze: enumerating cloud files…")
             val allCloud = cloud.enumerateFiles(APP_ID)
             val cloudFiles = allCloud.filter { Sts2SavePaths.relative(it.filename) != null }
             val cloudPrefix = cloudFiles.firstNotNullOfOrNull { Sts2SavePaths.prefix(it.filename) }
@@ -414,7 +414,7 @@ object CloudSync {
                             totalBytes.addAndGet(content.size.toLong())
                             ok.incrementAndGet()
                             succeeded.add(item)
-                            LauncherLog.log(
+                            LauncherLog.debug(
                                 "  ↑ ${item.localFile.name}: ${content.size} bytes -> ${item.cloudPath} (ts=${item.localMtimeUnix})"
                             )
                             send(Event.FileDone(item.localFile.name, content.size.toLong()))
@@ -441,7 +441,7 @@ object CloudSync {
                     gate.withPermit {
                         try {
                             cloud.deleteFile(APP_ID, orphan.filename)
-                            LauncherLog.log("  ✗ deleted cloud orphan: ${orphan.filename}")
+                            LauncherLog.debug("  ✗ deleted cloud orphan: ${orphan.filename}")
                         } catch (t: Throwable) {
                             val msg = t.message ?: t.javaClass.simpleName
                             LauncherLog.warn("  ✗ delete failed for ${orphan.filename}: $msg")
@@ -471,7 +471,7 @@ object CloudSync {
                         item.localFile.setLastModified(cur.timestampUnix * 1000L)
                     }
                 } catch (t: Throwable) {
-                    LauncherLog.log("  (post-push mtime sync skipped: ${t.message ?: t.javaClass.simpleName})")
+                    LauncherLog.debug("  (post-push mtime sync skipped: ${t.message ?: t.javaClass.simpleName})")
                 }
             }
 

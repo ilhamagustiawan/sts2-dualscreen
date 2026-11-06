@@ -32,10 +32,7 @@ internal static class DsPerfHint
     public static void Attach(SceneTree tree)
     {
         if (!DsRuntimeConfig.Current.PerfHint)
-        {
-            DsLog.Info("perf hint: off in settings");
             return;
-        }
         try
         {
             // Called deferred from the main loop: this is the game thread.
@@ -62,7 +59,6 @@ internal static class DsPerfHint
             if (Frame() == 0)
             {
                 _tree.ProcessFrame -= OnFrame;
-                DsLog.Info("perf hint: session ended");
                 return;
             }
             // The FPS cap can change in the game's settings, the panel's rate
@@ -75,7 +71,7 @@ internal static class DsPerfHint
             {
                 _targetNs = target;
                 Target(target);
-                DsLog.Info($"perf hint: target now {target / 1e6:F2} ms");
+                DsLog.Debug($"perf hint: target now {target / 1e6:F2} ms");
             }
         }
         catch (Exception e)

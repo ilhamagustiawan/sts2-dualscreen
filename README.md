@@ -80,6 +80,7 @@ it with your own key.
 ```bash
 make dev-apk   # → dist/sts2-dualscreen-<version>-dev.apk, debuggable
 make dev       # dev-apk, install, launch, follow the log
+make debug-apk # → dist/sts2-dualscreen-<version>-debug.apk, dev plus per-event detail
 make logcat    # follow the log
 make compat COMPAT_REF=<dir with sts2.dll>   # rebuild the game's compat target with the VFX pool
 ```
