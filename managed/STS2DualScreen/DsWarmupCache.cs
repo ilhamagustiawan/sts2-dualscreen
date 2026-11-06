@@ -270,12 +270,22 @@ internal static class DsWarmupCache
         catch { return "unknown"; }
     }
 
+    // Android reports no driver info (an empty list), so a driver update
+    // went unnoticed. The pipeline cache UUID changes with the driver, as
+    // the engine itself discards its cache on a change.
     private static string GetDriverInfo()
     {
         try
         {
+            var uuid = RenderingServer.GetRenderingDevice()?.GetDevicePipelineCacheUuid();
+            if (!string.IsNullOrEmpty(uuid))
+            {
+                return uuid;
+            }
+
             var info = OS.GetVideoAdapterDriverInfo();
-            return info != null ? string.Join(";", info) : "unknown";
+            var joined = info == null ? "" : string.Join(";", info);
+            return joined.Length > 0 ? joined : "unknown";
         }
         catch { return "unknown"; }
     }
