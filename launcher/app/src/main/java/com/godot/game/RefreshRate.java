@@ -3,6 +3,7 @@ package com.godot.game;
 import android.app.Activity;
 import android.os.Build;
 import android.util.Log;
+import dev.sts2ds.AppLog;
 import android.view.Display;
 import android.view.Surface;
 import android.view.SurfaceView;
@@ -75,7 +76,7 @@ public final class RefreshRate {
             modeId = modes[chosen].getModeId();
             hz = modes[chosen].getRefreshRate();
         } else if (!SYSTEM.equals(mode)) {
-            if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
+            AppLog.i(TAG, "Refresh rate " + mode + ": no matching mode; leaving it to the system");
         }
 
         WindowManager.LayoutParams lp = window.getAttributes();
@@ -96,7 +97,7 @@ public final class RefreshRate {
                 }
             }
         }
-        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Refresh rate " + mode + ": mode " + modeId + " (" + hz + " Hz), display now " + display.getRefreshRate() + " Hz");
+        AppLog.i(TAG, "Refresh rate " + mode + ": mode " + modeId + " (" + hz + " Hz), display now " + display.getRefreshRate() + " Hz");
     }
 
     private static SurfaceView findSurfaceView(View view) {

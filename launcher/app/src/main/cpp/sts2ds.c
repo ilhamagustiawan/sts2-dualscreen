@@ -40,12 +40,7 @@
 #include <string.h>
 
 #define TAG "STS2DualScreen"
-#ifdef DS_VERBOSE_LOG
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#else
-#define LOGI(...) ((void)0)
-#endif
-#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, TAG, __VA_ARGS__)
+#include "ds_log.h"
 #define EXPORT __attribute__((visibility("default")))
 // Sections for a Perfetto/systrace capture (app atrace); no-ops unless tracing.
 #define TRACE_BEGIN(name) ATrace_beginSection(name)
@@ -923,27 +918,22 @@ EXPORT void ds_trace_end(void) {
     TRACE_END();
 }
 
-// level: 0 info (dev build only), 1 warning (always).
+// level: DS_LOG_WARN, DS_LOG_INFO or DS_LOG_DEBUG; dropped above DS_LOG_LEVEL.
 EXPORT void ds_log_level(int level, const char *message) {
-    if (!message) return;
-    if (level > 0) {
-        __android_log_write(ANDROID_LOG_WARN, TAG, message);
+    if (!message || level > DS_LOG_LEVEL) {
         return;
     }
-#ifdef DS_VERBOSE_LOG
-    __android_log_write(ANDROID_LOG_INFO, TAG, message);
-#endif
+
+    int priority = ANDROID_LOG_WARN;
+    if (level == DS_LOG_INFO) {
+        priority = ANDROID_LOG_INFO;
+    } else if (level >= DS_LOG_DEBUG) {
+        priority = ANDROID_LOG_DEBUG;
+    }
+    __android_log_write(priority, TAG, message);
 }
 
-EXPORT void ds_log(const char *message) {
-    ds_log_level(0, message);
-}
-
-/** 1 when the dev build's info logging is compiled in. */
-EXPORT int ds_verbose(void) {
-#ifdef DS_VERBOSE_LOG
-    return 1;
-#else
-    return 0;
-#endif
+/** The most detailed level this build logs (DS_LOG_WARN..DS_LOG_DEBUG). */
+EXPORT int ds_log_threshold(void) {
+    return DS_LOG_LEVEL;
 }

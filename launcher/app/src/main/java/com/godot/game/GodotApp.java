@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.util.Log;
+import dev.sts2ds.AppLog;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
@@ -134,7 +135,7 @@ public class GodotApp extends GodotActivity {
             return;
         }
         bootCover = null;
-        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Boot cover lifted (" + why + ")");
+        AppLog.i(TAG, "Boot cover lifted (" + why + ")");
         cover.animate().alpha(0f).setDuration(BOOT_COVER_FADE_MS).withEndAction(() -> {
             if (cover.getParent() instanceof ViewGroup) {
                 ((ViewGroup) cover.getParent()).removeView(cover);
@@ -161,7 +162,7 @@ public class GodotApp extends GodotActivity {
         // Steam side is the launcher's job.
         args.add("--force-steam");
         args.add("off");
-        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Godot command line: " + args);
+        AppLog.i(TAG, "Godot command line: " + args);
         return args;
     }
 

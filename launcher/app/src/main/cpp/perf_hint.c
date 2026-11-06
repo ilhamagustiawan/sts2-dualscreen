@@ -21,12 +21,7 @@
 
 #define DS_EXPORT __attribute__((visibility("default")))
 #define TAG "STS2DualScreen"
-// Status lines, dev build only (see CMakeLists.txt).
-#ifdef DS_VERBOSE_LOG
-#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#else
-#define LOGI(...) ((void)0)
-#endif
+#include "ds_log.h"
 
 typedef struct ds_hint_manager ds_hint_manager;
 typedef struct ds_hint_session ds_hint_session;

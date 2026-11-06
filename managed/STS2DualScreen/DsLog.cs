@@ -3,38 +3,51 @@ using Godot;
 
 namespace STS2DualScreen;
 
-// Info lines (status, perf stats, hitches) only in the dev build: libsts2ds
-// reports whether it was built with them (ds_verbose). Warnings always go out,
-// to logcat and the game log, so a release build's failures stay readable.
+// Values match LogLevel.kt and ds_log.h.
+public enum DsLogLevel
+{
+    Warn = 0,
+    Info = 1,
+    Debug = 2,
+}
+
+// Each level includes the ones before it. libsts2ds is built per build type
+// with its level (ds_log_threshold), which this follows: release logs Warn,
+// devel adds Info (milestones, decisions), debug adds Debug (per-event
+// detail, perf stats). Warnings go to logcat and the game log in every build,
+// so a release build's failures stay readable.
 public static class DsLog
 {
-    private static bool? _verbose;
+    private static DsLogLevel? _threshold;
 
-    public static bool Verbose => _verbose ??= ReadVerbose();
+    public static DsLogLevel Threshold => _threshold ??= ReadThreshold();
 
-    public static void Info(string message)
-    {
-        if (Verbose)
-            Write(0, message);
-    }
+    public static bool Enabled(DsLogLevel level) => level <= Threshold;
 
-    public static void Warn(string message) => Write(1, message);
+    public static void Debug(string message) => Write(DsLogLevel.Debug, message);
 
-    private static bool ReadVerbose()
+    public static void Info(string message) => Write(DsLogLevel.Info, message);
+
+    public static void Warn(string message) => Write(DsLogLevel.Warn, message);
+
+    private static DsLogLevel ReadThreshold()
     {
         try
         {
-            return DsNative.Verbose();
+            return (DsLogLevel)DsNative.LogThreshold();
         }
         catch (Exception)
         {
-            // An older libsts2ds without ds_verbose: keep logging.
-            return true;
+            // No libsts2ds to ask: keep logging what the dev build would.
+            return DsLogLevel.Info;
         }
     }
 
-    private static void Write(int level, string message)
+    private static void Write(DsLogLevel level, string message)
     {
+        if (!Enabled(level))
+            return;
+
         var line = $"[STS2DualScreen] {message}";
         try
         {

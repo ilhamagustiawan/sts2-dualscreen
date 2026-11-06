@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.pm.ActivityInfo;
 import android.os.Bundle;
 import android.util.Log;
+import dev.sts2ds.AppLog;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.KeyEvent;
@@ -85,7 +86,7 @@ final class DsPresentation extends Presentation implements SurfaceHolder.Callbac
                 Log.w(TAG, "bottom setFrameRate failed", e);
             }
         }
-        if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Bottom screen refresh " + mode + ": mode " + modeId + " (" + hz + " Hz)");
+        AppLog.i(TAG, "Bottom screen refresh " + mode + ": mode " + modeId + " (" + hz + " Hz)");
     }
 
     @Override

@@ -10,6 +10,8 @@
 #   make install   adb install it
 #   make dev-apk   build dist/sts2-dualscreen-<version>-dev.apk (debuggable: run-as works)
 #   make install-dev   adb install that
+#   make debug-apk   build dist/sts2-dualscreen-<version>-debug.apk (dev plus debug logging)
+#   make install-debug   adb install that
 #   make dev       dev-apk + install-dev + launch + follow the log
 #   make test      unit tests
 #   make logcat    follow the app's log
@@ -37,7 +39,7 @@ GODOT_AAR_STOCK := .cache/runtime/$(RUNTIME_TAG)/godot-4.5.1.stable.aar
 GODOT_INPUT := tools/runtime/godot-input
 ANDROID_JAR := $(ANDROID_HOME)/platforms/android-35/android.jar
 
-.PHONY: setup runtime compat managed apk install dev-apk install-dev dev test test-runtime clean logcat
+.PHONY: setup runtime compat managed apk install dev-apk install-dev debug-apk install-debug dev test test-runtime clean logcat
 
 setup:
 	./tools/setup-mac.sh
@@ -86,6 +88,18 @@ dev-apk: managed $(COMPAT_DEP) launcher/local.properties
 
 install-dev:
 	adb install -r $(DEV_DIST)
+
+DEBUG_APK := launcher/app/build/outputs/apk/debug/sts2-dualscreen-$(VERSION)-debug.apk
+DEBUG_DIST := dist/sts2-dualscreen-$(VERSION)-debug.apk
+
+debug-apk: managed $(COMPAT_DEP) launcher/local.properties
+	cd launcher && ./gradlew --no-daemon -q assembleDebug
+	mkdir -p dist
+	cp $(DEBUG_APK) $(DEBUG_DIST)
+	@echo "Built $(DEBUG_DIST)"
+
+install-debug:
+	adb install -r $(DEBUG_DIST)
 
 logcat:
 	adb logcat -v time -s STS2DualScreen Sts2Launcher GameActivity godot FMOD AndroidRuntime DEBUG

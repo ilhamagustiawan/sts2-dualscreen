@@ -26,6 +26,7 @@ package dev.sts2ds.launcher
 
 import android.content.Context
 import android.util.Log
+import dev.sts2ds.LogLevel
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -234,23 +235,29 @@ object LauncherLog {
     }
 
     /**
-     * The dev build keeps every line. The release build keeps only [warn]
-     * lines in logcat and the files; routine lines still reach the launcher's
-     * status line through the in-memory buffer, and go no further.
+     * What reaches logcat and the files. Lines above it still reach the
+     * launcher's status line through the in-memory buffer, and go no further.
      */
-    @JvmField var verbose: Boolean = dev.sts2ds.BuildConfig.DEBUG
+    @JvmField var level: LogLevel = LogLevel.BUILD
 
-    /** A routine line: the status line always, logcat and the files in the dev build only. */
-    fun log(message: String) = append(message, warning = false)
+    /** A milestone or decision: logcat and the files from the devel build up. */
+    fun log(message: String) = append(message, LogLevel.INFO)
+
+    /** Per-event detail: logcat and the files in the debug build only. */
+    fun debug(message: String) = append(message, LogLevel.DEBUG)
 
     /** Something went wrong: logcat and the files in every build. */
-    fun warn(message: String) = append(message, warning = true)
+    fun warn(message: String) = append(message, LogLevel.WARN)
 
-    private fun append(message: String, warning: Boolean, logcat: Boolean = true) {
+    private fun append(message: String, line: LogLevel, logcat: Boolean = true) {
         val stamped = "[${timeFormat.format(Date())}] $message"
-        val persist = warning || verbose
-        if (logcat) {
-            if (warning) Log.w(TAG, message) else if (verbose) Log.i(TAG, message)
+        val persist = level.allows(line)
+        if (logcat && persist) {
+            when (line) {
+                LogLevel.WARN -> Log.w(TAG, message)
+                LogLevel.INFO -> Log.i(TAG, message)
+                LogLevel.DEBUG -> Log.d(TAG, message)
+            }
         }
         buffer.add(stamped)
         // Trim if needed. CopyOnWriteArrayList is O(n) on remove but
@@ -305,7 +312,7 @@ object LauncherLog {
     fun log(message: String, error: Throwable) {
         // A failure: kept in every build. The stack trace goes to logcat only.
         Log.w(TAG, message, error)
-        append("$message: $error", warning = true, logcat = false)
+        append("$message: $error", LogLevel.WARN, logcat = false)
     }
 
     fun snapshot(): List<String> = buffer.toList()

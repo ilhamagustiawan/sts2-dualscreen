@@ -33,10 +33,24 @@ android {
         }
     }
 
+    // Log levels, shared by BuildConfig.LOG_LEVEL (LogLevel.kt) and
+    // libsts2ds (ds_log.h). Each includes the ones before it.
+    val logWarn = 0   // release: warnings and failures
+    val logInfo = 1   // devel: + milestones and decisions
+    val logDebug = 2  // debug: + per-event detail
+
+    fun com.android.build.api.dsl.ApplicationBuildType.logLevel(level: Int) {
+        buildConfigField("int", "LOG_LEVEL", level.toString())
+        externalNativeBuild { cmake { arguments += "-DDS_LOG_LEVEL=$level" } }
+    }
+
     buildTypes {
+        // For measuring and bug hunting (`make debug-apk`): devel plus debug
+        // logging.
         getByName("debug") {
             // The runtime only has release engine binaries.
             isJniDebuggable = false
+            logLevel(logDebug)
         }
         // For playing: not debuggable, so ART compiles it fully. No R8: Godot
         // and JavaSteam look classes up by name. Signed with the debug key;
@@ -45,6 +59,7 @@ android {
             isDebuggable = false
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
+            logLevel(logWarn)
         }
         // For development: the release build, debuggable, so `adb shell
         // run-as dev.sts2ds` can pull logs and saves (`make dev-apk`).
@@ -52,8 +67,7 @@ android {
             initWith(getByName("release"))
             isDebuggable = true
             matchingFallbacks += "release"
-            // Info logging in libsts2ds; the release build keeps warnings only.
-            externalNativeBuild { cmake { arguments += "-DDS_VERBOSE_LOG=ON" } }
+            logLevel(logInfo)
         }
     }
 

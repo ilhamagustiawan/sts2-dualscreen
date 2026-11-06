@@ -2,7 +2,7 @@
 // android/src/com/godot/game/PckPatcher.java at v0.1.11; package changed, log tag changed.
 package dev.sts2ds.launcher;
 
-import android.util.Log;
+import dev.sts2ds.AppLog;
 
 import org.json.JSONObject;
 
@@ -134,9 +134,9 @@ public final class PckPatcher {
 			}
 		}
 		if (result.changed()) {
-			if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "Patched Sentry metadata in PCK: " + result.toJson());
+			AppLog.i(TAG, "Patched Sentry metadata in PCK: " + result.toJson());
 		} else {
-			if (dev.sts2ds.BuildConfig.DEBUG) Log.i(TAG, "PCK Sentry metadata already patched or absent: " + result.toJson());
+			AppLog.i(TAG, "PCK Sentry metadata already patched or absent: " + result.toJson());
 		}
 		return result;
 	}
