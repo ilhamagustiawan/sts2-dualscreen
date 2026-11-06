@@ -20,6 +20,7 @@ import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import dev.sts2ds.LogLevel
 import dev.sts2ds.R
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -89,8 +90,11 @@ class SettingsActivity : Activity() {
 
         findViewById<Button>(R.id.btn_home_shortcut).setOnClickListener { addShortcut(it as Button) }
         findViewById<Button>(R.id.btn_reset).setOnClickListener { confirmReset() }
-        findViewById<Button>(R.id.btn_settings_logs).setOnClickListener {
-            startActivity(Intent(this, LogActivity::class.java))
+        val logsButton = findViewById<Button>(R.id.btn_settings_logs)
+        if (LogLevel.LOG_SCREEN) {
+            logsButton.setOnClickListener { startActivity(Intent(this, LogActivity::class.java)) }
+        } else {
+            logsButton.visibility = View.GONE
         }
         findViewById<Button>(R.id.btn_settings_back).setOnClickListener { finish() }
     }

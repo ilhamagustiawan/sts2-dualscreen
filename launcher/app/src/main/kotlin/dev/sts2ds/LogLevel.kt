@@ -19,6 +19,9 @@ enum class LogLevel {
 
     companion object {
         @JvmField val BUILD: LogLevel = entries[BuildConfig.LOG_LEVEL]
+
+        /** The release build records no routine lines, so it has no Log screen. */
+        val LOG_SCREEN: Boolean = BUILD.allows(INFO)
     }
 }
 

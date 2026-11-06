@@ -85,19 +85,21 @@ make logcat    # follow the log
 make compat COMPAT_REF=<dir with sts2.dll>   # rebuild the game's compat target with the VFX pool
 ```
 
-The dev build is debuggable, so `adb shell run-as dev.sts2ds` reaches the
-app's files (logs, saves, `dualscreen_overrides.json`). Both builds share a
-package name but not a debuggable flag: uninstall one before installing the
-other.
+The dev and debug builds are debuggable, so `adb shell run-as dev.sts2ds`
+reaches the app's files (logs, saves, `dualscreen_overrides.json`). They share
+a package name with the release build but not its debuggable flag: uninstall
+one before installing the other.
 
 ## Logs and bug reports
 
-The launcher's **Log** screen shows the launcher and game logs and can share,
-save or copy them. They hold no account name, Steam ID or token. Attach them
-to an issue together with your device and game version.
+The release build has no Log screen and records warnings and failures only.
+To report a problem, reproduce it with the dev build (`make dev-apk`: startup
+steps, settings) or the debug build (`make debug-apk`: also per-event detail
+and performance stats).
 
-The release build records warnings and failures only. For the full log
-(startup steps, settings, performance stats), reproduce with the dev build.
+Their **Logs** button shows the launcher and game logs and can share, save or
+copy them. They hold no account name, Steam ID or token. Attach them to an
+issue together with your device and game version.
 
 ## How it works
 

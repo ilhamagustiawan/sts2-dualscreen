@@ -33,6 +33,7 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import com.godot.game.GodotApp
+import dev.sts2ds.LogLevel
 import dev.sts2ds.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -132,9 +133,15 @@ class LauncherActivity : Activity() {
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        val openLogs = View.OnClickListener { startActivity(Intent(this, LogActivity::class.java)) }
-        findViewById<Button>(R.id.btn_logs).setOnClickListener(openLogs)
-        txtLogTail.setOnClickListener(openLogs)
+        val logsButton = findViewById<Button>(R.id.btn_logs)
+        if (LogLevel.LOG_SCREEN) {
+            val openLogs = View.OnClickListener { startActivity(Intent(this, LogActivity::class.java)) }
+            logsButton.setOnClickListener(openLogs)
+            txtLogTail.setOnClickListener(openLogs)
+        } else {
+            logsButton.visibility = View.GONE
+            txtLogTail.isFocusable = false
+        }
 
         LauncherLog.addListener(logListener)
         txtLogTail.text = LauncherLog.snapshot().lastOrNull().orEmpty()
