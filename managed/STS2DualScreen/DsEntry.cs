@@ -28,8 +28,6 @@ public static class DsEntry
         DsStartupLoadingScreenStyle.Apply(Harmony);
         DsLoadingDetail.Apply(Harmony);
         DsAnimWarmup.Apply(Harmony);
-        DsFinalizerGuard.Apply(Harmony);
-        DsRoomGc.Apply(Harmony);
         DsUploadWarmup.Apply(Harmony);
         DsShakeGuard.Apply(Harmony);
         DsBootCover.Apply(Harmony);
@@ -55,7 +53,6 @@ public static class DsEntry
             Callable.From(Attach).CallDeferred();
             return;
         }
-        DsFinalizerGuard.Attach(tree);
         DsParticles.Attach(tree, Harmony, Config.ParticleAmount);
         DsPerfHint.Attach(tree);
         if (!Config.Enabled)

@@ -134,15 +134,6 @@
     <string name="settings_save_pipelines_subtitle">Saves the graphics pipelines the game compiles as it goes, instead of only when it closes cleanly, which Android seldom allows. Effects then stutter only the first time ever, not every session. Vulkan only.</string>
     <string name="settings_perf_hint">CPU boost hint</string>
     <string name="settings_perf_hint_subtitle">Tells Android how long each frame takes, so the processor speeds up as soon as a fight gets busy instead of a few frames later. Android 13 and later; does nothing elsewhere.</string>
-    <string name="settings_gc">Memory cleanup (GC)</string>
-    <string name="settings_gc_default">Runtime default (4 MB)</string>
-    <string name="settings_gc_16m">16 MB nursery</string>
-    <string name="settings_gc_32m">32 MB nursery</string>
-    <string name="settings_gc_64m">64 MB nursery</string>
-    <string name="settings_gc_256m">256 MB nursery</string>
-    <string name="settings_room_gc">Clean memory between rooms</string>
-    <string name="settings_room_gc_subtitle">Runs a full cleanup while the room transition still covers the screen, so it does not pause a fight later. Applies on the next launch.</string>
-    <string name="settings_gc_subtitle">How much new memory the game fills before a short cleanup pause. Bigger means fewer pauses in busy fights, for a little more memory. Applies on the next launch.</string>
     <string name="settings_combat_code">Pre-compile combat code</string>
     <string name="settings_vfx_pool">Pool combat effects</string>
     <string name="settings_vfx_pool_subtitle">Reuses card and hit effects within a room instead of building each one anew, which removes the stutter as cards are played. Off: only a few effects are reused. Needs the rebuilt compat pack; applies on the next launch.</string>

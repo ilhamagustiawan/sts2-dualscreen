@@ -66,27 +66,18 @@ how to measure.
   `make apk` builds it into the game version's compat target from
   `tools/runtime/compat-patches/vfx-pool.patch` over the pinned compat commit
   (`COMPAT=release` skips it); card-moving families stay unpooled.
-- **GC nursery.** `MONO_GC_PARAMS=nursery-size=256m,major=marksweep-conc` by
-  default: fewer minor collections in busy fights.
 - **Upload warmup.** Before the first preload session, one thread per core
   uploads a small texture at the same moment while the main thread waits
   (`upload_warmup`). That grows the renderer's pool of texture upload workers
   to full size. Grown later by the game's threaded preload, it sometimes
   aborted the engine (`Index p_index = 1 is out of bounds` under
   `CompressedTexture2D::load`).
-- **Finalizers on the game thread.** Mono's finalizer thread releases a
-  dropped Godot object in two engine steps; the game thread can free the
-  object between them, and the finalizer then locks a destroyed mutex (the
-  process aborts with `FORTIFY: pthread_mutex_lock called on a destroyed
-  mutex`, then a run of `Unreferenced static string` lines). Fast play
-  makes it likely. Finalizer-initiated releases are held back and run on the
-  game thread each frame and under each room transition
-  (`main_thread_finalize`). Array, Dictionary and Variant finalizers are held
-  back too: they can drop a Resource's last reference and free it.
-- **Room GC.** A full collection, plus the finalizers it queues, runs at
-  `NTransition.RoomFadeIn`, while the transition still covers the screen
-  (`room gc: collected in … ms` in the debug build's log).
-  Off by default: the destroyed-mutex crash came 52 ms after it once.
+- **Garbage collection as upstream.** Mono runs with its own collector
+  settings and finalizer thread: no nursery size, no forced collection
+  between rooms, no finalizer redirect. Each was tried here and dropped;
+  the destroyed-mutex abort after a map pick (`FORTIFY:
+  pthread_mutex_lock called on a destroyed mutex`, then `Unreferenced
+  static string` lines) was still seen with them on.
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
   Android's performance hint API (ADPF) against a one-frame target.
 - **Pacing.** The top screen is locked to 60 Hz by default; the FPS limit and
@@ -108,8 +99,6 @@ or the game's `settings.save`.
 | Advanced › Pause hidden tabs | `pause_hidden_pages` | on |
 | Particle effects | `particle_amount` | half |
 | CPU boost hint | `perf_hint` | on |
-| Memory cleanup (GC) | `MONO_GC_PARAMS` | 256 MB nursery |
-| Clean memory between rooms | `room_gc` | off |
 | Keep compiled shaders | `override.cfg` | on |
 | Frame pacing | `override.cfg` | steady |
 | FPS limit | `fps_limit` (`settings.save`) | 60 |
@@ -123,14 +112,13 @@ or the game's `settings.save`.
 
 The launcher rewrites `dualscreen.json` on every launch.
 `files/dualscreen_overrides.json`, if present, is laid over it (same keys; it
-wins). It can force any key above, and also takes four that have no setting:
+wins). It can force any key above, and also takes three that have no setting:
 
 | Key | Default | Range |
 |---|---|---|
 | `combat_motion_fps` | 15 | 10–60 |
 | `canvas_scale` | 1.3 | 1–2 |
 | `upload_warmup` | true | true/false |
-| `main_thread_finalize` | true | true/false |
 
 The development build (`make dev-apk`) is debuggable, so it can be pushed with
 `run-as`:

@@ -119,29 +119,6 @@ class SettingsStore(context: Context) {
         set(value) { prefs.edit().putBoolean(KEY_VFX_POOL, value).apply() }
 
     /**
-     * Collect garbage while the room transition still covers the screen
-     * (DsRoomGc), so the pause falls where nothing is visible rather than
-     * later in a fight. Off by default: the destroyed-mutex crash came
-     * right after it, at a map pick. Written into dualscreen.json.
-     */
-    var roomGc: Boolean
-        get() = prefs.getBoolean(KEY_ROOM_GC, false)
-        set(value) { prefs.edit().putBoolean(KEY_ROOM_GC, value).apply() }
-
-    /**
-     * Mono's garbage collector young generation (nursery): [GC_DEFAULT] for
-     * the runtime's own (4 MB), or [GC_16M] to [GC_256M]. A bigger nursery
-     * fills up less often, so there are fewer minor collections, each a pause
-     * on the game thread, while cards and effects churn objects. 256 MB by
-     * default: 64 MB still collects mid-fight, the Thor has the memory, and
-     * pause time grows with what survives, not with the nursery's size.
-     * GamePrep sets MONO_GC_PARAMS.
-     */
-    var gcNursery: String
-        get() = prefs.getString(KEY_GC_NURSERY, GC_256M) ?: GC_256M
-        set(value) { prefs.edit().putString(KEY_GC_NURSERY, value).apply() }
-
-    /**
      * Tell Android how long each game frame's work takes against a one-frame
      * target (ADPF, Android 13+), so CPU clocks rise as a burst of work
      * starts. On by default; does nothing on devices without it.
@@ -209,11 +186,6 @@ class SettingsStore(context: Context) {
         const val REFRESH_SYSTEM = "system"
         const val REFRESH_60HZ = "60hz"
         const val REFRESH_HIGH = "high"
-        const val GC_DEFAULT = "default"
-        const val GC_16M = "16m"
-        const val GC_32M = "32m"
-        const val GC_64M = "64m"
-        const val GC_256M = "256m"
         const val BRANCH_STABLE = "public"
         const val BRANCH_BETA = "public-beta"
 
@@ -228,9 +200,7 @@ class SettingsStore(context: Context) {
         private const val KEY_REFRESH_RATE = "refresh_rate"
         private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
-        private const val KEY_GC_NURSERY = "gc_nursery"
         private const val KEY_VFX_POOL = "vfx_pool"
-        private const val KEY_ROOM_GC = "room_gc"
         private const val KEY_PERF_HINT = "perf_hint"
         private const val KEY_SAVE_PIPELINES = "save_pipelines_often"
         private const val KEY_FRAME_PACING = "frame_pacing"

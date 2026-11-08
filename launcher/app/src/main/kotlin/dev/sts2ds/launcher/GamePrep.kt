@@ -100,7 +100,7 @@ object GamePrep {
         }
         val started = System.nanoTime()
         val settings = SettingsStore(context)
-        configureEnvironment(files, settings.gcNursery)
+        configureEnvironment(files)
 
         val state = context.getSharedPreferences("game_prep", Context.MODE_PRIVATE)
         val version = readVersion(gameDir)
@@ -194,7 +194,6 @@ object GamePrep {
                 .put("perf_hint", settings.perfHint)
                 .put("compat", "${compat.packId}/${compat.targetId}")
                 .let { putCaptureSwitches(it, settings.presentThread, settings.staggerCaptures, settings.pauseHiddenPages) }
-                .put("room_gc", settings.roomGc)
                 .toString(2)
         )
         applyPerformanceSettings(context, files, settings)
@@ -470,10 +469,9 @@ object GamePrep {
     /**
      * HOME and TMPDIR must be writable before Mono starts: it derives
      * ApplicationData from HOME/.config and caches it (see
-     * Sts2MobileLauncher's AndroidRuntimeEnvironment). MONO_GC_PARAMS too:
-     * SGen reads it once, as the engine brings Mono up after onCreate.
+     * Sts2MobileLauncher's AndroidRuntimeEnvironment).
      */
-    private fun configureEnvironment(files: File, gcNursery: String) {
+    private fun configureEnvironment(files: File) {
         File(files, ".config").mkdirs()
         val tmp = File(files, "tmp").apply { mkdirs() }
         try {
@@ -482,9 +480,6 @@ object GamePrep {
             Os.setenv("TMP", tmp.absolutePath, true)
             Os.setenv("TEMP", tmp.absolutePath, true)
             System.setProperty("java.io.tmpdir", tmp.absolutePath)
-            val gc = gcParams(gcNursery)
-            if (gc != null) Os.setenv("MONO_GC_PARAMS", gc, true) else Os.unsetenv("MONO_GC_PARAMS")
-            LauncherLog.debug("MONO_GC_PARAMS=${gc ?: "(runtime default)"}")
         } catch (e: Exception) {
             LauncherLog.warn("Could not set runtime environment: ${e.message}")
         }
@@ -498,21 +493,6 @@ object GamePrep {
         json.put("present_thread", presentThread)
             .put("stagger_captures", stagger)
             .put("pause_hidden_pages", pauseHidden)
-
-    /**
-     * SGen options for the launcher's GC setting, or null for the runtime's
-     * own. The shipped libmonosgen-2.0.so (Mono 9.0.7) takes nursery-size as
-     * a power of two (anything else is ignored with a warning) and reports
-     * "sgen (concurrent by default)", so major=marksweep-conc only says
-     * explicitly what it already does.
-     */
-    fun gcParams(nursery: String): String? = when (nursery) {
-        SettingsStore.GC_16M -> "nursery-size=16m,major=marksweep-conc"
-        SettingsStore.GC_32M -> "nursery-size=32m,major=marksweep-conc"
-        SettingsStore.GC_64M -> "nursery-size=64m,major=marksweep-conc"
-        SettingsStore.GC_256M -> "nursery-size=256m,major=marksweep-conc"
-        else -> null
-    }
 
     private fun apkStamp(context: Context): Long =
         context.packageManager.getPackageInfo(context.packageName, 0).lastUpdateTime

@@ -70,7 +70,7 @@ class GameSettingsFile(val file: File) {
          * then Mono's exit prints "Unreferenced static string" lines), as
          * Sts2MobileLauncher issue 109 reports, so both are forced off every launch.
          * Unproven as the cause: the same abort (a destroyed mutex locked by a
-         * finalizer) was seen with both off. See DsFinalizerGuard.
+         * finalizer) was seen with both off.
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
         const val KEY_HIT_EFFECT_WARMUP = "preload_combat_hit_effect_warmup_enabled"

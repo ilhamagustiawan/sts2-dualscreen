@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Godot;
@@ -23,10 +22,6 @@ internal static class DsAnimWarmup
     // warms every creature of every fight; after the first, its pipelines and
     // code are hot (and the Vulkan pipeline cache keeps them across sessions).
     private static readonly HashSet<string> Warmed = new();
-
-    // A Spine warmup ran this fight, so its garbage is drained before the
-    // room's mask lifts (DrainBeforeUnmask).
-    private static bool _spineWarmed;
 
     public static void Apply(Harmony harmony)
     {
@@ -52,45 +47,6 @@ internal static class DsAnimWarmup
         }
 
         PatchPreviewCreate(harmony);
-        PatchMaskRemoval(harmony, warmupType);
-    }
-
-    // The warmup leaves dozens of short-lived Spine wrappers behind. Left to
-    // the finalizer thread, they are released at some later GC, from that
-    // thread, while the game thread runs Godot code. With the warmup on, the
-    // game froze about a second after one, every thread waiting on a lock;
-    // this is the likely cause. Draining them here makes that release happen
-    // while the game thread waits in managed code, under the mask.
-    private static void PatchMaskRemoval(Harmony harmony, Type warmupType)
-    {
-        var remove = AccessTools.Method(warmupType, "RemoveWarmupMask");
-        if (remove == null)
-        {
-            DsLog.Warn("anim warmup: no RemoveWarmupMask; warmup garbage left to the finalizer thread");
-            return;
-        }
-
-        try
-        {
-            harmony.Patch(remove, prefix: new HarmonyMethod(typeof(DsAnimWarmup), nameof(DrainBeforeUnmask)));
-        }
-        catch (Exception ex)
-        {
-            DsLog.Warn($"anim warmup: could not patch RemoveWarmupMask: {ex.Message}");
-        }
-    }
-
-    private static void DrainBeforeUnmask()
-    {
-        if (!_spineWarmed)
-            return;
-        _spineWarmed = false;
-
-        var watch = Stopwatch.StartNew();
-        GC.Collect();
-        DsFinalizerGuard.WaitFinalizers();
-        DsFinalizerGuard.DrainAll();
-        DsLog.Debug($"anim warmup: drained warmup garbage in {watch.ElapsedMilliseconds} ms");
     }
 
     // Compat packs from 450082d build an isolated SpineWarmupPreview per
@@ -151,7 +107,6 @@ internal static class DsAnimWarmup
         DsShakeGuard.Begin();
         if (string.Equals(mode, "off", StringComparison.OrdinalIgnoreCase))
             return;
-        _spineWarmed = true;
 
         try
         {
