@@ -23,7 +23,7 @@ public static class DsEntry
         // Startup optimizations, restyled loading screen, and animation safety net
         // run on single- and dual-screen configs alike.
         DsStartup.Apply(Harmony);
-        DsWarmupCache.Apply(Harmony);
+        DsStartupWarmup.Apply(Harmony);
         DsDeferredPreload.Apply(Harmony);
         DsStartupLoadingScreenStyle.Apply(Harmony);
         DsLoadingDetail.Apply(Harmony);

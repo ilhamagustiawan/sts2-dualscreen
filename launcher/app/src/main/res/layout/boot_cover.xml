@@ -2,8 +2,9 @@
 <!--
   Over the game while Godot boots, so Play leads to the launcher's own dusk
   rather than a black screen. GodotApp adds it; the mod lifts it once the game
-  has drawn something of its own. Never clickable or focusable: touches and
-  keys go straight through to the game underneath.
+  has drawn something of its own, or holds it through the startup preload,
+  naming each step in boot_status. Not focusable: keys go straight through to
+  the game. Touches do too, until a held cover takes them (setBootCoverStatus).
 -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -65,11 +66,13 @@
         </LinearLayout>
 
         <dev.sts2ds.launcher.LoadingBar
+            android:id="@+id/boot_bar"
             android:layout_width="480dp"
             android:layout_height="14dp"
             android:layout_marginTop="24dp" />
 
         <TextView
+            android:id="@+id/boot_status"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"

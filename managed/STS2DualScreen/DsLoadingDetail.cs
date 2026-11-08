@@ -13,8 +13,12 @@ namespace STS2DualScreen;
 //   Loading assets 312/790  <- this
 //
 // While the Common preload runs, the line follows that session's own
-// counters. Afterwards (and on a warmup cache HIT, which has no screen of
-// its own) the steps that follow report themselves with SetStep.
+// counters. Afterwards the steps that follow report themselves with SetStep.
+//
+// Progress (0..1) for the boot cover's bar: the Common preload fills the
+// first share, each later step reports where it is past that.
+//
+//   0 ── Common assets ── 0.6 ─ code 0.65 ─ effects 0.7..0.9 ─ 0.92 ─ 0.96 ─ 1
 internal static class DsLoadingDetail
 {
     private const string OverlayType = "MegaCrit.Sts2.Core.Nodes.CommonUi.NLoadingOverlay";
@@ -29,8 +33,19 @@ internal static class DsLoadingDetail
     private static readonly BindingFlags Fields = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
     private static readonly string[] PendingQueues = { "_toLoad", "_loading", "_finalizing", "_vfxScenes" };
 
+    /// <summary>Where each startup step starts on the bar.</summary>
+    public const float CommonShare = 0.6f;
+    public const float CodeAt = 0.65f;
+    public const float EffectsAt = 0.7f;
+    public const float EffectsEnd = 0.9f;
+    public const float GameplayAt = 0.92f;
+    public const float MenusAt = 0.96f;
+    /// <summary>No progress known.</summary>
+    public const float Unknown = -1f;
+
     private static object _session;
     private static volatile string _step;
+    private static float _stepProgress = Unknown;
     private static Label _detail;
     private static SceneTree _tree;
 
@@ -69,15 +84,36 @@ internal static class DsLoadingDetail
         _session = session;
     }
 
-    /// <summary>A step outside that session; null clears it.</summary>
-    public static void SetStep(string text)
+    /// <summary>What the line says now: the session's counters, else the step; "" for none.</summary>
+    public static string Text => Describe();
+
+    /// <summary>The bar's fill for the line above; Unknown before the session starts.</summary>
+    public static float Progress
+    {
+        get
+        {
+            if (_session != null && !DsStartup.CommonPreloaded)
+            {
+                var (loaded, total) = Counters(_session);
+                return total > 0 ? CommonShare * loaded / total : 0f;
+            }
+            return _stepProgress;
+        }
+    }
+
+    /// <summary>A step outside that session; null clears it. Progress stays where it was unless given.</summary>
+    public static void SetStep(string text, float progress = Unknown)
     {
         _step = text;
+        if (progress >= 0f)
+        {
+            _stepProgress = progress;
+        }
     }
 
     private static void PrewarmPrefix()
     {
-        SetStep(StepCombatCode);
+        SetStep(StepCombatCode, CodeAt);
     }
 
     private static void ReadyPostfix(Control __instance)
@@ -157,8 +193,14 @@ internal static class DsLoadingDetail
         return _step ?? "";
     }
 
-    // The session has no public counters; its queues hold what is left.
     private static string DescribeSession(object session)
+    {
+        var (loaded, total) = Counters(session);
+        return total > 0 ? $"Loading assets {loaded:N0}/{total:N0}" : "";
+    }
+
+    // The session has no public counters; its queues hold what is left.
+    private static (int loaded, int total) Counters(object session)
     {
         var loaded = ReadInt(session, "_totalLoaded");
         var left = 0;
@@ -167,8 +209,7 @@ internal static class DsLoadingDetail
             left += CountOf(session, queue);
         }
 
-        var total = loaded + left;
-        return total > 0 ? $"Loading assets {loaded:N0}/{total:N0}" : "";
+        return (loaded, loaded + left);
     }
 
     private static int ReadInt(object target, string field)

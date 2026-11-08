@@ -17,11 +17,15 @@ import dev.sts2ds.R
 
 /**
  * The boot cover's loading bar: a dark rounded track edged in gold, with a
- * glowing gold segment sweeping across it. Indeterminate; the game reports
- * no progress while it boots.
+ * glowing gold segment sweeping across it. Indeterminate while Godot boots
+ * (it reports nothing then); once the mod reports progress ([setProgress])
+ * a gold fill eases up to it and the sweep runs over the fill only.
  *
  *   ╭──────────────────────────────────────╮
- *   │        ░▒▓████▓▒░                    │  → sweeps, then repeats
+ *   │        ░▒▓████▓▒░                    │  indeterminate: sweeps, repeats
+ *   ╰──────────────────────────────────────╯
+ *   ╭──────────────────────────────────────╮
+ *   │▓▓▓▓▓▓▓▓░▒▓█▓▒░▓▓▓▓▓                  │  progress: fill, sweep over it
  *   ╰──────────────────────────────────────╯
  */
 class LoadingBar @JvmOverloads constructor(
@@ -36,6 +40,10 @@ class LoadingBar @JvmOverloads constructor(
         const val INSET_DP = 2.5f
         const val TRACK_COLOR = 0x8C0E0B09.toInt()
         const val BORDER_ALPHA = 150
+        const val FILL_ALPHA = 170
+        // Share of the gap to the target closed per frame: eases, never jumps.
+        const val EASE = 0.12f
+        const val INDETERMINATE = -1f
     }
 
     private val gold = ContextCompat.getColor(context, R.color.title_gold)
@@ -49,11 +57,15 @@ class LoadingBar @JvmOverloads constructor(
         alpha = BORDER_ALPHA
     }
     private val segment = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val outer = RectF()
     private val inner = RectF()
     private val clip = Path()
+    private val filled = RectF()
     private var phase = 0f
+    private var target = INDETERMINATE
+    private var shown = 0f
 
     private val sweep = ValueAnimator.ofFloat(0f, 1f).apply {
         duration = SWEEP_MS
@@ -61,8 +73,19 @@ class LoadingBar @JvmOverloads constructor(
         interpolator = AccelerateDecelerateInterpolator()
         addUpdateListener {
             phase = it.animatedValue as Float
+            if (target >= 0f) {
+                shown += (target - shown) * EASE
+            }
             invalidate()
         }
+    }
+
+    /** 0..1 fills the bar; it never moves back. A negative value is ignored. */
+    fun setProgress(progress: Float) {
+        if (progress < 0f) {
+            return
+        }
+        target = maxOf(target, progress.coerceAtMost(1f))
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -83,17 +106,32 @@ class LoadingBar @JvmOverloads constructor(
             floatArrayOf(0f, 0.3f, 0.5f, 0.7f, 1f),
             Shader.TileMode.CLAMP,
         )
+        fill.shader = LinearGradient(
+            inner.left, 0f, inner.right, 0f,
+            Color.argb(FILL_ALPHA, Color.red(gold) / 2, Color.green(gold) / 2, Color.blue(gold) / 2),
+            Color.argb(FILL_ALPHA, Color.red(gold), Color.green(gold), Color.blue(gold)),
+            Shader.TileMode.CLAMP,
+        )
     }
 
     override fun onDraw(canvas: Canvas) {
         val radius = outer.height() / 2f
         canvas.drawRoundRect(outer, radius, radius, track)
 
-        // Starts fully off the left edge, ends fully off the right.
-        val segW = inner.width() * SEGMENT_FRACTION
-        val x = inner.left - segW + phase * (inner.width() + segW)
+        // With progress: the fill, and the sweep kept to it.
         canvas.save()
         canvas.clipPath(clip)
+        var span = inner.width()
+        if (target >= 0f) {
+            span = inner.width() * shown
+            filled.set(inner.left, inner.top, inner.left + span, inner.bottom)
+            canvas.drawRect(filled, fill)
+            canvas.clipRect(filled)
+        }
+
+        // Starts fully off the left edge, ends fully off the right.
+        val segW = inner.width() * SEGMENT_FRACTION
+        val x = inner.left - segW + phase * (span + segW)
         canvas.translate(x, 0f)
         canvas.drawRect(0f, inner.top, segW, inner.bottom, segment)
         canvas.restore()

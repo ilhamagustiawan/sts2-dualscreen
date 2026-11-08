@@ -191,8 +191,6 @@ object GamePrep {
                 .put("default_tab", settings.dualScreenDefaultTab)
                 .put("particle_amount", settings.particleAmount / 100.0)
                 .put("build", "$dllSha:${state.getString("pck_stamp", "")}")
-                // The warmup cache trusts only a pipeline cache written after this.
-                .put("build_time_ms", maxOf(pck.lastModified(), gameDll.lastModified()))
                 .put("perf_hint", settings.perfHint)
                 .put("compat", "${compat.packId}/${compat.targetId}")
                 .let { putCaptureSwitches(it, settings.presentThread, settings.staggerCaptures, settings.pauseHiddenPages) }
@@ -306,7 +304,6 @@ object GamePrep {
         // MonoMod leaves a dump of every patched method in TMPDIR, each launch.
         files.resolve("tmp").listFiles { f -> f.name.startsWith("MonoMod_DMD_") }?.forEach { it.delete() }
         if (state.getString("cache_build", "") == build) return
-        File(files, "dualscreen_warmup.json").delete()
         var bytes = 0L
         for (cache in BUILD_CACHE_DIRS.map { File(files, it) }) {
             if (!cache.exists()) continue

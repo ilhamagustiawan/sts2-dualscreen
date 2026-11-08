@@ -53,9 +53,11 @@ how to measure.
   (the compat pack's preload options). Its animation and hit-effect warmups
   are forced off: fights still crashed with them on. That they were the
   cause is unproven; fights crashed with them off too (see below).
-- **Startup warmup cache.** The startup tree warmup is skipped when the
-  shader cache and the Vulkan pipeline cache on disk are newer than the game
-  build (`warmup cache: HIT` / `MISS` in the log).
+- **Startup warmup every launch.** The startup tree warmup runs in full on
+  each launch, cached shaders or not: a skipped one left effects to compile
+  in the first rooms. It and the rest of the compat preload run under the
+  boot cover ("Loading..."), whose line names each step; the compat pack's
+  "Optimizing startup..." screen is not shown.
 - **Pipeline cache saved often.** `override.cfg` next to the game sets
   `rendering_device/pipeline_cache/save_chunk_size_mb=0.25`, since Android
   seldom gives the engine the clean exit that otherwise saves it.

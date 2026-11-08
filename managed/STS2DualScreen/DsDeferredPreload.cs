@@ -4,26 +4,31 @@ using HarmonyLib;
 
 namespace STS2DualScreen;
 
-// The compat pack's preload after the main menu ("Optimizing startup..."),
-// kept from covering a menu that is already usable.
+// The compat pack's preload after the main menu, under the boot cover.
 //
-// Once the menu is ready the compat pack shows a full-screen loading screen,
-// loads the Common and MainMenu sets again, one at a time on the main thread,
-// and then warms the vfx scenes. With the game's own preload on, the game is
-// already loading those sets in its 'Common' session, so the second pass only
-// competes with it (some 10 s on the Thor). Here that pass waits for the
-// game's session instead, and the screen is left out when what follows is
-// cheap: the warmup cache is a HIT, or the tree warmup (which draws effects
-// behind the screen) is off. On a MISS the screen stays for the tree warmup.
+// Once the menu is ready the compat pack shows its own loading screen
+// ("Optimizing startup..."), loads the Common and MainMenu sets again, one at
+// a time on the main thread, and then warms the vfx scenes. Here its screen is
+// left out: the launcher's boot cover ("Loading...") stays up instead until
+// the preload ends, its line naming each step (DsBootCover.HoldTop).
+//
+//   boot cover: Loading assets 312/790 -> Compiling combat code
+//            -> Rendering combat effects -> ... -> lifted, menu usable
+//
+// With the game's own preload on, the game is already loading those sets in
+// its 'Common' session, so the second pass only competes with it (some 10 s
+// on the Thor). Here that pass waits for the game's session instead.
 internal static class DsDeferredPreload
 {
     private const string PatchesType = "STS2Mobile.Patches.LifecycleAndPerformancePatches";
     private const string ScreenType = "STS2Mobile.Patches.AndroidStartupLoadingScreen";
     private static readonly TimeSpan CommonWaitLimit = TimeSpan.FromSeconds(60);
 
-    private static Func<bool> _originalCommonPreload, _treeWarmupEnabled;
-    private static Func<string> _vfxMode, _treeScope;
-    private static Func<int> _treeFrames;
+    private const string StepGameplayAssets = "Loading gameplay assets";
+    private const string StepMenus = "Preparing menus";
+
+    private static Func<bool> _originalCommonPreload;
+    private static AccessTools.FieldRef<bool> _preloadStarted;
     private static object _noScreen;
 
     public static void Apply(Harmony harmony)
@@ -40,22 +45,33 @@ internal static class DsDeferredPreload
             var showScreen = AccessTools.Method(patches, "ShowDeferredPreloadScreenAsync", new[] { typeof(Godot.Node) });
             var serialized = AccessTools.Method(patches, "RunSerializedAndroidPreloadAsync", new[] { screen });
             _originalCommonPreload = Getter<bool>(patches, "ShouldUseOriginalCommonMainMenuPreload");
-            _treeWarmupEnabled = Getter<bool>(patches, "IsVfxTreeWarmupEnabled");
-            _vfxMode = Getter<string>(patches, "GetVfxWarmupMode");
-            _treeScope = Getter<string>(patches, "GetVfxTreeWarmupScope");
-            _treeFrames = Getter<int>(patches, "GetVfxTreeWarmupFrames");
 
             if (serialized != null && _originalCommonPreload != null)
             {
                 harmony.Patch(serialized, prefix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(SerializedPrefix)));
             }
-            if (showScreen != null && _treeWarmupEnabled != null && _vfxMode != null && _treeScope != null && _treeFrames != null)
+
+            // The cover replaces the compat screen only if it can be held
+            // for the whole preload and lifted at its end.
+            var start = AccessTools.Method(patches, "StartSafeDeferredPreload");
+            var run = AccessTools.Method(patches, "RunSafeDeferredPreloadAsync");
+            var started = AccessTools.Field(patches, "_safePreloadStarted");
+            if (showScreen == null || start == null || run == null || started == null)
             {
-                _noScreen = AccessTools.Method(typeof(Task), nameof(Task.FromResult))
-                    .MakeGenericMethod(screen)
-                    .Invoke(null, new object[] { null });
-                harmony.Patch(showScreen, prefix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(ShowScreenPrefix)));
+                DsLog.Warn("deferred preload: compat preload flow not found; its loading screen stays");
+                return;
             }
+            _preloadStarted = AccessTools.StaticFieldRefAccess<bool>(started);
+            _noScreen = AccessTools.Method(typeof(Task), nameof(Task.FromResult))
+                .MakeGenericMethod(screen)
+                .Invoke(null, new object[] { null });
+            harmony.Patch(showScreen, prefix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(ShowScreenPrefix)));
+            harmony.Patch(start, postfix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(StartPostfix)));
+            harmony.Patch(run, postfix: new HarmonyMethod(typeof(DsDeferredPreload), nameof(RunPostfix)));
+
+            // Steps the compat pack would only have named on its own screen.
+            PatchStep(harmony, patches, "RunGameplayWarmCachePreloadAsync", nameof(GameplayAssetsPrefix));
+            PatchStep(harmony, patches, "WarmMainMenuHotspotsAsync", nameof(MenusPrefix));
         }
         catch (Exception e)
         {
@@ -69,27 +85,48 @@ internal static class DsDeferredPreload
         return method == null || method.ReturnType != typeof(T) ? null : method.CreateDelegate<Func<T>>();
     }
 
+    private static void PatchStep(Harmony harmony, Type patches, string method, string prefix)
+    {
+        var target = AccessTools.Method(patches, method);
+        if (target == null)
+        {
+            DsLog.Warn($"deferred preload: {method} not found; its step goes unnamed");
+            return;
+        }
+        harmony.Patch(target, prefix: new HarmonyMethod(typeof(DsDeferredPreload), prefix));
+    }
+
+    // The boot cover covers the preload instead of the compat screen.
     private static bool ShowScreenPrefix(ref object __result)
     {
-        try
+        __result = _noScreen;
+        return false;
+    }
+
+    // The preload was scheduled from the main menu's _Ready: keep the cover,
+    // which the menu would otherwise lift a couple of frames later.
+    private static void StartPostfix()
+    {
+        if (_preloadStarted())
         {
-            string why;
-            if (!_treeWarmupEnabled())
-                why = "tree warmup off";
-            else if (DsWarmupCache.Evaluate(_vfxMode(), _treeScope(), _treeFrames()).hit)
-                why = "warmup cache hit";
-            else
-                return true;
-            DsLog.Info($"deferred preload: no loading screen over the menu ({why})");
-            __result = _noScreen;
-            return false;
-        }
-        catch (Exception e)
-        {
-            DsLog.Warn($"deferred preload: keeping the loading screen: {e.Message}");
-            return true;
+            DsBootCover.HoldTop();
         }
     }
+
+    // The preload's end, success or not: lift the cover on the game thread.
+    private static void RunPostfix(Task __result)
+    {
+        if (__result == null)
+        {
+            DsBootCover.ReleaseTop();
+            return;
+        }
+        __result.ContinueWith(_ => Godot.Callable.From(DsBootCover.ReleaseTop).CallDeferred());
+    }
+
+    private static void GameplayAssetsPrefix() => DsLoadingDetail.SetStep(StepGameplayAssets, DsLoadingDetail.GameplayAt);
+
+    private static void MenusPrefix() => DsLoadingDetail.SetStep(StepMenus, DsLoadingDetail.MenusAt);
 
     private static bool SerializedPrefix(ref Task __result)
     {

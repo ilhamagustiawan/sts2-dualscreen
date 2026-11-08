@@ -181,7 +181,7 @@ internal static class DsStartupLoadingScreenStyle
             details.AddThemeConstantOverride("shadow_offset_y", 1);
         }
 
-        // 8. HintLabel: Muted cream with informative message based on cache state
+        // 8. HintLabel: Muted cream with informative message
         if (screen.GetNodeOrNull<Label>("CenterContainer/VBox/HintLabel") is { } hint)
         {
             if (regularFont != null)
@@ -189,9 +189,7 @@ internal static class DsStartupLoadingScreenStyle
             hint.Modulate = Colors.White;
             hint.AddThemeFontSizeOverride("font_size", 16);
             hint.AddThemeColorOverride("font_color", new Color("#F4EEE080"));
-            hint.Text = DsWarmupCache.IsHit
-                ? "Combat effects already prepared"
-                : "First launch: preparing combat effects. This happens once.";
+            hint.Text = "Preparing combat effects";
         }
 
         // 9. Progress bar: Card fill panel with gold border and gold fill

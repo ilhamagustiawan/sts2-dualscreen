@@ -9,6 +9,7 @@ import dev.sts2ds.AppLog;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.TextView;
 
 import androidx.core.splashscreen.SplashScreen;
 
@@ -31,6 +32,7 @@ import dev.sts2ds.launcher.Backdrop;
 import dev.sts2ds.launcher.GamePrep;
 import dev.sts2ds.launcher.GameSettingsFile;
 import dev.sts2ds.launcher.LauncherActivity;
+import dev.sts2ds.launcher.LoadingBar;
 import dev.sts2ds.launcher.SettingsActivity;
 import dev.sts2ds.launcher.SettingsStore;
 
@@ -63,6 +65,12 @@ public class GodotApp extends GodotActivity {
 
     private DualScreenController dualScreen;
     private View bootCover;
+    private final Runnable bootCoverTimeout = () -> {
+        liftBootCover("timeout");
+        if (dualScreen != null) {
+            dualScreen.liftCover();
+        }
+    };
     private GamePrep.Prepared prepared;
     private String refreshRate = RefreshRate.SYSTEM;
     private GodotInputSourceHost inputSourceHost;
@@ -121,12 +129,24 @@ public class GodotApp extends GodotActivity {
         }
         addContentView(bootCover, new ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        bootCover.postDelayed(() -> {
-            liftBootCover("timeout");
-            if (dualScreen != null) {
-                dualScreen.liftCover();
-            }
-        }, BOOT_COVER_TIMEOUT_MS);
+        bootCover.postDelayed(bootCoverTimeout, BOOT_COVER_TIMEOUT_MS);
+    }
+
+    // A held cover: the line names the step, the bar shows progress, the
+    // timeout restarts (the game is still making progress), and touches stop
+    // at the cover, since the menu underneath is already live.
+    private void showBootStatus(String text, double progress) {
+        View cover = bootCover;
+        if (cover == null) {
+            return;
+        }
+        TextView status = cover.findViewById(R.id.boot_status);
+        status.setText(text == null || text.isEmpty() ? getString(R.string.boot_cover_loading) : text);
+        LoadingBar bar = cover.findViewById(R.id.boot_bar);
+        bar.setProgress((float) progress);
+        cover.setClickable(true);
+        cover.removeCallbacks(bootCoverTimeout);
+        cover.postDelayed(bootCoverTimeout, BOOT_COVER_TIMEOUT_MS);
     }
 
     private void liftBootCover(String why) {
@@ -240,6 +260,19 @@ public class GodotApp extends GodotActivity {
             return false;
         }
         activity.runOnUiThread(() -> activity.liftBootCover("main menu"));
+        return true;
+    }
+
+    /**
+     * The startup step under a held cover; empty for the plain "Loading…".
+     * Progress is 0..1, or negative while unknown.
+     */
+    public static boolean setBootCoverStatus(String text, double progress) {
+        GodotApp activity = current;
+        if (activity == null) {
+            return false;
+        }
+        activity.runOnUiThread(() -> activity.showBootStatus(text, progress));
         return true;
     }
 

@@ -10,6 +10,8 @@ namespace STS2DualScreen;
 /// loading screen or the main menu up top, the menu art or a run below.
 /// Each side lifts once; the Java side has its own timeout as a backstop.
 /// Also tells when the top screen's main menu is up (OnMenuReady).
+/// The top cover can be held past the menu (HoldTop) while the startup
+/// preload runs; its "Loading..." line then names each step.
 /// </summary>
 internal static class DsBootCover
 {
@@ -18,8 +20,16 @@ internal static class DsBootCover
     // Frames drawn after the trigger before lifting, so the game's picture is
     // on screen under the cover rather than still on its way.
     private const int SettleFrames = 2;
+    // How often a held cover's line follows the step (its counters change every frame).
+    private const ulong StatusIntervalMs = 200;
 
     private static bool _topLifted;
+    private static bool _topHeld;
+    private static bool _topGone;
+    private static string _status;
+    private static int _percent = -1;
+    private static ulong _nextStatusMs;
+    private static GodotObject _app;
     private static bool _bottomLifted;
 
     // The main menu's first appearance, and who waits for it.
@@ -95,7 +105,68 @@ internal static class DsBootCover
             return;
         }
         _topLifted = true;
-        AfterFrames(SettleFrames, () => Call("liftBootCoverFromGame"));
+        AfterFrames(SettleFrames, SendLiftTop);
+    }
+
+    /// <summary>Keeps the top cover up past the main menu, until ReleaseTop.</summary>
+    public static void HoldTop()
+    {
+        if (_topHeld || _topGone || Engine.GetMainLoop() is not SceneTree tree)
+        {
+            return;
+        }
+        _topHeld = true;
+        tree.ProcessFrame += PumpStatus;
+    }
+
+    /// <summary>Ends a hold and lifts the top cover. Game thread only.</summary>
+    public static void ReleaseTop()
+    {
+        if (!_topHeld)
+        {
+            return;
+        }
+        _topHeld = false;
+        if (Engine.GetMainLoop() is SceneTree tree)
+        {
+            tree.ProcessFrame -= PumpStatus;
+        }
+        // A full bar as the cover fades.
+        Call("setBootCoverStatus", _status ?? "", 1.0);
+        AfterFrames(SettleFrames, SendLiftTop);
+    }
+
+    private static void SendLiftTop()
+    {
+        if (_topHeld || _topGone)
+        {
+            return;
+        }
+        _topGone = true;
+        Call("liftBootCoverFromGame");
+    }
+
+    // The held cover's line follows DsLoadingDetail; "" brings back "Loading...".
+    private static void PumpStatus()
+    {
+        var now = Time.GetTicksMsec();
+        if (now < _nextStatusMs)
+        {
+            return;
+        }
+        _nextStatusMs = now + StatusIntervalMs;
+
+        // Whole percents: the bar eases between them on its own.
+        var text = DsLoadingDetail.Text;
+        var progress = DsLoadingDetail.Progress;
+        var percent = progress < 0f ? -1 : (int)(progress * 100f);
+        if (text == _status && percent == _percent)
+        {
+            return;
+        }
+        _status = text;
+        _percent = percent;
+        Call("setBootCoverStatus", text, percent < 0 ? DsLoadingDetail.Unknown : percent / 100.0);
     }
 
     /// <summary>The bottom screen has the mod's own picture, or will have none.</summary>
@@ -129,13 +200,12 @@ internal static class DsBootCover
         RenderingServer.FramePostDraw += step;
     }
 
-    private static void Call(string method)
+    private static void Call(string method, params Variant[] args)
     {
         try
         {
-            var wrapper = Engine.GetSingleton("JavaClassWrapper");
-            var app = wrapper.Call("wrap", "com.godot.game.GodotApp").AsGodotObject();
-            var lifted = app?.Call(method);
+            _app ??= Engine.GetSingleton("JavaClassWrapper").Call("wrap", "com.godot.game.GodotApp").AsGodotObject();
+            var lifted = _app?.Call(method, args);
             DsLog.Debug($"boot cover: {method} -> {lifted}");
         }
         catch (Exception e)
