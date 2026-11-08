@@ -76,6 +76,9 @@ class LauncherActivity : Activity() {
 
     /** Focus moves to the primary button only when what it does changes. */
     private var shownStage: Stage? = null
+    // Play is owed the focus (on open, on return, on a new stage). It is
+    // disabled while a cloud sync runs, so the debt waits until it ends.
+    private var focusOwed = true
 
     private lateinit var txtStatus: TextView
     private lateinit var btnPrimary: Button
@@ -177,6 +180,7 @@ class LauncherActivity : Activity() {
         super.onResume()
         // The game may have shot a new backdrop since onCreate.
         Backdrop.apply(this, Backdrop.Scrim.LIGHT)
+        focusOwed = true
         refreshUi()
         // Owed since the last game started; also retries one that failed or
         // was put off because the game was still running.
@@ -282,8 +286,22 @@ class LauncherActivity : Activity() {
         showDownloadProgress(dl)
         showCloud(c, cloudBusy)
 
-        if (stage != shownStage && !busy) btnPrimary.requestFocus()
+        if (stage != shownStage) focusOwed = true
         shownStage = stage
+        payFocus()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) payFocus()
+    }
+
+    // Opened by a tap, the launcher is in touch mode, where a plain
+    // requestFocus leaves Play unmarked; requestFocusFromTouch leaves touch
+    // mode, but only once the window has focus.
+    private fun payFocus() {
+        if (!focusOwed || !hasWindowFocus() || !btnPrimary.isEnabled) return
+        if (btnPrimary.requestFocusFromTouch()) focusOwed = false
     }
 
     /**
