@@ -32,7 +32,7 @@ internal static class DsUploadWarmup
     private const int Side = 512;
     private const int Rounds = 4;
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(3);
 
     private static bool _done;
 
@@ -102,13 +102,17 @@ internal static class DsUploadWarmup
             threads[i].Start();
         }
 
+        // One deadline for all threads: the main thread must not wait per thread.
         bool finished = true;
+        var deadline = Stopwatch.StartNew();
         foreach (var thread in threads)
         {
-            finished &= thread.Join(JoinTimeout);
+            var left = JoinTimeout - deadline.Elapsed;
+            finished &= thread.Join(left > TimeSpan.Zero ? left : TimeSpan.Zero);
         }
         if (!finished)
         {
+            // The threads still own the textures and the barrier; leave them be.
             DsLog.Warn("upload warmup: threads did not finish; the upload pool may still grow during preloads");
             return;
         }

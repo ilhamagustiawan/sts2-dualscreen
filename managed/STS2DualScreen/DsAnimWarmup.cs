@@ -88,7 +88,8 @@ internal static class DsAnimWarmup
 
         var watch = Stopwatch.StartNew();
         GC.Collect();
-        GC.WaitForPendingFinalizers();
+        DsFinalizerGuard.WaitFinalizers();
+        DsFinalizerGuard.DrainAll();
         DsLog.Debug($"anim warmup: drained warmup garbage in {watch.ElapsedMilliseconds} ms");
     }
 

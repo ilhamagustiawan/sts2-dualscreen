@@ -79,7 +79,8 @@ how to measure.
   mutex`, then a run of `Unreferenced static string` lines). Fast play
   makes it likely. Finalizer-initiated releases are held back and run on the
   game thread each frame and under each room transition
-  (`main_thread_finalize`).
+  (`main_thread_finalize`). Array, Dictionary and Variant finalizers are held
+  back too: they can drop a Resource's last reference and free it.
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
   `NTransition.RoomFadeIn`, while the transition still covers the screen
   (`room gc: collected in … ms` in the debug build's log).

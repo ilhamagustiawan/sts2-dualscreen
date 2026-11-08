@@ -29,6 +29,8 @@ namespace STS2DualScreen;
 ///
 /// The wrapper is held back instead and released on the game thread, once a
 /// frame (and under each room transition), where no free can overlap it.
+/// Arrays, Dictionaries and Variants are held back too: their finalizers can
+/// drop the last reference to a Resource and free it off the game thread.
 ///
 /// No unit test: it needs the engine's native library to create and free
 /// Godot objects. It was checked by play on a device only.
@@ -36,8 +38,19 @@ namespace STS2DualScreen;
 internal static class DsFinalizerGuard
 {
     private const long DrainBudgetMs = 1;
+    private const long DrainAllBudgetMs = 250;
+    private const int FinalizerWaitMs = 2000;
 
-    private static readonly ConcurrentQueue<GodotObject> Pending = new();
+    // Finalizers that release a native value, not a wrapper. Their
+    // Dispose(bool) is small and may be inlined, so Finalize is patched.
+    private static readonly Type[] ValueTypes =
+    {
+        typeof(Godot.Collections.Array),
+        typeof(Godot.Collections.Dictionary),
+        AccessTools.Inner(typeof(Variant), "Disposer"),
+    };
+
+    private static readonly ConcurrentQueue<object> Pending = new();
     private static Action<GodotObject, bool> _dispose;
     private static int _gameThread;
     private static long _released;
@@ -67,6 +80,32 @@ internal static class DsFinalizerGuard
         catch (Exception ex)
         {
             DsLog.Warn($"finalizer guard: could not patch GodotObject.Dispose: {ex.Message}");
+            return;
+        }
+
+        foreach (var type in ValueTypes)
+        {
+            PatchFinalize(harmony, type);
+        }
+    }
+
+    // One type's finalizer; a failure leaves only that type on its thread.
+    private static void PatchFinalize(Harmony harmony, Type type)
+    {
+        try
+        {
+            var finalize = type == null ? null : AccessTools.DeclaredMethod(type, "Finalize");
+            if (finalize == null)
+            {
+                DsLog.Warn($"finalizer guard: {type?.Name ?? "type"} finalizer not found; left on its thread");
+                return;
+            }
+
+            harmony.Patch(finalize, prefix: new HarmonyMethod(typeof(DsFinalizerGuard), nameof(DeferRelease)));
+        }
+        catch (Exception ex)
+        {
+            DsLog.Warn($"finalizer guard: could not patch {type.Name} finalizer: {ex.Message}");
         }
     }
 
@@ -82,11 +121,29 @@ internal static class DsFinalizerGuard
         tree.ProcessFrame += OnFrame;
     }
 
-    /// <summary>Releases everything held back. Game thread only.</summary>
+    /// <summary>
+    /// GC.WaitForPendingFinalizers with a deadline. It has none of its own: a
+    /// finalizer stuck on a native lock would hold the game thread for good.
+    /// Returns false if the finalizers did not finish in time.
+    /// </summary>
+    public static bool WaitFinalizers()
+    {
+        var waiter = new Thread(GC.WaitForPendingFinalizers) { IsBackground = true };
+        waiter.Start();
+        if (waiter.Join(FinalizerWaitMs))
+        {
+            return true;
+        }
+
+        DsLog.Warn($"finalizers still running after {FinalizerWaitMs} ms; not waiting");
+        return false;
+    }
+
+    /// <summary>Releases what is held back, up to a time limit. Game thread only.</summary>
     public static void DrainAll()
     {
         var before = Interlocked.Read(ref _released);
-        Drain(budgetMs: long.MaxValue);
+        Drain(DrainAllBudgetMs);
         var count = Interlocked.Read(ref _released) - before;
         if (count > 0)
         {
@@ -120,6 +177,26 @@ internal static class DsFinalizerGuard
         }
     }
 
+    // Harmony prefix on a value type's Finalize: false skips the release.
+    private static bool DeferRelease(object __instance)
+    {
+        var gameThread = Volatile.Read(ref _gameThread);
+        if (gameThread == 0 || Thread.CurrentThread.ManagedThreadId == gameThread)
+        {
+            return true;
+        }
+
+        try
+        {
+            Pending.Enqueue(__instance);
+            return false;
+        }
+        catch (Exception)
+        {
+            return true;
+        }
+    }
+
     private static void OnFrame() => Drain(DrainBudgetMs);
 
     private static void Drain(long budgetMs)
@@ -129,7 +206,15 @@ internal static class DsFinalizerGuard
         {
             try
             {
-                _dispose(instance, false);
+                // A value's Dispose(bool) ignores the flag: Dispose() is the same release.
+                if (instance is GodotObject godotObject)
+                {
+                    _dispose(godotObject, false);
+                }
+                else
+                {
+                    ((IDisposable)instance).Dispose();
+                }
                 Interlocked.Increment(ref _released);
             }
             catch (Exception ex)
