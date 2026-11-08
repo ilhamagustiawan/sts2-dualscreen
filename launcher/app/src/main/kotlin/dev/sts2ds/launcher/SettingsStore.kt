@@ -121,10 +121,11 @@ class SettingsStore(context: Context) {
     /**
      * Collect garbage while the room transition still covers the screen
      * (DsRoomGc), so the pause falls where nothing is visible rather than
-     * later in a fight. On by default. Written into dualscreen.json.
+     * later in a fight. Off by default: the destroyed-mutex crash came
+     * right after it, at a map pick. Written into dualscreen.json.
      */
     var roomGc: Boolean
-        get() = prefs.getBoolean(KEY_ROOM_GC, true)
+        get() = prefs.getBoolean(KEY_ROOM_GC, false)
         set(value) { prefs.edit().putBoolean(KEY_ROOM_GC, value).apply() }
 
     /**

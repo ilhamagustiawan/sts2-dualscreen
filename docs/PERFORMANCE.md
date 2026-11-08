@@ -86,6 +86,7 @@ how to measure.
 - **Room GC.** A full collection, plus the finalizers it queues, runs at
   `NTransition.RoomFadeIn`, while the transition still covers the screen
   (`room gc: collected in … ms` in the debug build's log).
+  Off by default: the destroyed-mutex crash came 52 ms after it once.
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
   Android's performance hint API (ADPF) against a one-frame target.
 - **Pacing.** The top screen is locked to 60 Hz by default; the FPS limit and
@@ -108,7 +109,7 @@ or the game's `settings.save`.
 | Particle effects | `particle_amount` | half |
 | CPU boost hint | `perf_hint` | on |
 | Memory cleanup (GC) | `MONO_GC_PARAMS` | 256 MB nursery |
-| Clean memory between rooms | `room_gc` | on |
+| Clean memory between rooms | `room_gc` | off |
 | Keep compiled shaders | `override.cfg` | on |
 | Frame pacing | `override.cfg` | steady |
 | FPS limit | `fps_limit` (`settings.save`) | 60 |

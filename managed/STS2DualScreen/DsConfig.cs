@@ -23,7 +23,7 @@ internal sealed class DsConfig
     public bool PauseHiddenPages = true;
 
     /// <summary>Collect garbage under each room transition (DsRoomGc).</summary>
-    public bool RoomGc = true;
+    public bool RoomGc;
 
     /// <summary>Release finalized Godot objects on the game thread, not Mono's finalizer thread (DsFinalizerGuard).</summary>
     public bool MainThreadFinalize = true;
