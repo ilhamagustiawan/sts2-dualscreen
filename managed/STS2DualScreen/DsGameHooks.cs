@@ -121,6 +121,9 @@ internal static class DsGameHooks
     /// <summary>A fight is on: its card piles exist.</summary>
     public static bool InCombat => _inCombat;
 
+    /// <summary>The tab a fight opens on.</summary>
+    public const string CombatStartTab = "draw";
+
     /// <summary>The game has finished booting to its main menu at least once.</summary>
     public static bool MainMenuReady { get; private set; }
     private static readonly Dictionary<string, Node> PileScreens = new();
@@ -1390,9 +1393,9 @@ internal static class DsGameHooks
         _inCombat = true;
         if (changed)
             ResetPiles("draw", "discard", "exhaust");
-        // A fight starts on the discard pile.
-        if (started && DsBottomScreen.Instance is { Ready: true } screen)
-            screen.Show("discard");
+        // A fight starts on the draw pile, even before the surface is ready.
+        if (started && DsBottomScreen.Instance is { } screen)
+            screen.Show(CombatStartTab);
         // The dock takes the button's own icon (draw and exhaust have no
         // path the code names) and its count.
         if (DsBottomScreen.Instance?.Dock is not { } dock || PileButtonTab(__instance) is not { } tab)

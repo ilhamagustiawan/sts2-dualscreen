@@ -925,7 +925,11 @@ internal sealed class DsBottomScreen
         // The game's localization is up by now.
         _dock.RefreshTitles();
         RefreshPlaceholders();
-        Show(Array.IndexOf(Tabs, _config.DefaultTab) >= 0 ? _config.DefaultTab : "map");
+        // A run resumed inside a fight opens on the fight's tab.
+        if (DsGameHooks.InCombat)
+            Show(DsGameHooks.CombatStartTab);
+        else
+            Show(Array.IndexOf(Tabs, _config.DefaultTab) >= 0 ? _config.DefaultTab : "map");
         // The capstone backstop's fade.
         DsStyle.Kill(ref _runTween);
         _root.Modulate = _root.Modulate with { A = 0f };
