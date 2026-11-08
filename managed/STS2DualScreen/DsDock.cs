@@ -27,14 +27,20 @@ internal enum DockShape
 internal sealed class DsDock
 {
     /// <summary>A corner plate's viewport, in canvas units: the plate and room for its shadow.</summary>
-    public static readonly Vector2 CornerSize = new(200f, 162f);
+    public static readonly Vector2 CornerSize = new(250f, CornerHeight);
+    private const float CornerHeight = 202f;
     private const float CornerShadow = 12f;
 
     /// <summary>How far a corner plate reaches down the pages, in canvas units.</summary>
-    public const float CornerPlateHeight = 162f - CornerShadow;
+    public const float CornerPlateHeight = CornerHeight - CornerShadow;
 
-    private const float IconSize = 84f;
-    private const float BadgeSize = 46f;
+    private const float IconSize = 105f;
+    private const float BadgeSize = 58f;
+    private const int LabelFont = 42;
+    private const int LabelFontNoIcon = 58;
+    private const int BadgeFont = 34;
+    private const float LabelTop = -60f;
+    private const float LabelBottom = -5f;
     private const float SelectedScale = 1.1f;
     private const float UnselectedScale = 0.95f;
 
@@ -277,7 +283,7 @@ internal sealed class DsDock
         rocker.AddChild(icon);
         tab.Icon = icon;
 
-        var label = DsStyle.Text(34, 8);
+        var label = DsStyle.Text(LabelFont, 8);
         label.Name = "Label";
         label.ClipText = true;
         label.Text = tab.Title;
@@ -302,11 +308,11 @@ internal sealed class DsDock
             badge.OffsetTop = 2;
             badge.OffsetBottom = 2 + BadgeSize;
             badge.PivotOffset = new Vector2(BadgeSize / 2, BadgeSize / 2);
-            var old = DsStyle.Text(27, 6);
+            var old = DsStyle.Text(BadgeFont, 6);
             old.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             old.Visible = false;
             badge.AddChild(old);
-            var count = DsStyle.Text(27, 6);
+            var count = DsStyle.Text(BadgeFont, 6);
             count.SetAnchorsPreset(Control.LayoutPreset.FullRect);
             badge.AddChild(count);
             button.AddChild(badge);
@@ -338,9 +344,9 @@ internal sealed class DsDock
         label.AnchorRight = 1;
         label.AnchorTop = hasIcon ? 1 : 0;
         label.AnchorBottom = 1;
-        label.OffsetTop = hasIcon ? -48 : 0;
-        label.OffsetBottom = hasIcon ? -4 : 0;
-        label.AddThemeFontSizeOverride("font_size", hasIcon ? 34 : 46);
+        label.OffsetTop = hasIcon ? LabelTop : 0;
+        label.OffsetBottom = hasIcon ? LabelBottom : 0;
+        label.AddThemeFontSizeOverride("font_size", hasIcon ? LabelFont : LabelFontNoIcon);
     }
 
     // ── what the game tells it ─────────────────────────────────────────────

@@ -37,7 +37,7 @@ internal sealed class DsBottomScreen
 
     public static readonly string[] Tabs = { "map", "draw", "discard", "exhaust", "deck" };
     private static readonly string[] StripTabs = { "draw", "discard", "exhaust" };
-    public const float TabBarHeight = 150f;
+    public const float TabBarHeight = 188f;
 
     // A part of the screen drawn and captured on its own: the strip or a
     // corner plate. Px is where it goes on the surface.
