@@ -2,7 +2,7 @@
 //
 // The compat pack (Sts2MobileLauncher's, shipped in the runtime) reads its
 // Android options from the account's settings.save next to the game's own
-// settings: asset preloading, combat warmups, cheaper shaders, render size.
+// settings: asset preloading, combat warmups, render size.
 // Its patches that need no option (VFX pooling, the asset-loading frame
 // budget) run regardless. Key names and defaults are Sts2MobileLauncher's
 // ExtraSettingsRepository (MIT). The Balanced preset is ours,
@@ -69,12 +69,19 @@ class GameSettingsFile(val file: File) {
          * room's hits once. Fights still crash with them on (a native fault,
          * then Mono's exit prints "Unreferenced static string" lines), as
          * Sts2MobileLauncher issue 109 reports, so both are forced off every launch.
+         *
+         * The compat pack's shader compatibility mode swaps some effects to
+         * cheaper mobile shaders: a GPU saving, not a rendering fix, and the
+         * Thor's GPU has room to spare. The swap broke the Scrying event's
+         * reveal, so it is forced off as well (the compat pack's own in-game
+         * switch can still turn it on until the next launch).
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
         const val KEY_HIT_EFFECT_WARMUP = "preload_combat_hit_effect_warmup_enabled"
         private val FORCED_OFF: Map<String, Any> = linkedMapOf(
             KEY_ANIMATION_WARMUP to "off",
             KEY_HIT_EFFECT_WARMUP to false,
+            KEY_SHADER_COMPAT to false,
         )
 
         /**
@@ -99,7 +106,6 @@ class GameSettingsFile(val file: File) {
             "preload_vfx_tree_warmup_frames" to 3,
             "preload_combat_animation_warmup_frames" to 1,
             "preload_shader_mode" to "off",
-            KEY_SHADER_COMPAT to false,
             KEY_OVERLAY to false,
         )
 

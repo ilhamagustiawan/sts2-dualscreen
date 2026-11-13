@@ -143,8 +143,6 @@
     <string name="settings_combat_code_subtitle">While the game loads, compiles the code for attacks, damage and effects ahead of time, so the first card of a fight does not stutter. Code only: no animations are played.</string>
     <string name="settings_preload">Preload game assets</string>
     <string name="settings_preload_subtitle">Loads common assets after the main menu and keeps them loaded between rooms, instead of loading mid-fight.</string>
-    <string name="settings_shader_compat">Cheaper effect shaders</string>
-    <string name="settings_shader_compat_subtitle">Simpler versions of the blur, fire and slash effects, made for phone GPUs. Slightly plainer effects, less GPU time.</string>
     <string name="settings_render_size">Render resolution</string>
     <string name="settings_render_size_native">Native</string>
     <string name="settings_render_size_subtitle">Lower renders fewer pixels and scales up to the screen: softer, lighter on the GPU.</string>

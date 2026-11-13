@@ -80,6 +80,14 @@ class GameSettingsFileTest {
     }
 
     @Test
+    fun shaderCompatibilityIsForcedOff() {
+        // Turned on by an older launcher's switch, or the compat pack's in-game one.
+        val json = playerSettings().put(GameSettingsFile.KEY_SHADER_COMPAT, true)
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+        assertFalse(json.getBoolean(GameSettingsFile.KEY_SHADER_COMPAT))
+    }
+
+    @Test
     fun combatCodeWarmupIsOnByDefault() {
         val json = playerSettings()
         GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false)

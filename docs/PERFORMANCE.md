@@ -58,11 +58,11 @@ how to measure.
 - **Pipeline cache saved often.** `override.cfg` next to the game sets
   `rendering_device/pipeline_cache/save_chunk_size_mb=0.25`, since Android
   seldom gives the engine the clean exit that otherwise saves it.
-- **Cheaper effect shaders.** Off by default. On, the compat pack gives
-  some effects a mobile shader by swapping the node's material for a copy.
-  Game fields that still hold the old material (the Scrying event's crystal
-  ball, for one) are pointed at the copy, so the uniforms the game sets
-  reach the screen (`DsCompatMaterials`).
+- **Cheaper effect shaders off.** The compat pack's shader compatibility
+  mode (cheaper mobile versions of some effect shaders) is forced off every
+  launch: a GPU saving the Thor doesn't need, and it broke the Scrying
+  event's reveal. If its in-game switch turns it on, game fields holding a
+  swapped material are pointed at the copy (`DsCompatMaterials`).
 - **GC nursery.** `MONO_GC_PARAMS=nursery-size=32m,major=marksweep-conc` by
   default: fewer minor collections in busy fights.
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
@@ -87,7 +87,6 @@ or the game's `settings.save`.
 | Advanced › Spread lower-screen updates | `stagger_captures` | on |
 | Advanced › Pause hidden tabs | `pause_hidden_pages` | on |
 | Particle effects | `particle_amount` | half |
-| Cheaper effect shaders | `shader_compatibility_mode` (`settings.save`) | off |
 | CPU boost hint | `perf_hint` | on |
 | Memory cleanup (GC) | `MONO_GC_PARAMS` | 32 MB nursery |
 | Keep compiled shaders | `override.cfg` | on |

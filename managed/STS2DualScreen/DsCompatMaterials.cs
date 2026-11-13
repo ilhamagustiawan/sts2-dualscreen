@@ -7,7 +7,8 @@ using HarmonyLib;
 namespace STS2DualScreen;
 
 /// <summary>
-/// With the launcher's "Cheaper effect shaders" on, the compat pack swaps a
+/// The launcher forces the compat pack's shader compatibility mode off, but
+/// its in-game switch can turn it on for a session. On, the compat pack swaps a
 /// CanvasItem's ShaderMaterial for a copy that runs its mobile shader, one
 /// deferred call after the node enters the tree. A game script that took the
 /// node's material in its <c>_Ready</c> keeps the old one and sets uniforms
