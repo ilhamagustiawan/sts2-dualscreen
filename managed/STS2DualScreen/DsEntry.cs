@@ -28,6 +28,7 @@ public static class DsEntry
         DsStartupLoadingScreenStyle.Apply(Harmony);
         DsAnimWarmup.Apply(Harmony);
         DsShakeGuard.Apply(Harmony);
+        DsCompatMaterials.Apply(Harmony);
         DsBootCover.Apply(Harmony);
         DsBackdrop.Apply(Harmony);
 
