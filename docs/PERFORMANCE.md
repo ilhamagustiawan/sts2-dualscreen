@@ -67,8 +67,10 @@ how to measure.
   default: fewer minor collections in busy fights.
 - **CPU boost hint.** On Android 13+, each frame's work time is reported to
   Android's performance hint API (ADPF) against a one-frame target.
-- **Pacing.** The top screen is locked to 60 Hz by default; the FPS limit and
-  Swappy frame pacing mode are settings.
+- **Pacing.** The top screen is locked to 60 Hz by default, vsync is off and
+  the game's 60 FPS limit sets the pace; vsync, the FPS limit and the Swappy
+  frame pacing mode are settings. With vsync off, keep the limit: None is
+  uncapped.
 
 ## Settings
 
@@ -90,6 +92,7 @@ or the game's `settings.save`.
 | Memory cleanup (GC) | `MONO_GC_PARAMS` | 32 MB nursery |
 | Keep compiled shaders | `override.cfg` | on |
 | Frame pacing | `override.cfg` | steady |
+| VSync | `vsync` (`settings.save`) | off |
 | FPS limit | `fps_limit` (`settings.save`) | 60 |
 | Top screen refresh rate | — | 60 Hz |
 | Pre-compile combat code | `preload_combat_code_enabled` | on |

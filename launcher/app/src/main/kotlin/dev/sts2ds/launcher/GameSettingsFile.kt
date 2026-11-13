@@ -130,14 +130,15 @@ class GameSettingsFile(val file: File) {
         )
 
         /**
-         * Balanced, applied once: native resolution at a steady 60 (vsync on,
-         * with the launcher locking the panel to 60 Hz) rather than racing an
-         * uncapped swapchain, and straight to the main menu. Even pacing was
-         * what fights needed; a lower render size only blurred the art.
+         * Balanced, applied once: native resolution, vsync off, with the
+         * game's own limiter holding 60 and the launcher locking the panel to
+         * 60 Hz, and straight to the main menu. A lower render size only
+         * blurred the art. Keep the 60 cap with vsync off: without it the
+         * game renders as fast as the GPU allows.
          */
         private val BALANCED_PRESET: Map<String, Any> = linkedMapOf(
             KEY_MSAA to 0,
-            KEY_VSYNC to "on",
+            KEY_VSYNC to "off",
             KEY_FPS_LIMIT to 60,
             KEY_SKIP_INTRO to true,
         )
@@ -149,8 +150,9 @@ class GameSettingsFile(val file: File) {
 
         /**
          * The game's FPS cap (Engine.MaxFps; 0 is none). 60 is the Balanced
-         * preset; 0 leaves pacing to vsync and Swappy alone, without Godot's
-         * own limiter sleeping on top of it, which can miss a vsync. The game
+         * preset. With vsync on, 0 leaves pacing to vsync and Swappy alone,
+         * without Godot's own limiter sleeping on top of it, which can miss a
+         * vsync; with vsync off, 0 is uncapped. The game
          * applies 0 as is (NGame.InitializeGraphicsPreferences); its own
          * settings page, which lists 24 to 500, shows it as 60 until changed.
          */

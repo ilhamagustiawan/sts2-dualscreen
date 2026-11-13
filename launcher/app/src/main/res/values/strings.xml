@@ -123,8 +123,8 @@
     <string name="settings_warmups">Pre-warm combat effects</string>
     <string name="settings_warmups_subtitle">As each room loads, plays its visual effects once out of sight, so the first attack of a fight does not stutter. Uses more memory and a little load time.</string>
     <string name="settings_fps_limit">FPS limit</string>
-    <string name="settings_fps_limit_none">None (vsync only)</string>
-    <string name="settings_fps_limit_subtitle">60 is the usual. None leaves the pace to vsync and the frame pacer, without the game\'s own limiter waiting on top, which can now and then skip a frame. Try both if fights look uneven.</string>
+    <string name="settings_fps_limit_none">None</string>
+    <string name="settings_fps_limit_subtitle">60 is the usual, and needed with VSync off. With VSync on, None leaves the pace to vsync and the frame pacer, without the game\'s own limiter waiting on top, which can now and then skip a frame. With VSync off, None is uncapped.</string>
     <string name="settings_frame_pacing">Frame pacing</string>
     <string name="settings_pacing_steady">Steady (default)</string>
     <string name="settings_pacing_adaptive">Adaptive</string>
@@ -152,7 +152,7 @@
     <string name="settings_msaa_off">Off</string>
     <string name="settings_msaa_subtitle">Smooths edges at a GPU cost; Off is recommended.</string>
     <string name="settings_vsync">VSync</string>
-    <string name="settings_vsync_subtitle">On is recommended: with the screen at 60 Hz it keeps frames evenly paced.</string>
+    <string name="settings_vsync_subtitle">Off by default: the 60 FPS limit sets the pace. On waits for each screen refresh, for steadier frames at a little more input delay.</string>
     <string name="settings_refresh_rate">Top screen refresh rate</string>
     <string name="settings_refresh_system">System</string>
     <string name="settings_refresh_60">60 Hz</string>
