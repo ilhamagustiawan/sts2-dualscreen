@@ -29,13 +29,13 @@ class GameSettingsFileTest {
     fun firstTimeAppliesBalancedPresetAndWarmups() {
         val json = playerSettings()
             .put("fps_limit", 120)
-            .put("vsync", "off")
+            .put("vsync", "on")
             .put("skip_intro_logo", false)
             .put("preload_gameplay_assets_enabled", true)
         GameSettingsFile.putRenderSize(json, 1280, 720)
         GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true)
         assertEquals(0, json.getInt("msaa"))
-        assertEquals("on", json.getString("vsync"))
+        assertEquals("off", json.getString("vsync"))
         assertEquals(60, json.getInt("fps_limit"))
         assertTrue(json.getBoolean("skip_intro_logo"))
         assertEquals(0 to 0, GameSettingsFile.renderSize(json))
@@ -49,10 +49,10 @@ class GameSettingsFileTest {
         val json = playerSettings()
         GameSettingsFile.ensurePerformanceDefaults(json, firstTime = true)
         GameSettingsFile.putRenderSize(json, 1600, 900)
-        json.put("vsync", "off").put("skip_intro_logo", false)
+        json.put("vsync", "on").put("skip_intro_logo", false)
         assertFalse(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
         assertEquals(1600 to 900, GameSettingsFile.renderSize(json))
-        assertEquals("off", json.getString("vsync"))
+        assertEquals("on", json.getString("vsync"))
         assertFalse(json.getBoolean("skip_intro_logo"))
     }
 
@@ -77,6 +77,14 @@ class GameSettingsFileTest {
         assertEquals("off", json.getString(GameSettingsFile.KEY_ANIMATION_WARMUP))
         assertFalse(json.getBoolean(GameSettingsFile.KEY_HIT_EFFECT_WARMUP))
         assertTrue(GameSettingsFile.warmupsEnabled(json))
+    }
+
+    @Test
+    fun shaderCompatibilityIsForcedOff() {
+        // Turned on by an older launcher's switch, or the compat pack's in-game one.
+        val json = playerSettings().put(GameSettingsFile.KEY_SHADER_COMPAT, true)
+        assertTrue(GameSettingsFile.ensurePerformanceDefaults(json, firstTime = false))
+        assertFalse(json.getBoolean(GameSettingsFile.KEY_SHADER_COMPAT))
     }
 
     @Test

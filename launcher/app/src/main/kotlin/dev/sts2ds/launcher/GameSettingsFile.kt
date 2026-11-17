@@ -2,7 +2,7 @@
 //
 // The compat pack (Sts2MobileLauncher's, shipped in the runtime) reads its
 // Android options from the account's settings.save next to the game's own
-// settings: asset preloading, combat warmups, cheaper shaders, render size.
+// settings: asset preloading, combat warmups, render size.
 // Its patches that need no option (VFX pooling, the asset-loading frame
 // budget) run regardless. Key names and defaults are Sts2MobileLauncher's
 // ExtraSettingsRepository (MIT). The Balanced preset is ours,
@@ -71,12 +71,19 @@ class GameSettingsFile(val file: File) {
          * Sts2MobileLauncher issue 109 reports, so both are forced off every launch.
          * Unproven as the cause: the same abort (a destroyed mutex locked by a
          * finalizer) was seen with both off.
+         *
+         * The compat pack's shader compatibility mode swaps some effects to
+         * cheaper mobile shaders: a GPU saving, not a rendering fix, and the
+         * Thor's GPU has room to spare. The swap broke the Scrying event's
+         * reveal, so it is forced off as well (the compat pack's own in-game
+         * switch can still turn it on until the next launch).
          */
         const val KEY_ANIMATION_WARMUP = "preload_combat_animation_warmup_mode"
         const val KEY_HIT_EFFECT_WARMUP = "preload_combat_hit_effect_warmup_enabled"
         private val FORCED_OFF: Map<String, Any> = linkedMapOf(
             KEY_ANIMATION_WARMUP to "off",
             KEY_HIT_EFFECT_WARMUP to false,
+            KEY_SHADER_COMPAT to false,
         )
 
         /**
@@ -112,7 +119,6 @@ class GameSettingsFile(val file: File) {
             "preload_vfx_tree_warmup_frames" to 3,
             "preload_combat_animation_warmup_frames" to 1,
             "preload_shader_mode" to "off",
-            KEY_SHADER_COMPAT to false,
             KEY_OVERLAY to false,
         )
 
@@ -143,14 +149,15 @@ class GameSettingsFile(val file: File) {
         )
 
         /**
-         * Balanced, applied once: native resolution at a steady 60 (vsync on,
-         * with the launcher locking the panel to 60 Hz) rather than racing an
-         * uncapped swapchain, and straight to the main menu. Even pacing was
-         * what fights needed; a lower render size only blurred the art.
+         * Balanced, applied once: native resolution, vsync off, with the
+         * game's own limiter holding 60 and the launcher locking the panel to
+         * 60 Hz, and straight to the main menu. A lower render size only
+         * blurred the art. Keep the 60 cap with vsync off: without it the
+         * game renders as fast as the GPU allows.
          */
         private val BALANCED_PRESET: Map<String, Any> = linkedMapOf(
             KEY_MSAA to 0,
-            KEY_VSYNC to "on",
+            KEY_VSYNC to "off",
             KEY_FPS_LIMIT to 60,
             KEY_SKIP_INTRO to true,
         )
@@ -162,8 +169,9 @@ class GameSettingsFile(val file: File) {
 
         /**
          * The game's FPS cap (Engine.MaxFps; 0 is none). 60 is the Balanced
-         * preset; 0 leaves pacing to vsync and Swappy alone, without Godot's
-         * own limiter sleeping on top of it, which can miss a vsync. The game
+         * preset. With vsync on, 0 leaves pacing to vsync and Swappy alone,
+         * without Godot's own limiter sleeping on top of it, which can miss a
+         * vsync; with vsync off, 0 is uncapped. The game
          * applies 0 as is (NGame.InitializeGraphicsPreferences); its own
          * settings page, which lists 24 to 500, shows it as 60 until changed.
          */

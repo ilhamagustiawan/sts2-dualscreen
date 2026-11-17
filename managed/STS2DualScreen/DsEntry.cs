@@ -30,6 +30,7 @@ public static class DsEntry
         DsAnimWarmup.Apply(Harmony);
         DsUploadWarmup.Apply(Harmony);
         DsShakeGuard.Apply(Harmony);
+        DsCompatMaterials.Apply(Harmony);
         DsBootCover.Apply(Harmony);
         DsBackdrop.Apply(Harmony);
 

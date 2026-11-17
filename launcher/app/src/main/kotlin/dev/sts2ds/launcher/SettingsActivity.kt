@@ -149,9 +149,6 @@ class SettingsActivity : Activity() {
         bind(R.id.sw_preload, settingsJson.optBoolean(GameSettingsFile.KEY_PRELOAD, true)) { on ->
             edit("preload → $on") { it.put(GameSettingsFile.KEY_PRELOAD, on) }
         }
-        bind(R.id.sw_shader_compat, settingsJson.optBoolean(GameSettingsFile.KEY_SHADER_COMPAT, false)) { on ->
-            edit("cheaper shaders → $on") { it.put(GameSettingsFile.KEY_SHADER_COMPAT, on) }
-        }
         bind(R.id.sw_overlay, settingsJson.optBoolean(GameSettingsFile.KEY_OVERLAY, false)) { on ->
             edit("performance overlay → $on") { it.put(GameSettingsFile.KEY_OVERLAY, on) }
         }
@@ -297,7 +294,7 @@ class SettingsActivity : Activity() {
 
     private companion object {
         val GAME_FILE_CONTROLS = intArrayOf(
-            R.id.sw_warmups, R.id.sw_preload, R.id.sw_shader_compat, R.id.sw_overlay,
+            R.id.sw_warmups, R.id.sw_preload, R.id.sw_overlay,
             R.id.sp_render_size, R.id.sp_msaa, R.id.sp_vsync, R.id.sp_fps_limit,
         )
         val PACING_NAMES = linkedMapOf(

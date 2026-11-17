@@ -198,7 +198,7 @@ class SettingsStore(context: Context) {
         private const val KEY_GAME_BRANCH = "game_branch"
         private const val KEY_PARTICLE_AMOUNT = "particle_amount"
         private const val KEY_REFRESH_RATE = "refresh_rate"
-        private const val KEY_PERF_DEFAULTS = "perf_defaults_v3"
+        private const val KEY_PERF_DEFAULTS = "perf_defaults_v4"
         private const val KEY_COMBAT_CODE_WARMUP = "combat_code_warmup"
         private const val KEY_VFX_POOL = "vfx_pool"
         private const val KEY_PERF_HINT = "perf_hint"
