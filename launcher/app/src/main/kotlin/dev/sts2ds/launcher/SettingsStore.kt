@@ -81,10 +81,10 @@ class SettingsStore(context: Context) {
 
     /**
      * Percent of each particle emitter's particles the game draws: 100, 50 or
-     * 25. Half by default; the effects still read and cost half the fill.
+     * 25. A quarter by default; the effects still read at a quarter of the fill.
      */
     var particleAmount: Int
-        get() = prefs.getInt(KEY_PARTICLE_AMOUNT, 50)
+        get() = prefs.getInt(KEY_PARTICLE_AMOUNT, 25)
         set(value) { prefs.edit().putInt(KEY_PARTICLE_AMOUNT, value).apply() }
 
     /** "vulkan", or "opengl" for the engine's Compatibility renderer. */

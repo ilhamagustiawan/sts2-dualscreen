@@ -104,7 +104,7 @@ or the game's `settings.save`.
 | Advanced › Draw on its own thread | `present_thread` | on |
 | Advanced › Spread lower-screen updates | `stagger_captures` | on |
 | Advanced › Pause hidden tabs | `pause_hidden_pages` | on |
-| Particle effects | `particle_amount` | half |
+| Particle effects | `particle_amount` | low (a quarter) |
 | CPU boost hint | `perf_hint` | on |
 | Keep compiled shaders | `override.cfg` | on |
 | Frame pacing | `override.cfg` | steady |

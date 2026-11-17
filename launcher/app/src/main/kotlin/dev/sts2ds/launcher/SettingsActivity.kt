@@ -134,7 +134,8 @@ class SettingsActivity : Activity() {
         for (id in GAME_FILE_CONTROLS) findViewById<View>(id).isEnabled = json != null
         val settingsJson = json ?: org.json.JSONObject()
 
-        bind(R.id.sw_warmups, GameSettingsFile.warmupsEnabled(settingsJson)) { on ->
+        // No settings.save yet: show the default the first launch applies.
+        bind(R.id.sw_warmups, json == null || GameSettingsFile.warmupsEnabled(settingsJson)) { on ->
             edit("combat warmups → $on") { GameSettingsFile.setWarmups(it, on) }
         }
         bind(R.id.sw_combat_code, settings.combatCodeWarmup) { on ->
