@@ -44,6 +44,22 @@ android {
         externalNativeBuild { cmake { arguments += "-DDS_LOG_LEVEL=$level" } }
     }
 
+    // Release key from the environment (CI), else the debug key:
+    // STS2DS_KEYSTORE (file), STS2DS_KEYSTORE_PASSWORD, STS2DS_KEY_ALIAS,
+    // STS2DS_KEY_PASSWORD.
+    fun signingEnv(name: String): String? = System.getenv("STS2DS_$name")
+    val releaseKeystore = signingEnv("KEYSTORE")
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = signingEnv("KEYSTORE_PASSWORD")
+                keyAlias = signingEnv("KEY_ALIAS")
+                keyPassword = signingEnv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         // For measuring and bug hunting (`make debug-apk`): devel plus debug
         // logging.
@@ -53,12 +69,12 @@ android {
             logLevel(logDebug)
         }
         // For playing: not debuggable, so ART compiles it fully. No R8: Godot
-        // and JavaSteam look classes up by name. Signed with the debug key;
-        // sign with your own key to distribute.
+        // and JavaSteam look classes up by name. Signed with the release key
+        // when STS2DS_KEYSTORE is set, else the debug key.
         getByName("release") {
             isDebuggable = false
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
             logLevel(logWarn)
         }
         // For development: the release build, debuggable, so `adb shell

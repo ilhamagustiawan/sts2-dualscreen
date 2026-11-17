@@ -72,8 +72,14 @@ make compat COMPAT_REF=g   # saved under .cache; later builds reuse it
 
 `make apk COMPAT=release` skips this and ships the released pack as is.
 
-The APK is signed with the Android debug key. To publish your own build, sign
-it with your own key.
+The APK is signed with the Android debug key, or with your own key when
+`STS2DS_KEYSTORE`, `STS2DS_KEYSTORE_PASSWORD`, `STS2DS_KEY_ALIAS` and
+`STS2DS_KEY_PASSWORD` are set.
+
+GitHub Actions (`.github/workflows/build.yml`) tests and builds every push
+and pull request, and publishes a release for each version tag (`v0.1.1`,
+matching `sts2ds.version`). CI has no `sts2.dll`, so its APKs carry the
+released compat pack, without the VFX pool.
 
 ### Development
 
