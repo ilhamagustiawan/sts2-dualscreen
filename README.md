@@ -77,6 +77,11 @@ The APK is signed with the Android debug key, or with your own key when
 `STS2DS_KEYSTORE`, `STS2DS_KEYSTORE_PASSWORD`, `STS2DS_KEY_ALIAS` and
 `STS2DS_KEY_PASSWORD` are set.
 
+`scripts/build.sh` runs the tests and `make apk`. `scripts/release.sh [VERSION]
+[NOTES_FILE]` publishes a release from your machine: it bumps the version,
+builds, checks the APK is signed like the latest release, then asks before
+pushing `main` and the tag and uploading the APK.
+
 GitHub Actions (`.github/workflows/build.yml`) tests and builds every push
 and pull request, and publishes a release for each version tag (`v0.1.1`,
 matching `sts2ds.version`). CI has no `sts2.dll`, so its APKs carry the

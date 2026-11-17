@@ -18,6 +18,8 @@ dual-screen handheld (AYN Thor), with the map and card piles on the lower screen
   `AccessTools`; no compile-time sts2.dll. No Godot subclasses (no source
   generators): use `SceneTree.ProcessFrame` and signals.
 - `tools/runtime/make-runtime.sh` — runtime from the Sts2MobileLauncher release APK.
+- `scripts/build.sh` — test + build; `scripts/release.sh` — GitHub release
+  from this machine (bump, build, signer check, push, upload).
 - `docs/DUALSCREEN.md` — lower-screen design; `docs/PERFORMANCE.md` — frame
   costs, the settings and override keys, how to measure. Keep both current.
 
