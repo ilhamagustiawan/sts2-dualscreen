@@ -1,285 +1,263 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  The launcher, dressed like the game's main menu (see Backdrop and the
-  LauncherMenuItem styles). Left: the title and a centred menu whose first
-  item follows the state (sign in, download, play).
-  Right: a card with the three steps of a fresh install and where each one
-  stands, the Steam Cloud status once signed in, and a one-line tail of the log.
+  The launcher, laid out like the game's main menu (see Backdrop and the
+  LauncherMenuItem styles): the title top-left, the menu bottom-left, the
+  right left to the art. The first menu item follows the state (sign in,
+  download, play).
 
-  Sized for the Ayn Thor's ~420dp-tall landscape area, like the sign-in screen;
-  both columns scroll in case a bigger font setting pushes them past it.
+  Under the menu, one of two rows:
+  - before the game is ready, the setup steps (account, game files);
+  - once it is, an info line: account, version, branch, Steam Cloud and Sync.
+
+  Sized for the Ayn Thor's ~420dp-tall landscape area; it scrolls in case a
+  bigger font setting pushes it past that.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="horizontal"
     android:background="@drawable/bg_spire"
-    android:padding="20dp">
+    android:fillViewport="true">
 
-    <ScrollView
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="5"
-        android:fillViewport="true">
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="28dp"
+        android:paddingTop="20dp"
+        android:paddingEnd="28dp"
+        android:paddingBottom="16dp">
 
+        <!-- The title in the game's colours: gold words, a teal numeral. Plain type, not the logo. -->
         <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="serif"
+                android:shadowColor="@color/title_shadow"
+                android:shadowDx="2"
+                android:shadowDy="3"
+                android:shadowRadius="2"
+                android:text="@string/launcher_title_words"
+                android:textColor="@color/title_gold"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:fontFamily="serif"
+                android:shadowColor="#CC0B2A30"
+                android:shadowDx="2"
+                android:shadowDy="3"
+                android:shadowRadius="2"
+                android:text="@string/launcher_title_numeral"
+                android:textColor="@color/teal"
+                android:textSize="34sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="serif"
+            android:shadowColor="#E6000000"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:text="@string/launcher_subtitle"
+            android:textColor="@color/teal"
+            android:textSize="13sp"
+            android:textStyle="italic" />
+
+        <!-- Pushes the menu to the bottom. -->
+        <Space
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:minHeight="16dp" />
+
+        <Button
+            android:id="@+id/btn_primary"
+            style="@style/LauncherMenuItem.Primary"
+            android:layout_gravity="start"
+            android:focusedByDefault="true"
+            android:text="@string/action_launch" />
+
+        <ProgressBar
+            android:id="@+id/progress_download"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="260dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:max="1000"
+            android:progressBackgroundTint="@color/spire_shade"
+            android:progressTint="@color/menu_selected"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/txt_progress"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_muted"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+        <Button
+            android:id="@+id/btn_update"
+            style="@style/LauncherMenuItem"
+            android:layout_gravity="start"
+            android:text="@string/action_update" />
+
+        <Button
+            android:id="@+id/btn_settings"
+            style="@style/LauncherMenuItem"
+            android:layout_gravity="start"
+            android:text="@string/action_settings" />
+
+        <Button
+            android:id="@+id/btn_logs"
+            style="@style/LauncherMenuItem"
+            android:layout_gravity="start"
+            android:text="@string/action_logs" />
+
+        <TextView
+            android:id="@+id/txt_status"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:gravity="center"
-            android:orientation="vertical"
-            android:paddingEnd="20dp">
+            android:layout_marginStart="10dp"
+            android:layout_marginTop="4dp"
+            android:shadowColor="#E6000000"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:text="@string/launcher_status_idle"
+            android:textColor="@color/menu_text"
+            android:textSize="13sp" />
 
-            <!-- The title in the game's colours: gold words, a teal numeral. Plain type, not the logo. -->
+        <!-- Once ready: account · version · branch · Steam Cloud. -->
+        <LinearLayout
+            android:id="@+id/group_info"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_marginTop="2dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- Signs in, or out after a confirm. -->
+            <TextView
+                android:id="@+id/txt_account"
+                style="@style/LauncherInfo"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="@drawable/focus_on_dark"
+                android:padding="4dp"
+                android:textColor="@color/menu_text" />
+
+            <TextView
+                style="@style/LauncherInfo.Divider" />
+
+            <TextView
+                android:id="@+id/txt_version"
+                style="@style/LauncherInfo" />
+
+            <TextView
+                android:id="@+id/txt_branch_chip"
+                style="@style/LauncherInfo"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/bg_chip"
+                android:paddingStart="5dp"
+                android:paddingEnd="5dp"
+                android:text="@string/branch_beta"
+                android:textAllCaps="true"
+                android:textColor="@color/text_on_control"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <!-- Steam Cloud: only once signed in. Long-press Sync for one-way copies. -->
             <LinearLayout
+                android:id="@+id/group_cloud"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="serif"
-                    android:shadowColor="@color/title_shadow"
-                    android:shadowDx="2"
-                    android:shadowDy="3"
-                    android:shadowRadius="2"
-                    android:text="@string/launcher_title_words"
-                    android:textColor="@color/title_gold"
-                    android:textSize="32sp"
-                    android:textStyle="bold" />
+                    style="@style/LauncherInfo.Divider" />
 
                 <TextView
+                    android:id="@+id/txt_cloud_status"
+                    style="@style/LauncherInfo"
+                    android:ellipsize="end"
+                    android:maxWidth="300dp" />
+
+                <ProgressBar
+                    android:id="@+id/spin_cloud"
+                    style="?android:attr/progressBarStyleSmall"
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:layout_marginStart="6dp"
+                    android:indeterminateTint="@color/gold"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/btn_sync"
+                    style="@style/LauncherMenuItem.Small"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="10dp"
-                    android:fontFamily="serif"
-                    android:shadowColor="#CC0B2A30"
-                    android:shadowDx="2"
-                    android:shadowDy="3"
-                    android:shadowRadius="2"
-                    android:text="@string/launcher_title_numeral"
-                    android:textColor="@color/teal"
-                    android:textSize="40sp"
-                    android:textStyle="bold" />
+                    android:layout_weight="0"
+                    android:layout_marginStart="4dp"
+                    android:minHeight="32dp"
+                    android:text="@string/action_sync_now"
+                    android:textColor="@color/menu_item_text_primary" />
             </LinearLayout>
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp"
-                android:fontFamily="serif"
-                android:shadowColor="#E6000000"
-                android:shadowDy="1"
-                android:shadowRadius="2"
-                android:text="@string/launcher_subtitle"
-                android:textColor="@color/teal"
-                android:textSize="13sp"
-                android:textStyle="italic" />
-
-            <!-- Shown while the Beta branch is chosen (the default). -->
-            <TextView
-                android:id="@+id/txt_branch_warning"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp"
-                android:gravity="center"
-                android:shadowColor="#E6000000"
-                android:shadowDy="1"
-                android:shadowRadius="2"
-                android:text="@string/launcher_beta_warning"
-                android:textColor="@color/warning"
-                android:textSize="12sp"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/txt_status"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginBottom="6dp"
-                android:gravity="center"
-                android:minLines="2"
-                android:shadowColor="#E6000000"
-                android:shadowDy="1"
-                android:shadowRadius="2"
-                android:text="@string/launcher_status_idle"
-                android:textColor="@color/menu_text"
-                android:textSize="13sp" />
-
-            <Button
-                android:id="@+id/btn_primary"
-                style="@style/LauncherMenuItem.Primary"
-                android:focusedByDefault="true"
-                android:text="@string/action_launch" />
-
-            <ProgressBar
-                android:id="@+id/progress_download"
-                style="?android:attr/progressBarStyleHorizontal"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="24dp"
-                android:layout_marginEnd="24dp"
-                android:max="1000"
-                android:progressBackgroundTint="@color/spire_shade"
-                android:progressTint="@color/menu_selected"
-                android:visibility="gone" />
-
-            <TextView
-                android:id="@+id/txt_progress"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:gravity="center"
-                android:maxLines="1"
-                android:textColor="@color/text_muted"
-                android:textSize="11sp"
-                android:visibility="gone" />
-
-            <Button
-                android:id="@+id/btn_update"
-                style="@style/LauncherMenuItem"
-                android:layout_marginTop="4dp"
-                android:text="@string/action_update" />
-
-            <Button
-                android:id="@+id/btn_settings"
-                style="@style/LauncherMenuItem"
-                android:text="@string/action_settings" />
-
-            <Button
-                android:id="@+id/btn_logs"
-                style="@style/LauncherMenuItem"
-                android:text="@string/action_logs" />
         </LinearLayout>
-    </ScrollView>
 
-    <ScrollView
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="4"
-        android:background="@drawable/bg_card"
-        android:fillViewport="true">
-
+        <!-- Before ready: where each setup step stands. -->
         <LinearLayout
-            android:layout_width="match_parent"
+            android:id="@+id/group_steps"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:padding="14dp">
+            android:layout_marginStart="6dp"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal">
 
             <include
                 android:id="@+id/step_account"
                 layout="@layout/item_step"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content" />
 
             <include
                 android:id="@+id/step_game"
                 layout="@layout/item_step"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-
-            <include
-                android:id="@+id/step_play"
-                layout="@layout/item_step"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content" />
-
-            <!-- Steam Cloud: only once signed in. -->
-            <LinearLayout
-                android:id="@+id/group_cloud"
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
-
-                <View
-                    android:layout_width="match_parent"
-                    android:layout_height="1dp"
-                    android:layout_marginTop="8dp"
-                    android:layout_marginBottom="10dp"
-                    android:background="@color/divider" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:fontFamily="serif"
-                        android:text="@string/cloud_title"
-                        android:textAllCaps="true"
-                        android:textColor="@color/menu_selected"
-                        android:textSize="13sp"
-                        android:textStyle="bold" />
-
-                    <ProgressBar
-                        android:id="@+id/spin_cloud"
-                        style="?android:attr/progressBarStyleSmall"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:indeterminateTint="@color/gold"
-                        android:visibility="gone" />
-                </LinearLayout>
-
-                <TextView
-                    android:id="@+id/txt_cloud_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:layout_marginBottom="6dp"
-                    android:textColor="@color/text_muted"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_sync"
-                        style="@style/LauncherMenuItem.Small"
-                        android:layout_weight="2"
-                        android:text="@string/action_sync_now" />
-
-                    <Button
-                        android:id="@+id/btn_pull"
-                        style="@style/LauncherMenuItem.Small"
-                        android:layout_weight="1"
-                        android:contentDescription="@string/action_pull_saves"
-                        android:text="@string/action_pull_short" />
-
-                    <Button
-                        android:id="@+id/btn_push"
-                        style="@style/LauncherMenuItem.Small"
-                        android:layout_weight="1"
-                        android:contentDescription="@string/action_push_saves"
-                        android:text="@string/action_push_short" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1" />
-
-            <TextView
-                android:id="@+id/txt_log_tail"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:background="?android:attr/selectableItemBackground"
-                android:ellipsize="end"
-                android:focusable="true"
-                android:clickable="true"
-                android:fontFamily="monospace"
-                android:foreground="@drawable/focus_on_dark"
-                android:maxLines="1"
-                android:padding="4dp"
-                android:textColor="@color/text_dim"
-                android:textSize="11sp" />
+                android:layout_marginStart="16dp" />
         </LinearLayout>
-    </ScrollView>
-</LinearLayout>
+
+        <!-- Debug builds only: the newest log line; opens the log. -->
+        <TextView
+            android:id="@+id/txt_log_tail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:ellipsize="end"
+            android:focusable="true"
+            android:fontFamily="monospace"
+            android:foreground="@drawable/focus_on_dark"
+            android:maxLines="1"
+            android:padding="4dp"
+            android:textColor="@color/text_dim"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>
