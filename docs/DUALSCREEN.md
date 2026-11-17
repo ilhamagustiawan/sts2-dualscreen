@@ -88,6 +88,9 @@ launcher already logged.
 
 ## Lifecycle
 
+- Launcher: while it is up, `LowerCover` shows the key art on the lower
+  screen (with the lower-screen setting on), so that screen matches the boot
+  cover that follows.
 - Boot: the presentation shows the launcher's backdrop from launch. The
   lower screen itself (viewports, capture, present thread) is built only once
   the top screen's main menu is up (`DsBootCover.OnMenuReady`), so it doesn't

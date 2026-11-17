@@ -2,8 +2,8 @@
 //
 // Modelled on SilksongAndroid's LauncherActivity and SetupActivity (MIT,
 // https://github.com/jakobkhansen/SilksongAndroid). The page is a guided one:
-// a checklist of the three steps of a fresh install, one primary button that
-// always does the next one, and the Steam Cloud status beside it. There is
+// one primary button that always does the next step, the setup steps under
+// the menu until the game is ready, then an info line with the Steam Cloud status. There is
 // nothing to compile for STS2, so "set up" is just the depot download (run by
 // DownloadService so it survives the screen going off), and launching runs
 // GamePrep and starts the Godot activity.
@@ -65,6 +65,7 @@ class LauncherActivity : Activity() {
     private lateinit var tokenStore: TokenStore
     private lateinit var settings: SettingsStore
     private lateinit var sync: SaveSync
+    private val lowerCover by lazy { LowerCover(this) }
     private var creds: TokenStore.Credentials? = null
     private var cloudJob: Job? = null
     private var launching = false
@@ -81,19 +82,20 @@ class LauncherActivity : Activity() {
     private var focusOwed = true
 
     private lateinit var txtStatus: TextView
-    private lateinit var txtBranchWarning: TextView
+    private lateinit var txtBranchChip: TextView
     private lateinit var btnPrimary: Button
     private lateinit var progressDownload: ProgressBar
     private lateinit var txtProgress: TextView
     private lateinit var btnUpdate: Button
     private lateinit var stepAccount: View
     private lateinit var stepGame: View
-    private lateinit var stepPlay: View
+    private lateinit var groupSteps: View
+    private lateinit var groupInfo: View
+    private lateinit var txtAccount: TextView
+    private lateinit var txtVersion: TextView
     private lateinit var txtCloudStatus: TextView
     private lateinit var groupCloud: View
     private lateinit var btnSync: Button
-    private lateinit var btnPull: Button
-    private lateinit var btnPush: Button
     private lateinit var spinCloud: ProgressBar
     private lateinit var txtLogTail: TextView
 
@@ -111,31 +113,32 @@ class LauncherActivity : Activity() {
         settings.pinBranch(DepotLocation.installedBranch(this))
 
         txtStatus = findViewById(R.id.txt_status)
-        txtBranchWarning = findViewById(R.id.txt_branch_warning)
+        txtBranchChip = findViewById(R.id.txt_branch_chip)
         btnPrimary = findViewById(R.id.btn_primary)
         progressDownload = findViewById(R.id.progress_download)
         txtProgress = findViewById(R.id.txt_progress)
         btnUpdate = findViewById(R.id.btn_update)
         stepAccount = findViewById(R.id.step_account)
         stepGame = findViewById(R.id.step_game)
-        stepPlay = findViewById(R.id.step_play)
+        groupSteps = findViewById(R.id.group_steps)
+        groupInfo = findViewById(R.id.group_info)
+        txtAccount = findViewById(R.id.txt_account)
+        txtVersion = findViewById(R.id.txt_version)
         txtCloudStatus = findViewById(R.id.txt_cloud_status)
         btnSync = findViewById(R.id.btn_sync)
         groupCloud = findViewById(R.id.group_cloud)
-        btnPull = findViewById(R.id.btn_pull)
-        btnPush = findViewById(R.id.btn_push)
         spinCloud = findViewById(R.id.spin_cloud)
         txtLogTail = findViewById(R.id.txt_log_tail)
 
         stepAccount.isFocusable = true
         stepAccount.isClickable = true
         stepAccount.setOnClickListener { onAccountClicked() }
+        txtAccount.setOnClickListener { onAccountClicked() }
 
         btnPrimary.setOnClickListener { onPrimaryClicked() }
         btnUpdate.setOnClickListener { startDownload() }
         btnSync.setOnClickListener { creds?.let { c -> runCloudJob { handle(sync.syncNow(c)) } } }
-        btnPull.setOnClickListener { creds?.let { c -> runCloudJob { handle(sync.pull(c)) } } }
-        btnPush.setOnClickListener { creds?.let { c -> runCloudJob { handle(sync.push(c)) } } }
+        btnSync.setOnLongClickListener { onSyncLongClicked(); true }
         findViewById<Button>(R.id.btn_settings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -146,7 +149,7 @@ class LauncherActivity : Activity() {
             txtLogTail.setOnClickListener(openLogs)
         } else {
             logsButton.visibility = View.GONE
-            txtLogTail.isFocusable = false
+            txtLogTail.visibility = View.GONE
         }
 
         LauncherLog.addListener(logListener)
@@ -177,6 +180,19 @@ class LauncherActivity : Activity() {
         LauncherLog.removeListener(logListener)
         uiScope.cancel()
         super.onDestroy()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Read here, not once: the setting may change in Settings.
+        if (settings.dualScreen) {
+            lowerCover.onStart()
+        }
+    }
+
+    override fun onStop() {
+        lowerCover.onStop()
+        super.onStop()
     }
 
     override fun onResume() {
@@ -284,8 +300,14 @@ class LauncherActivity : Activity() {
             else -> getString(R.string.launcher_status_need_download, c.accountName)
         }
 
-        val beta = settings.gameBranch == SettingsStore.BRANCH_BETA
-        txtBranchWarning.visibility = if (beta) View.VISIBLE else View.GONE
+        // Setup steps until the game is ready; then the info line.
+        val ready = stage == Stage.READY
+        groupSteps.visibility = if (ready) View.GONE else View.VISIBLE
+        groupInfo.visibility = if (ready) View.VISIBLE else View.GONE
+        txtAccount.text = c?.accountName ?: getString(R.string.step_account_todo)
+        txtVersion.text = GamePrep.version(this)
+        val beta = DepotLocation.installedBranch(this) == SettingsStore.BRANCH_BETA
+        txtBranchChip.visibility = if (beta) View.VISIBLE else View.GONE
 
         showSteps(stage)
         showDownloadProgress(dl)
@@ -356,11 +378,6 @@ class LauncherActivity : Activity() {
             done = hasGame && switchTo == null && stage != Stage.DOWNLOADING,
             current = stage == Stage.DOWNLOAD || stage == Stage.DOWNLOADING,
         )
-        showStep(
-            stepPlay, 3, getString(R.string.step_play_title),
-            getString(if (stage == Stage.READY) R.string.step_play_done else R.string.step_play_todo),
-            done = false, current = stage == Stage.READY,
-        )
     }
 
     /** "Beta" or "Stable" when settings name another branch than the installed one. */
@@ -402,8 +419,6 @@ class LauncherActivity : Activity() {
         spinCloud.visibility = if (cloudBusy) View.VISIBLE else View.GONE
         val enabled = !cloudBusy && !launching && !DownloadState.isActive
         btnSync.isEnabled = enabled
-        btnPull.isEnabled = enabled
-        btnPush.isEnabled = enabled
 
         val auto = getString(
             when {
@@ -430,6 +445,21 @@ class LauncherActivity : Activity() {
             else -> getString(R.string.cloud_never)
         }
         txtCloudStatus.text = getString(R.string.cloud_status, auto, state)
+    }
+
+    // One-way copies, kept off the info line: a long press on Sync.
+    private fun onSyncLongClicked() {
+        val c = creds ?: return
+        val actions = arrayOf(getString(R.string.action_pull_saves), getString(R.string.action_push_saves))
+        AlertDialog.Builder(this)
+            .setItems(actions) { _, which ->
+                if (which == 0) {
+                    runCloudJob { handle(sync.pull(c)) }
+                    return@setItems
+                }
+                runCloudJob { handle(sync.push(c)) }
+            }
+            .show()
     }
 
     // ── Primary action ─────────────────────────────────────────────────

@@ -6,8 +6,7 @@
 
     <string name="launcher_title_words">Slay the Spire</string>
     <string name="launcher_title_numeral">II</string>
-    <string name="launcher_subtitle">Map and piles on the lower screen</string>
-    <string name="launcher_beta_warning">Beta branch: Steam\'s newest patch, less tested. Switch to Stable in Settings.</string>
+    <string name="launcher_subtitle">Dual-screen edition</string>
     <string name="boot_cover_loading">Loading…</string>
     <string name="launcher_status_idle">Ready.</string>
     <string name="launcher_status_need_login">Sign in to Steam to get your copy.</string>
@@ -34,8 +33,6 @@
     <string name="action_cancel_download">Cancel download</string>
     <string name="action_cancel">Cancel</string>
     <string name="action_sync_now">Sync now</string>
-    <string name="action_pull_short">&#8595; Cloud</string>
-    <string name="action_push_short">&#8593; Cloud</string>
     <string name="action_pull_saves">Download saves from Steam Cloud</string>
     <string name="action_push_saves">Upload saves to Steam Cloud</string>
     <string name="action_settings">Settings</string>
@@ -53,9 +50,6 @@
     <string name="step_game_done">Version %1$s installed</string>
     <string name="step_game_done_unknown">Installed</string>
     <string name="step_game_switch">Switch to %1$s pending</string>
-    <string name="step_play_title">Play</string>
-    <string name="step_play_todo">After the download</string>
-    <string name="step_play_done">Ready</string>
 
     <string name="cloud_title">Steam Cloud</string>
     <string name="cloud_auto_on">Auto-sync on</string>
