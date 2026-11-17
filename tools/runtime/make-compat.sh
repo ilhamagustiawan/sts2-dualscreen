@@ -22,7 +22,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
 COMPAT_REPO="https://github.com/ModinMobileSTS/sts2-android-compat.git"
-COMMIT="${COMPAT_COMMIT:-450082d894167267408e75e014018f684253948d}"
+COMMIT="${COMPAT_COMMIT:-874b97f21ed476a039672472187f0fb7d5709879}"
 CACHE="$ROOT/.cache/runtime/compat"
 SRC="$CACHE/src"
 ASSETS="$ROOT/launcher/app/src/main/assets"
@@ -62,7 +62,7 @@ fi
 git -C "$SRC" checkout -q --force "$COMMIT"
 git -C "$SRC" clean -qfdx
 
-# Local patches over the commit, e.g. vfx-pool.patch: 450082d89416+vfx-pool.
+# Local patches over the commit, e.g. vfx-pool.patch: 874b97f21ed4+vfx-pool.
 BUILD_ID="${COMMIT:0:12}"
 for patch in "$PATCHES"/*.patch; do
   [[ -f "$patch" ]] || continue

@@ -6,12 +6,12 @@
 # take the prebuilt runtime from a Sts2MobileLauncher release APK (MIT) and
 # combine it with the public Godot 4.5.1 Java library from Maven Central.
 #
-#   STS2RE_TAG   Sts2MobileLauncher release to take the runtime from (default: v0.1.11)
+#   STS2RE_TAG   Sts2MobileLauncher release to take the runtime from (default: v0.1.13)
 #   STS2RE_APK   use this local APK instead of downloading
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)"
-TAG="${STS2RE_TAG:-v0.1.11}"
+TAG="${STS2RE_TAG:-v0.1.13}"
 GODOT_VERSION="4.5.1.stable"
 CACHE="$ROOT/.cache/runtime/$TAG"
 APP="$ROOT/launcher/app"
