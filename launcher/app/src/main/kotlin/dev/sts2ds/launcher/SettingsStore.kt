@@ -61,12 +61,23 @@ class SettingsStore(context: Context) {
 
     /**
      * The Steam branch the game is downloaded from: [BRANCH_STABLE] or
-     * [BRANCH_BETA]. A change takes effect with the next download, which only
-     * fetches the files that differ.
+     * [BRANCH_BETA], Beta by default. A change takes effect with the next
+     * download, which only fetches the files that differ.
      */
     var gameBranch: String
-        get() = prefs.getString(KEY_GAME_BRANCH, BRANCH_STABLE) ?: BRANCH_STABLE
+        get() = prefs.getString(KEY_GAME_BRANCH, BRANCH_BETA) ?: BRANCH_BETA
         set(value) { prefs.edit().putString(KEY_GAME_BRANCH, value).apply() }
+
+    /**
+     * Saves [initialBranch] for [installed] unless a branch was chosen, so an
+     * install from before Beta became the default stays on its branch.
+     */
+    fun pinBranch(installed: String?) {
+        if (prefs.contains(KEY_GAME_BRANCH)) {
+            return
+        }
+        gameBranch = initialBranch(installed)
+    }
 
     /**
      * Percent of each particle emitter's particles the game draws: 100, 50 or
@@ -188,6 +199,9 @@ class SettingsStore(context: Context) {
         const val REFRESH_HIGH = "high"
         const val BRANCH_STABLE = "public"
         const val BRANCH_BETA = "public-beta"
+
+        /** The branch to start on: the installed one, else Beta. */
+        fun initialBranch(installed: String?): String = installed ?: BRANCH_BETA
 
         /** "Stable" or "Beta", for [gameBranch]. */
         fun branchName(context: Context, branch: String): String =

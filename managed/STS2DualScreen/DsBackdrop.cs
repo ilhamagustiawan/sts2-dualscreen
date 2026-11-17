@@ -7,20 +7,20 @@ using HarmonyLib;
 namespace STS2DualScreen;
 
 /// <summary>
-/// Renders the game's main-menu art (without its logo) offscreen once per
-/// game build and saves it for the launcher's screens and boot covers
-/// (Backdrop.kt). No game art ships in the APK; this is the player's copy.
+/// Renders the game's main-menu logo offscreen once per game build and saves
+/// it for the boot covers (Backdrop.kt). The backdrop itself ships in the APK.
 /// Waits for the Common preload, so it doesn't compete with it.
 /// </summary>
 internal static class DsBackdrop
 {
-    // Read by the launcher's Backdrop.kt; keep the names in step.
+    // The art shot by older builds; deleted on the next shot.
     private const string FileName = "backdrop.jpg";
+    // Read by the launcher's Backdrop.kt; keep the name in step.
     private const string LogoName = "backdrop_logo.png";
     private const string StampName = "backdrop.stamp";
 
     // Bump to reshoot on builds already shot (e.g. when the logo was added).
-    private const string StampVersion = "3";
+    private const string StampVersion = "4";
 
     private const string MainMenuType = "MegaCrit.Sts2.Core.Nodes.Screens.MainMenu.NMainMenu";
     private const string ArtScene = "res://scenes/backgrounds/main_menu_bg.tscn";
@@ -29,7 +29,6 @@ internal static class DsBackdrop
 
     // Frames the art animates before the shot, so it is past any fade-in.
     private const int SettleFrames = 30;
-    private const float JpgQuality = 0.9f;
 
     private static bool _started;
     private static SceneTree _tree;
@@ -37,7 +36,6 @@ internal static class DsBackdrop
     private static int _frames;
     private static CanvasItem _art;
     private static CanvasItem _logo;
-    private static Image _backdrop;
 
     // What the viewport shows: the art without its logo, then the logo alone.
     private enum Shot { Art, Logo }
@@ -73,8 +71,7 @@ internal static class DsBackdrop
         try
         {
             var stamp = Path.Combine(DsPaths.FilesDir, StampName);
-            return File.Exists(Path.Combine(DsPaths.FilesDir, FileName))
-                && File.Exists(Path.Combine(DsPaths.FilesDir, LogoName))
+            return File.Exists(Path.Combine(DsPaths.FilesDir, LogoName))
                 && File.Exists(stamp)
                 && File.ReadAllText(stamp) == Build();
         }
@@ -101,7 +98,7 @@ internal static class DsBackdrop
         _tree.ProcessFrame += Step;
     }
 
-    // Load, stage the art, let it animate, shoot it; then the logo alone, shoot that.
+    // Load, stage the art, let it animate; then the logo alone, shoot that.
     private static void Step()
     {
         try
@@ -117,7 +114,7 @@ internal static class DsBackdrop
             }
             if (_shot == Shot.Art)
             {
-                ShootArt();
+                IsolateLogo();
                 return;
             }
             ShootLogo();
@@ -164,13 +161,12 @@ internal static class DsBackdrop
         _tree.Root.AddChild(_viewport);
     }
 
-    private static void ShootArt()
+    private static void IsolateLogo()
     {
-        _backdrop = _viewport.GetTexture().GetImage();
         if (_logo == null)
         {
-            DsLog.Debug("backdrop: no logo node; art only");
-            Save(null);
+            DsLog.Debug("backdrop: no logo node");
+            Finish();
             return;
         }
 
@@ -210,13 +206,18 @@ internal static class DsBackdrop
     {
         var logo = _viewport.GetTexture().GetImage();
         var used = logo.GetUsedRect();
-        Save(used.HasArea() ? logo.GetRegion(used) : null);
+        if (!used.HasArea())
+        {
+            DsLog.Debug("backdrop: logo empty");
+            Finish();
+            return;
+        }
+        Save(logo.GetRegion(used));
     }
 
     // Encoding is slow; off the main thread. Rename so readers never see half a file.
     private static void Save(Image logo)
     {
-        var art = _backdrop;
         Finish();
 
         var dir = DsPaths.FilesDir;
@@ -225,16 +226,13 @@ internal static class DsBackdrop
         {
             try
             {
-                if (!Write(art, Path.Combine(dir, FileName), Format.Jpg))
-                {
-                    return;
-                }
-                if (logo != null && !Write(logo, Path.Combine(dir, LogoName), Format.Png))
+                File.Delete(Path.Combine(dir, FileName));
+                if (!Write(logo, Path.Combine(dir, LogoName)))
                 {
                     return;
                 }
                 File.WriteAllText(Path.Combine(dir, StampName), build);
-                DsLog.Debug($"backdrop: saved {art.GetWidth()}x{art.GetHeight()}, logo {(logo == null ? "none" : $"{logo.GetWidth()}x{logo.GetHeight()}")}");
+                DsLog.Debug($"backdrop: saved logo {logo.GetWidth()}x{logo.GetHeight()}");
             }
             catch (Exception e)
             {
@@ -243,12 +241,10 @@ internal static class DsBackdrop
         });
     }
 
-    private enum Format { Jpg, Png }
-
-    private static bool Write(Image image, string path, Format format)
+    private static bool Write(Image image, string path)
     {
         var temp = path + ".tmp";
-        var error = format == Format.Jpg ? image.SaveJpg(temp, JpgQuality) : image.SavePng(temp);
+        var error = image.SavePng(temp);
         if (error != Error.Ok)
         {
             DsLog.Warn($"backdrop: saving {Path.GetFileName(path)} failed ({error})");
@@ -271,6 +267,5 @@ internal static class DsBackdrop
         _viewport = null;
         _art = null;
         _logo = null;
-        _backdrop = null;
     }
 }

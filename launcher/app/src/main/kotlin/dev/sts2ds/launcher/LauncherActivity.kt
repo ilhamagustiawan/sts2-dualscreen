@@ -81,6 +81,7 @@ class LauncherActivity : Activity() {
     private var focusOwed = true
 
     private lateinit var txtStatus: TextView
+    private lateinit var txtBranchWarning: TextView
     private lateinit var btnPrimary: Button
     private lateinit var progressDownload: ProgressBar
     private lateinit var txtProgress: TextView
@@ -89,7 +90,7 @@ class LauncherActivity : Activity() {
     private lateinit var stepGame: View
     private lateinit var stepPlay: View
     private lateinit var txtCloudStatus: TextView
-    private lateinit var rowCloudButtons: View
+    private lateinit var groupCloud: View
     private lateinit var btnSync: Button
     private lateinit var btnPull: Button
     private lateinit var btnPush: Button
@@ -107,8 +108,10 @@ class LauncherActivity : Activity() {
         settings = SettingsStore(this)
         sync = SaveSync(this, settings, ::confirmConflictResolution)
         creds = tokenStore.read()
+        settings.pinBranch(DepotLocation.installedBranch(this))
 
         txtStatus = findViewById(R.id.txt_status)
+        txtBranchWarning = findViewById(R.id.txt_branch_warning)
         btnPrimary = findViewById(R.id.btn_primary)
         progressDownload = findViewById(R.id.progress_download)
         txtProgress = findViewById(R.id.txt_progress)
@@ -118,7 +121,7 @@ class LauncherActivity : Activity() {
         stepPlay = findViewById(R.id.step_play)
         txtCloudStatus = findViewById(R.id.txt_cloud_status)
         btnSync = findViewById(R.id.btn_sync)
-        rowCloudButtons = btnSync.parent as View
+        groupCloud = findViewById(R.id.group_cloud)
         btnPull = findViewById(R.id.btn_pull)
         btnPush = findViewById(R.id.btn_push)
         spinCloud = findViewById(R.id.spin_cloud)
@@ -178,7 +181,6 @@ class LauncherActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        // The game may have shot a new backdrop since onCreate.
         Backdrop.apply(this, Backdrop.Scrim.LIGHT)
         focusOwed = true
         refreshUi()
@@ -281,6 +283,9 @@ class LauncherActivity : Activity() {
             DepotLocation.interrupted(this) -> getString(R.string.launcher_status_interrupted)
             else -> getString(R.string.launcher_status_need_download, c.accountName)
         }
+
+        val beta = settings.gameBranch == SettingsStore.BRANCH_BETA
+        txtBranchWarning.visibility = if (beta) View.VISIBLE else View.GONE
 
         showSteps(stage)
         showDownloadProgress(dl)
@@ -390,12 +395,10 @@ class LauncherActivity : Activity() {
 
     private fun showCloud(c: TokenStore.Credentials?, cloudBusy: Boolean) {
         if (c == null) {
-            txtCloudStatus.text = getString(R.string.cloud_signed_out)
-            rowCloudButtons.visibility = View.GONE
-            spinCloud.visibility = View.GONE
+            groupCloud.visibility = View.GONE
             return
         }
-        rowCloudButtons.visibility = View.VISIBLE
+        groupCloud.visibility = View.VISIBLE
         spinCloud.visibility = if (cloudBusy) View.VISIBLE else View.GONE
         val enabled = !cloudBusy && !launching && !DownloadState.isActive
         btnSync.isEnabled = enabled

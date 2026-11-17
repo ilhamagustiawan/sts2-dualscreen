@@ -26,7 +26,8 @@ dual-screen handheld (AYN Thor), with the map and card piles on the lower screen
 - Sources are only SilksongAndroid and Sts2MobileLauncher (both MIT). Do not
   use Ekyso/StS2-Launcher or balatro-dualscreen. Credit anything copied in the
   README's "Licence and credits".
-- Never commit game files or the extracted runtime (see .gitignore).
+- Never commit game files or the extracted runtime (see .gitignore). The
+  one exception is the key art behind the launcher (`bg_start.webp`).
 - `make apk` (not debuggable, for playing), `make dev-apk` (debuggable, for
   `run-as`), `make debug-apk` (dev plus per-event logging), `make test`;
   `make dev` needs a device on adb.

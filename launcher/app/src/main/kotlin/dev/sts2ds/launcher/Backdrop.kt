@@ -11,22 +11,20 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import dev.sts2ds.R
 import java.io.File
 
 /**
  * The backdrop behind every launcher screen and the game's boot covers: the
- * game's own main-menu art, shot by the mod (DsBackdrop.cs) on the first
- * launch of each build. Until that exists, the drawn bg_spire.
+ * bundled bg_start art. The game's logo for the boot covers is shot by the
+ * mod (DsBackdrop.cs) on the first launch of each build.
  */
 object Backdrop {
     // Written by DsBackdrop.cs; keep the name in step.
-    private const val FILE_NAME = "backdrop.jpg"
     private const val LOGO_NAME = "backdrop_logo.png"
 
     // Where the spire stands across the art, 0..1; crops keep it in view.
-    private const val FOCUS_X = 0.81f
+    private const val FOCUS_X = 0.47f
 
     /** How much to darken the art, so what sits on it stays legible. */
     enum class Scrim(val alpha: Int) {
@@ -36,13 +34,11 @@ object Backdrop {
     }
 
     private var cached: Bitmap? = null
-    private var cachedStamp = 0L
 
     /** The backdrop for [context], darkened by [scrim]. */
     @JvmStatic
     fun drawable(context: Context, scrim: Scrim): Drawable {
-        val bitmap = load(context) ?: return ContextCompat.getDrawable(context, R.drawable.bg_spire)!!
-        return Art(bitmap, scrim.alpha)
+        return Art(load(context), scrim.alpha)
     }
 
     /** The game's logo on transparency, or null until the mod has shot it. */
@@ -63,22 +59,10 @@ object Backdrop {
         root.background = drawable(activity, scrim)
     }
 
-    // Decoded once per process, again only if the mod has shot a new one.
+    // Decoded once per process.
     @Synchronized
-    private fun load(context: Context): Bitmap? {
-        val file = File(context.filesDir, FILE_NAME)
-        val stamp = file.lastModified()
-        if (stamp == 0L) {
-            return null
-        }
-        if (cached != null && stamp == cachedStamp) {
-            return cached
-        }
-
-        cached = runCatching { BitmapFactory.decodeFile(file.path) }.getOrNull()
-        cachedStamp = stamp
-        return cached
-    }
+    private fun load(context: Context): Bitmap =
+        cached ?: BitmapFactory.decodeResource(context.resources, R.drawable.bg_start).also { cached = it }
 
     // Covers its bounds like centerCrop, but crops around the spire.
     private class Art(private val bitmap: Bitmap, scrimAlpha: Int) : Drawable() {

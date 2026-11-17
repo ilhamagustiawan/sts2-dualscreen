@@ -8,14 +8,15 @@ Built for the **AYN Thor**. The second screen is found through Android's
 display API, not by device model, and with one screen the game plays as it
 would anywhere else.
 
-> This app contains no part of the game. You need your own copy of
-> Slay the Spire 2 on Steam; the app downloads it from your account.
+> The app ships none of the game's files, only its key art as the launcher
+> backdrop. You need your own copy of Slay the Spire 2 on Steam; the app
+> downloads it from your account.
 
 ## What it does
 
 - **Steam sign-in** (QR code or password + Steam Guard), then the game is
-  downloaded straight from your Steam library onto the device. Stable or the
-  public beta branch.
+  downloaded straight from your Steam library onto the device. The public
+  beta branch by default, or Stable.
 - **Steam Cloud saves**: newer saves are downloaded before you play and yours
   uploaded after, with a prompt when both sides changed.
 - **Lower screen**
@@ -132,5 +133,6 @@ MIT — see [LICENSE](LICENSE).
   (MIT) by ModinMobileSTS: the Android engine runtime, its compatibility pack
   and launch staging rules.
 
-Slay the Spire 2 is © Mega Crit. This is an unofficial fan project, not
+Slay the Spire 2 and its key art (the launcher backdrop) are © Mega Crit.
+This is an unofficial fan project, not
 affiliated with or endorsed by Mega Crit.

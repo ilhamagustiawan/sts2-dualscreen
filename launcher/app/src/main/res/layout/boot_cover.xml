@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Over the game while Godot boots, so Play leads to the launcher's own dusk
+  Over the game while Godot boots, so Play leads to the launcher's backdrop
   rather than a black screen. GodotApp adds it; the mod lifts it once the game
   has drawn something of its own, or holds it through the startup preload,
   naming each step in boot_status. Not focusable: keys go straight through to

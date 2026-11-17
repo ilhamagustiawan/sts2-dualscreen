@@ -6,11 +6,12 @@
 
     <string name="launcher_title_words">Slay the Spire</string>
     <string name="launcher_title_numeral">II</string>
-    <string name="launcher_subtitle">Dual Screen · the map and your piles below</string>
+    <string name="launcher_subtitle">Map and piles on the lower screen</string>
+    <string name="launcher_beta_warning">Beta branch: Steam\'s newest patch, less tested. Switch to Stable in Settings.</string>
     <string name="boot_cover_loading">Loading…</string>
     <string name="launcher_status_idle">Ready.</string>
-    <string name="launcher_status_need_login">Sign in to Steam to download your copy of the game.</string>
-    <string name="launcher_status_need_download">Signed in as %1$s. Download the game to continue.</string>
+    <string name="launcher_status_need_login">Sign in to Steam to get your copy.</string>
+    <string name="launcher_status_need_download">Signed in as %1$s. Download the game next.</string>
     <string name="launcher_status_ready">Slay the Spire 2 %1$s is ready.</string>
     <string name="launcher_status_ready_unknown">Slay the Spire 2 is ready.</string>
     <string name="launcher_status_downloading">Downloading… %1$s</string>
@@ -45,7 +46,7 @@
     <string name="step_account_todo">Not signed in</string>
     <string name="step_account_done">%1$s · select to sign out</string>
     <string name="step_game_title">Game files</string>
-    <string name="step_game_todo">Not downloaded yet</string>
+    <string name="step_game_todo">Not downloaded</string>
     <string name="step_game_interrupted">Download interrupted. Resume to continue.</string>
     <string name="step_game_running">Downloading… %1$s</string>
     <string name="step_game_preparing">Preparing…</string>
@@ -53,11 +54,10 @@
     <string name="step_game_done_unknown">Installed</string>
     <string name="step_game_switch">Switch to %1$s pending</string>
     <string name="step_play_title">Play</string>
-    <string name="step_play_todo">Available once the game is downloaded</string>
-    <string name="step_play_done">Ready. Map and piles go on the lower screen.</string>
+    <string name="step_play_todo">After the download</string>
+    <string name="step_play_done">Ready</string>
 
     <string name="cloud_title">Steam Cloud</string>
-    <string name="cloud_signed_out">Sign in to keep your saves in sync with Steam Cloud.</string>
     <string name="cloud_auto_on">Auto-sync on</string>
     <string name="cloud_auto_off">Auto-sync off (see Settings)</string>
     <string name="cloud_auto_pull_only">Auto-sync before play only</string>
@@ -162,7 +162,7 @@
     <string name="settings_section_cloud">Steam Cloud</string>
     <string name="settings_section_game">Game</string>
     <string name="settings_shortcut">Add game icon to home screen</string>
-    <string name="settings_shortcut_subtitle">Pins a shortcut to this launcher with the game\'s own icon, fetched from your Steam account. The app icon can\'t be the game\'s: nothing from the game ships in the app.</string>
+    <string name="settings_shortcut_subtitle">Pins a shortcut to this launcher with the game\'s own icon, fetched from your Steam account. The app icon can\'t be the game\'s.</string>
     <string name="settings_shortcut_signed_out">Sign in to Steam first.</string>
     <string name="settings_shortcut_offline">No connection: the icon comes from Steam.</string>
     <string name="settings_shortcut_updated">Home-screen shortcut updated.</string>
@@ -176,7 +176,7 @@
     <string name="settings_cloud_sync">Sync saves with Steam Cloud</string>
     <string name="settings_cloud_sync_subtitle">Downloads newer saves right before the game starts and uploads yours when you come back. Skipped when offline.</string>
     <string name="settings_game_branch">Game version</string>
-    <string name="settings_game_branch_subtitle">Beta is the game\'s public-beta branch on Steam, with the newest patch. Switching downloads only the files that differ. Finish your run first: a run started on one version may not continue on the other.</string>
+    <string name="settings_game_branch_subtitle">Beta, the default, is the game\'s public-beta branch on Steam, with the newest patch. Switching downloads only the files that differ. Finish your run first: a run started on one version may not continue on the other.</string>
     <string name="settings_game_branch_busy">A download is running; change this once it finishes.</string>
     <string name="branch_stable">Stable</string>
     <string name="branch_beta">Beta</string>
@@ -187,8 +187,8 @@
     <string name="settings_back">Back</string>
 
     <string name="login_title">Sign in to Steam</string>
-    <string name="login_subtitle">Scan with the Steam mobile app · Settings → Mobile Authenticator → QR Code</string>
-    <string name="login_password_hint">Or sign in with your account name and password.</string>
+    <string name="login_subtitle">In the Steam app: Steam Guard → Scan a QR code</string>
+    <string name="login_password_hint">No Steam app? Use your account name and password.</string>
     <string name="login_username">Account name</string>
     <string name="login_password">Password</string>
     <string name="login_sign_in">Sign in</string>

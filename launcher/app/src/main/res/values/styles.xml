@@ -57,6 +57,13 @@
         <item name="android:textColor">@color/menu_item_text_primary</item>
     </style>
 
+    <!-- The sign-in screen's Sign in: gold like Play, sized for the form. -->
+    <style name="LauncherMenuItem.Action">
+        <item name="android:textSize">21sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/menu_item_text_primary</item>
+    </style>
+
     <!-- The Steam Cloud row in the card: smaller, no curls, sharing the width. -->
     <style name="LauncherMenuItem.Small">
         <item name="android:layout_width">0dp</item>
@@ -65,6 +72,18 @@
         <item name="android:drawableStart">@null</item>
         <item name="android:drawableEnd">@null</item>
         <item name="android:foreground">@drawable/focus_on_dark</item>
+    </style>
+
+    <!-- A sign-in text field on a card: warm text, gold underline. -->
+    <style name="LoginField">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">@color/menu_text</item>
+        <item name="android:textColorHint">@color/text_dim</item>
+        <item name="android:backgroundTint">@color/gold</item>
     </style>
 
     <style name="SettingsSection">
