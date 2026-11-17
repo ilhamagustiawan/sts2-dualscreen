@@ -83,9 +83,8 @@ builds, checks the APK is signed like the latest release, then asks before
 pushing `main` and the tag and uploading the APK.
 
 GitHub Actions (`.github/workflows/build.yml`) tests and builds every push
-and pull request, and publishes a release for each version tag (`v0.1.1`,
-matching `sts2ds.version`). CI has no `sts2.dll`, so its APKs carry the
-released compat pack, without the VFX pool.
+and pull request; it publishes nothing. CI has no `sts2.dll`, so its APKs
+carry the released compat pack, without the VFX pool.
 
 ### Development
 
