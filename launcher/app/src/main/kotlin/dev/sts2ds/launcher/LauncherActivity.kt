@@ -65,6 +65,7 @@ class LauncherActivity : Activity() {
     private lateinit var tokenStore: TokenStore
     private lateinit var settings: SettingsStore
     private lateinit var sync: SaveSync
+    private val lowerCover by lazy { LowerCover(this) }
     private var creds: TokenStore.Credentials? = null
     private var cloudJob: Job? = null
     private var launching = false
@@ -179,6 +180,19 @@ class LauncherActivity : Activity() {
         LauncherLog.removeListener(logListener)
         uiScope.cancel()
         super.onDestroy()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Read here, not once: the setting may change in Settings.
+        if (settings.dualScreen) {
+            lowerCover.onStart()
+        }
+    }
+
+    override fun onStop() {
+        lowerCover.onStop()
+        super.onStop()
     }
 
     override fun onResume() {
